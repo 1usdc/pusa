@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = ["protocol", "shared", "ui", "web", "desktop", "server", "test"]
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+panic = "abort"
+codegen-units = 1
+incremental = false

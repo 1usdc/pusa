@@ -1,0 +1,27 @@
+/* This file contains the theme variables for the styled dioxus components. You only
+ * need to import this file once in your project root.
+ */
+
+html[data-theme="dark"] {
+  --dark: initial;
+  --light: ;
+}
+
+html[data-theme="light"] {
+  --dark: ;
+  --light: initial;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --dark: initial;
+    --light: ;
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --dark: ;
+    --light: initial;
+  }
+}

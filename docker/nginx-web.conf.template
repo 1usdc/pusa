@@ -1,0 +1,100 @@
+# 静态站 + 同源反代：浏览器只访问 80/443
+#   /v1/*    → claw-rs server :8787（业务 API）
+#   /llm/*   → Another-Me-LLM（钱包登录 wallet/challenge、wallet/verify、auth/me 等）
+#   /relay/* → Another-Me-Relay（算力计费 / 上游分发：余额查询、API Key 申请等）
+# 浏览器一律走同源，绕开 CORS；同时让 wallet/verify 能拿到真实公网来源 IP（X-Forwarded-For）。
+#
+# 注意：本文件由 nginx 官方镜像的 entrypoint 通过 envsubst 渲染为
+# /etc/nginx/conf.d/default.conf。我们用 NGINX_ENVSUBST_FILTER_VARS 限定只替换
+# ${ANOTHERME_BASE_URL} / ${ANOTHERME_RELAY_BASE_URL}，避免 $host / $remote_addr 等
+# nginx 内置变量被吃掉。
+server {
+    listen 80;
+    server_name localhost;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location /v1/ {
+        proxy_pass http://server:8787;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_cache off;
+
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 10s;
+        proxy_read_timeout 86400s;
+    }
+
+    location /llm/ {
+        # 上游 Another-Me-LLM 地址通过 docker-compose 环境变量 ANOTHERME_BASE_URL 注入：
+        #   - dev（本机宿主）：http://host.docker.internal:8881   （需配 extra_hosts: host-gateway）
+        #   - prod（公网域名）：https://api.anotherme.co
+        proxy_pass ${ANOTHERME_BASE_URL}/;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $proxy_host;
+        proxy_ssl_server_name on;
+        proxy_ssl_name $proxy_host;
+
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # 让上游始终返回明文：浏览器 → 外层网关（api.anotherme.co/proxy/...）→ 本 nginx
+        # 这条链上任何中间层若再加一次 gzip/br，与已压缩的 body 叠加就会触发浏览器
+        # `ERR_CONTENT_DECODING_FAILED`。本容器内 nginx 本身没启用 gzip 模块，
+        # 主动把 Accept-Encoding 清空，让 LLM 上游返回 plain JSON，链路就只剩外层
+        # 网关一次性压缩（如有），与浏览器解压一一对应。
+        proxy_set_header Accept-Encoding "";
+        proxy_buffering off;
+        proxy_cache off;
+
+        # `/llm/` 反代到 ANOTHERME_BASE_URL（生产为 https://api.anotherme.co），
+        # 这是一次"实例打回母 API"的回环 HTTPS 调用：实例 → 公网 → CloudFlare →
+        # cloud-be → cloud-be 处理（含 Mongo 查询）→ 原路返回。RTT 平均 200–500ms，
+        # 长尾过 5s 概率不低。原来三个超时都是 5s，"母 API 偶尔慢一次"就会让
+        # 实例 nginx 直接 504，再透传给 SPA 变成红色错误。
+        # 放宽到 connect 10s / send & read 30s，给 TLS handshake + 跨区 RTT 留出富裕。
+        # `/llm/` 不走 SSE 流式（那条在 /relay/），30s 已经足够覆盖最慢的 JSON 端点。
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
+    location /relay/ {
+        # 上游 Another-Me-Relay 地址通过 docker-compose 环境变量 ANOTHERME_RELAY_BASE_URL 注入：
+        #   - dev（本机宿主）：http://host.docker.internal:8787   （Relay 在宿主机直跑时）
+        #   - prod（公网域名）：https://relay.anotherme.co  （Relay 自带 Caddy 入口）
+        proxy_pass ${ANOTHERME_RELAY_BASE_URL}/;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $proxy_host;
+        proxy_ssl_server_name on;
+        proxy_ssl_name $proxy_host;
+
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # 同 /llm/：清掉 Accept-Encoding 强制上游（Relay 自带 Caddy 默认开
+        # `encode gzip zstd`）返回明文，避开"外层网关再压一次"叠加触发的
+        # `ERR_CONTENT_DECODING_FAILED`。Relay JSON 端点 body 都很小（KB 量级），
+        # 不压缩对带宽与性能无显著影响；流式 `/v1/chat/completions` 本来就跑 SSE
+        # 长连接，不走 gzip 也是 OpenAI 兼容协议的常态。
+        proxy_set_header Accept-Encoding "";
+        proxy_buffering off;
+        proxy_cache off;
+
+        # Relay 的 /v1/chat/completions 可能流式输出，read_timeout 给长；其它接口受
+        # connect/send_timeout 保护，正常都在秒级返回。
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 10s;
+        proxy_read_timeout 86400s;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

@@ -1,0 +1,12 @@
+FROM nginx:1.27-alpine
+# nginx 官方镜像 entrypoint 会用 envsubst 把 /etc/nginx/templates/*.template 渲染到
+# /etc/nginx/conf.d/，运行时通过 ANOTHERME_BASE_URL 决定 /llm/ 反代到哪台 Another-Me-LLM。
+COPY docker/nginx-web.conf.template /etc/nginx/templates/default.conf.template
+COPY target/dx/web/release/web/public/ /usr/share/nginx/html/
+
+RUN apk add --no-cache curl
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -fsS http://127.0.0.1/ >/dev/null || exit 1
+
+EXPOSE 80

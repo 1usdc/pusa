@@ -1,0 +1,83 @@
+# 从阿里云 ACR 拉取（ARM 服务器请使用 linux/arm64 镜像）。
+# 本机：先 docker login 个人版 ACR，再 `docker compose up`（Web 映射 8080→80）。
+services:
+  server:
+    image: "${DOCKERHUB_NAMESPACE:-crpi-u07go17v8z1dv8ru.cn-shanghai.personal.cr.aliyuncs.com/1btc}/anotherclaw-server:${IMAGE_TAG:-latest}"
+    platform: linux/arm64
+    container_name: claw-server
+    user: root
+    environment:
+      BIND_ADDR: "0.0.0.0:8787"
+      DATABASE_PATH: "/work/data/server.db"
+      # reown 模式：所有 token 由 Another-Me-LLM 后端颁发，server 仅做远程校验。
+      ANOTHERME_BASE_URL: "${ANOTHERME_BASE_URL:-http://host.docker.internal:8881}"
+      ANOTHERME_TIMEOUT_MS: "${ANOTHERME_TIMEOUT_MS:-5000}"
+      ANOTHERME_AUTH_CACHE_TTL_SECONDS: "${ANOTHERME_AUTH_CACHE_TTL_SECONDS:-60}"
+      RUST_LOG: "${RUST_LOG:-info}"
+    extra_hosts:
+      # 让容器里的 ANOTHERME_BASE_URL=http://host.docker.internal:... 在 linux 上也能解析到宿主机。
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ../data:/work/data
+      - ../skills:/work/skills
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    restart: unless-stopped
+    # Dockerfile.server 里已声明 HEALTHCHECK，但 interval=30s 让 web 冷启动至少
+    # 等 30s 才能进入 healthy。这里覆盖成 5s 检查间隔，配合下面 web 的
+    # `depends_on: condition: service_healthy`，可在 server 真正就绪后立刻拉起 web。
+    # 沿用 python3（基础镜像必装）+ urllib，不引入额外的 curl 依赖。
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/health', timeout=3)"]
+      interval: 5s
+      timeout: 4s
+      retries: 5
+      start_period: 10s
+
+  web:
+    image: "${DOCKERHUB_NAMESPACE:-crpi-u07go17v8z1dv8ru.cn-shanghai.personal.cr.aliyuncs.com/1btc}/anotherclaw-web:${IMAGE_TAG:-latest}"
+    platform: linux/arm64
+    container_name: claw-web
+    # 必须等 server 通过 /health healthcheck 才拉起 web，否则 nginx 启动后短暂时间内
+    # 反代 /v1/* → claw-server:8787 会拒连，SPA 首屏直接 502。
+    # 注意：service_healthy 只在 docker compose `up` / 重启序列里生效，对运行中
+    # server 容器崩溃后 nginx 不会自动 down，需要再额外靠 nginx 自身的 503 fallback
+    # 或前端重试兜底（cloud-be 侧 `_request_upstream_with_retry` 已处理）。
+    depends_on:
+      server:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    environment:
+      # nginx 模板渲染时把 ${ANOTHERME_BASE_URL} / ${ANOTHERME_RELAY_BASE_URL} 替换成实际地址
+      # （前者与 server 共用一个变量；后者指向 Another-Me-Relay）。
+      # 仅过滤这两个变量，避免 $host / $remote_addr 等 nginx 内置变量被 envsubst 吃掉。
+      ANOTHERME_BASE_URL: "${ANOTHERME_BASE_URL:-http://host.docker.internal:8881}"
+      ANOTHERME_RELAY_BASE_URL: "${ANOTHERME_RELAY_BASE_URL:-https://relay.anotherme.co}"
+      NGINX_ENVSUBST_FILTER_VARS: "ANOTHERME_BASE_URL ANOTHERME_RELAY_BASE_URL"
+    extra_hosts:
+      # dev 时 ANOTHERME_BASE_URL=http://host.docker.internal:8881，靠这条解析到宿主机；
+      # prod 改成公网/内网 IP 后这条无害（不会被用到），保留以兼容本地复现。
+      - "host.docker.internal:host-gateway"
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    restart: unless-stopped
+
+  watchtower:
+    image: "${DOCKERHUB_NAMESPACE:-crpi-u07go17v8z1dv8ru.cn-shanghai.personal.cr.aliyuncs.com/1btc}/watchtower:1.17.0"
+    platform: linux/arm64
+    container_name: watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${HOME}/.docker/config.json:/config.json:ro
+    environment:
+      DOCKER_CONFIG: /
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_POLL_INTERVAL: 300
+      WATCHTOWER_LABEL_ENABLE: "true"
+      # 滚动重启：watchtower 检测到新镜像时一个容器一个容器地 recreate，而不是
+      # 同时把 server 和 web 都停。配合上面 web 的 `depends_on service_healthy`，
+      # 升级流程是 server 起来 → healthy → 才切 web，避免"瞬时窗口里两个容器同时
+      # 无法服务"的并发抖动。
+      WATCHTOWER_ROLLING_RESTART: "true"
+    restart: unless-stopped

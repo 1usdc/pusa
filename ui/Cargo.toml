@@ -1,0 +1,146 @@
+[package]
+name = "ui"
+version = "0.1.0"
+edition = "2021"
+description = "Dioxus UI shell and components (assets under assets/)"
+
+[dependencies]
+base64 = { version = "0.22", default-features = false, features = ["alloc"] }
+dioxus = { version = "0.7.9", default-features = false }
+dioxus-free-icons = { version = "0.10.0", features = ["bootstrap", "lucide"] }
+protocol = { path = "../protocol" }
+anyhow = "1"
+keyboard-types = "0.7"
+dioxus-transition = "0.3"
+pulldown-cmark = "0.13.3"
+ammonia = "4.1.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+dioxus-primitives = { git = "https://github.com/DioxusLabs/components", version = "0.0.1", default-features = false, optional = true }
+gloo-timers = { version = "0.3", features = ["futures"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+gloo-net = { version = "0.6", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+wasm-streams = "0.4"
+web-sys = { version = "0.3", features = [
+    "AbortController",
+    "AbortSignal",
+    "Blob",
+    "Clipboard",
+    "ClipboardEvent",
+    "console",
+    "CssStyleDeclaration",
+    "CustomEvent",
+    "DataTransfer",
+    "DataTransferItem",
+    "DataTransferItemList",
+    "Document",
+    "Element",
+    "Event",
+    "EventTarget",
+    "File",
+    "FileList",
+    "HtmlElement",
+    "HtmlInputElement",
+    "Navigator",
+    "ReadableStream",
+    "Response",
+    "Window",
+    "Storage",
+] }
+js-sys = "0.3"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+shared = { path = "../shared", optional = true }
+dirs = { version = "6", optional = true }
+once_cell = { version = "1", optional = true }
+portable-pty = { version = "0.8", optional = true }
+rfd = { version = "0.15", optional = true }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "net", "io-util", "time"], optional = true }
+reqwest = { version = "0.12", optional = true, default-features = false, features = ["json", "rustls-tls"] }
+webbrowser = { version = "1", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+
+# 仅 macOS：objc2 系列在非 Apple 平台用 `compile_error!` 拒绝编译，
+# 必须放在 `target_os = "macos"` 守卫下；这样 `native` feature 即使在 Windows / Linux
+# 激活 `dep:objc2`，target 不匹配时 Cargo 也不会把它们加入依赖图。
+[target.'cfg(target_os = "macos")'.dependencies]
+dispatch2 = { version = "0.3.1" }
+objc2 = { version = "0.6.3", optional = true }
+objc2-app-kit = { version = "0.3.2", optional = true, default-features = false, features = [
+    "NSAppearance",
+    "NSApplication",
+    "NSButton",
+    "NSColor",
+    "NSWindow",
+    "NSView",
+    "NSEvent",
+    "objc2-core-graphics",
+    "objc2-quartz-core",
+] }
+objc2-quartz-core = { version = "0.3.2", optional = true, default-features = false, features = [
+    "CALayer",
+    "objc2-core-foundation",
+    "objc2-core-graphics",
+] }
+
+# 仅 Windows：同上，避免 macOS / Linux 编译时拉 windows-sys（虽然不会挂，但浪费编译时间）。
+[target.'cfg(target_os = "windows")'.dependencies]
+# windows-sys 0.52 把 ReleaseCapture 等鼠标捕获 API 划到了 Win32_UI_Input_KeyboardAndMouse
+# 子模块，必须显式启用，否则 `use ...::ReleaseCapture` 报 E0432 unresolved import。
+windows-sys = { version = "0.52.0", optional = true, features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+] }
+
+[features]
+default = ["web"]
+# 发布构建启用：API 基址为空字符串，请求走同源 `/v1/*`，由 Nginx 反代到后端（见 docker/nginx-web.conf）。
+same-origin-api = []
+web = [
+    "dioxus/launch",
+    "dioxus/devtools",
+    "dioxus/logger",
+    "dioxus/lib",
+    "dioxus/web",
+    "dep:dioxus-primitives",
+]
+native = [
+    "dioxus/launch",
+    "dioxus/desktop",
+    "dioxus/macro",
+    "dioxus/html",
+    "dioxus/signals",
+    "dioxus/hooks",
+    "dioxus/document",
+    "dioxus/asset",
+    "dep:objc2",
+    "dep:objc2-app-kit",
+    "dep:objc2-quartz-core",
+    "dep:windows-sys",
+    "dep:shared",
+    "dep:tokio",
+    "dep:reqwest",
+    "dep:webbrowser",
+    "dep:dirs",
+    "dep:once_cell",
+    "dep:portable-pty",
+    "dep:rfd",
+    "dep:serde",
+    "dep:serde_json",
+]
+mobile = [
+    "dioxus/launch",
+    "dioxus/devtools",
+    "dioxus/logger",
+    "dioxus/lib",
+    "dioxus/mobile",
+]

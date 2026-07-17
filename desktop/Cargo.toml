@@ -1,0 +1,41 @@
+[package]
+name = "desktop"
+version = "0.1.0"
+edition = "2021"
+description = "Desktop entry (Dioxus desktop / system WebView)"
+
+[dependencies]
+image = "0.25"
+dioxus = { version = "0.7.9", default-features = false, features = [
+    "launch",
+    "devtools",
+    "logger",
+    "lib",
+    "desktop",
+    "macro",
+    "html",
+    "signals",
+    "hooks",
+    "document",
+    "asset",
+] }
+ui = { path = "../ui", default-features = false, features = ["native"] }
+
+# 开发态 Dock 图标：裸 `cargo run` / `just desktop` 无 .app 包时，需 AppKit 设置。
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.3"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSData"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = [
+    "NSApplication",
+    "NSImage",
+    "NSDockTile",
+    "NSView",
+    "NSResponder",
+    "NSControl",
+    "NSImageView",
+    "NSCell",
+] }
+
+[[bin]]
+name = "desktop"
+path = "src/main.rs"

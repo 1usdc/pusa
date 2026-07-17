@@ -1,0 +1,46 @@
+# —— 密钥 / 本地环境（模板可入库：docker/.env.example）——
+.env
+.env.*
+!.env.example
+!docker/.env.example
+.env.signing
+
+# —— 运行时数据（含 SQLite / 日志，勿开源）——
+/data/
+
+# —— 构建产物 ——
+/target/
+**/target/
+/dist/
+desktop/dist/
+
+# —— 闭源核心源码（仅本机保留；对外用 vendor 预编译库）——
+/pusa-core/
+
+# —— vendor：忽略二进制，保留说明（预编译库用 Release / 私有渠道分发）——
+/vendor/pusa-core/**
+!/vendor/pusa-core/README.md
+
+# —— 应用市场本地下载（只保留 README）——
+/applications/*
+!/applications/README.md
+
+# —— 编辑器 / 系统杂项 ——
+.DS_Store
+**/.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# —— Python / 脚本缓存 ——
+**/__pycache__/
+*.py[cod]
+
+# —— 技能运行态（若落在 skills 下）——
+skills/**/tmp/
+skills/**/*state*.json
+skills/**/.strategy_state/
+
+# —— rustfmt 备份 ——
+**/*.rs.bk

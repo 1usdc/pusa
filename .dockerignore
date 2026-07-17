@@ -1,0 +1,6 @@
+.git
+.env
+data
+**/node_modules
+target/debug
+**/target/debug

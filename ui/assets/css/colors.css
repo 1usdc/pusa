@@ -1,0 +1,133 @@
+/*
+ * Centralized color tokens for the UI and checked-in browser defaults.
+ * Keep raw color literals in this file; other CSS should reference these tokens.
+ */
+
+:root {
+    /* Native shell */
+    --ac-native-dot-close: #ff5f57;
+    --ac-native-dot-min: #febc2e;
+    --ac-native-dot-zoom: #28c840;
+    --ac-native-dot-glyph: #3723148c;
+
+    /* Brand and app surfaces */
+    --brand: #181c23;
+    --brand-light: #1f2937;
+    --line: #94a3b842;
+    --button-primary: #000000;
+    --button-primary-light: #1a1a1a;
+    --button-secondary: #e3eaf6;
+    /* 用户聊天气泡底 */
+    --ac-chat-bubble-user-bg: #e3eaf6;
+    --text-primary: #2a2f37;
+    --text-secondary: #64758b;
+    --text-tertiary: #94a3b8;
+    --text-input: #b7c2d5;
+    --border-color: #b7c2d5;
+    --border-color-light: #e3eaf6;
+    --border-color-hover: #808997;
+    --border-color-dark: #2a2f37;
+    --shadow-color: #0f172a14;
+    /* 已学习技能操作条 */
+    --study-button: #cfe9dc;
+    --remote-button: #f0dede;
+    /* 浅淡蓝圆形控件（搜索 / 发送空态上箭头；图标为白） */
+    --search-button: #C8D3E8;
+    --search-button-hover: #B8C5DD;
+
+    /* Dioxus component theme */
+    --primary-color: #ffffff;
+    --primary-color-1: #f8fafc;
+    --primary-color-2: #e2e8f0;
+    --primary-color-3: #e3eaf6;
+    --primary-color-4: #b7c2d5;
+    --primary-color-5: #94a3b8;
+    --secondary-color-1: #2a2f37;
+    --secondary-color-2: #181c23;
+    --secondary-color-3: #64758b;
+    --secondary-color-4: #2a2f37;
+    --secondary-color-5: #b7c2d5;
+    --contrast-color: #000;
+    --primary-error-color-light: #dc2626;
+    --secondary-error-color-light: #ef4444;
+    --primary-error-color: #a22e2e #dc2626;
+    --secondary-error-color: #9b1c1c #ef4444;
+    --contrast-error-color: #e1effa #000;
+
+    /* Raw palette */
+    --ac-color-e2e8f0: #e2e8f0;
+    --ac-color-50140fa6: #50140fa6;
+    --ac-color-991b1b: #991b1b;
+    --ac-color-f87171: #f87171;
+    --ac-color-fecaca: #fecaca;
+    --ac-color-342203: #342203;
+    --ac-color-92400e: #92400e;
+    --ac-color-f97316: #f97316;
+    --ac-color-f59e0b: #f59e0b;
+    --ac-color-fde68a: #fde68a;
+    --ac-color-fffbeb: #fffbeb;
+    --ac-color-02271c: #02271c;
+    --ac-color-047857: #047857;
+    --ac-color-22c55e: #22c55e;
+    --ac-color-bbf7d0: #bbf7d0;
+    --ac-color-14b8a614: #14b8a614;
+    --ac-color-0891b2: #0891b2;
+    --ac-color-ecfeff: #ecfeff;
+    --ac-color-2563eb: #2563eb;
+    --ac-color-2b7fff: #2b7fff;
+    --ac-color-4285f42e: #4285f42e;
+    --ac-color-93c5fd: #93c5fd;
+    --ac-color-93c5fd99: #93c5fd99;
+    --ac-color-eff6ff: #eff6ff;
+    --ac-color-312e81: #312e81;
+    /* 技能库：环境渐变 + 玻璃面板 */
+    --skills-ambient-top: #edf1f8;
+    --skills-ambient-mid: #e8ecf4;
+    --skills-ambient-bottom: #f5f7fb;
+    --skills-glass-fill: rgb(255 255 255 / 0.58);
+    --skills-glass-fill-strong: rgb(255 255 255 / 0.72);
+    --skills-glass-stroke: rgb(255 255 255 / 0.62);
+    --skills-glass-inner: rgb(255 255 255 / 0.45);
+
+    /* 实盘资产「刷新余额」胶囊（白底细描边，见设计稿图2） */
+    --ac-refresh-pill-bg: #ffffff;
+    --ac-refresh-pill-border: #c9cfdb;
+    --ac-refresh-pill-text: #5c6370;
+    --ac-refresh-pill-hover-bg: #fafbfd;
+    --ac-refresh-pill-hover-border: #a8b2c4;
+    --ac-refresh-pill-hover-text: #3d4552;
+
+    /* 聊天输入栏工具条胶囊（+ / 模型 / 附件）：白 → 浅蓝灰渐变表面 */
+    --ac-chat-toolbar-pill-bg: linear-gradient(180deg, #ffffff 0%, #e3eaf6 100%);
+    --ac-chat-toolbar-pill-border: #d1d9e6;
+    --ac-chat-toolbar-pill-shadow: 0 2px 6px #0f172a0f;
+
+    /* 执行看板 · Agent 策略流水（成功 / 失败：表面、描边、时间线圆点） */
+    --ac-agent-run-success-surface: #f2faf6;
+    --ac-agent-run-success-edge: #bfe5d4;
+    --ac-agent-run-success-dot: #4ade80;
+    --ac-agent-run-success-dot-glow: rgb(74 222 128 / 0.26);
+
+    --ac-agent-run-fail-surface: #fff8f5;
+    --ac-agent-run-fail-edge: #f2cbb8;
+    --ac-agent-run-fail-dot: #fb923c;
+    --ac-agent-run-fail-dot-glow: rgb(251 146 60 / 0.24);
+
+    /** 侧栏当前选中角色卡表面 */
+    --ac-agent-card-active-surface:
+        radial-gradient(95% 85% at 0% 0%,
+            color-mix(in srgb, var(--ac-color-93c5fd) 28%, transparent) 0%,
+            transparent 58%),
+        linear-gradient(152deg,
+            var(--ac-color-eff6ff) 0%,
+            color-mix(in srgb, var(--primary-color-3) 55%, var(--primary-color)) 68%,
+            var(--primary-color) 88%);
+
+    /* 领悟技能列表 · 选中行 / 装备·删除图标（低饱和） */
+    --skills-list-selected-bg: #eef2f7;
+    --skills-list-action-equip: #6b7a8f;
+    --skills-list-action-equip-on: #5a6a80;
+    --skills-list-action-equip-on-bg: #e8edf5;
+    --skills-list-action-equip-on-border: #c5cedc;
+    --skills-list-action-delete: #9f7272;
+}

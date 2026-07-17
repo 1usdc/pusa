@@ -1,0 +1,55 @@
+[application]
+name = "Pusa AI Console"
+default_platform = "desktop"
+out_dir = "dist"
+
+[bundle]
+identifier = "ai.pusa.console"
+short_description = "Pusa AI Console"
+long_description = "Pusa desktop application"
+publisher = "Pusa"
+# bundle icon 三件套（路径相对 default_platform = "desktop" 的 crate root，即 desktop/）：
+#   - macOS .app Dock / Finder 用 .icns
+#   - Windows .msi/.exe 用 .ico（多尺寸打包）
+#   - Linux .deb/.AppImage 用 32-bit RGBA 256x256 PNG
+# dx 0.7 (tauri-bundler) 强制要求 PNG 为方形且 16/24/32/64/256 尺寸，所以这里只挂 256 一张。
+# 源图：desktop/assets/Pusa.png（满铺原画，勿直接给 Dock）。
+# 派生 master：desktop/assets/app-icon.png（透明边距 + squircle）→ .icns / .ico / Pusa-256.png。
+icon = [
+    "assets/Pusa.icns",
+    "assets/Pusa.ico",
+    "assets/Pusa-256.png",
+]
+
+[bundle.macos]
+# dx bundle 默认用 binary 名 Desktop；显式指定 .app 显示名与 DMG 卷名。
+bundle_name = "Pusa AI Console"
+# 未做 Apple 开发者签名的 CI 产物可 ad-hoc 签名；Developer ID + 公证见 scripts/macos-sign-notarize.sh
+hardened_runtime = true
+entitlements = "entitlements.plist"
+
+[bundle.windows]
+# Windows 安装器/exe 图标必须是 .ico；之前指向 .png 是不合法的（dx bundle 严格模式会报错）。
+icon_path = "assets/Pusa.ico"
+
+# WebView2 安装策略：
+#   不显式写 → dx 0.7 doc 说 default 是 OfflineInstaller，但历史 issue #1321
+#   显示 dx 把这条 config 没正确传给 tauri-bundler，实际 NSIS 仍走 DownloadBootstrapper
+#   （每次安装都联网拉 ~130MB 的 WebView2 runtime）。这里显式写 OfflineInstaller，
+#   让 setup.exe 内嵌完整 WebView2 runtime，安装时不联网。setup.exe 会胖约 100MB
+#   （从 ~100MB → ~200MB），但只在首装时多花一次磁盘空间，永不需要在线下载。
+#   silent = true：装 WebView2 时不弹自带 GUI，整体安装更顺。
+[bundle.windows.webview_install_mode.OfflineInstaller]
+silent = true
+
+[desktop]
+
+[web.app]
+title = "Pusa AI Console"
+
+[web.resource]
+style = []
+script = []
+
+[web.resource.dev]
+script = []

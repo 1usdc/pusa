@@ -1,0 +1,45 @@
+# 运行时布局：在容器内 `cargo build` 时 `CARGO_MANIFEST_DIR` 为 `/work/pusa-core`，
+# `download_root()` 解析为 `/work/skills`。
+#
+# Node 24 + Python 3（pip）+ uv，供 Agent `exec_bash` 与 SKILL.md 按需装依赖。
+FROM node:24-bookworm-slim
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# 用阿里云镜像替换 Debian 默认源：避免本机 Clash/Mihomo fake-ip 段（198.18.0.0/15）
+# 拦截 deb.debian.org 导致 apt-get update 502。
+# node:24-bookworm-slim 用 DEB822 新格式（/etc/apt/sources.list.d/debian.sources），
+# 同时兜底处理老格式 /etc/apt/sources.list，便于未来基础镜像变化。
+RUN --mount=type=cache,id=anotherclaw-apt-cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=anotherclaw-apt-lists,target=/var/lib/apt/lists,sharing=locked \
+    set -eux; \
+    if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+    sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g; s|http://security.debian.org|http://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources; \
+    fi; \
+    if [ -f /etc/apt/sources.list ]; then \
+    sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g; s|http://security.debian.org|http://mirrors.aliyun.com|g' /etc/apt/sources.list; \
+    fi; \
+    apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    ca-certificates \
+    python3 \
+    python3-pip \
+    && ln -sf /usr/bin/pip3 /usr/local/bin/pip \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /work
+COPY target/release/server /work/server
+COPY skills /work/skills
+COPY .version /work/.version
+RUN mkdir -p /work/data && chmod +x /work/server
+
+ENV BIND_ADDR=0.0.0.0:8787
+ENV DATABASE_PATH=/work/data/server.db
+ENV VERSION_FILE=/work/.version
+EXPOSE 8787
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
+    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/health', timeout=4)" || exit 1
+
+CMD ["/work/server"]

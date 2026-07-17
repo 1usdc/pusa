@@ -1,0 +1,13 @@
+[package]
+name = "strategy-frequency-infer"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "strategy_frequency_infer"
+path = "strategy_frequency_infer.rs"
+
+[dependencies]
+shared = { path = "../shared" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

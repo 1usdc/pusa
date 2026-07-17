@@ -1,0 +1,23 @@
+[package]
+name = "web"
+version = "0.1.0"
+edition = "2021"
+description = "WASM / browser entry for Pusa UI"
+
+[dependencies]
+dioxus = { version = "0.7.9", default-features = false, features = [
+    "launch",
+    "devtools",
+    "logger",
+    "lib",
+    "web",
+] }
+ui = { path = "../ui", default-features = false, features = ["web"] }
+
+[features]
+default = []
+same-origin-api = ["ui/same-origin-api"]
+
+[[bin]]
+name = "web"
+path = "src/main.rs"
