@@ -12,7 +12,7 @@ Pusa 是一套基于 **Rust + Dioxus 0.7** 的 Agent 控制台，同时提供：
 | Desktop | `desktop` | 系统 WebView / wry 桌面端 |
 | API | `server` | Axum HTTP + SSE，供 Web 调用 |
 | 共享运行时 façade | `shared` | 开源薄封装，动态加载 `libpusa_core` |
-| 闭源核心 | `pusa-core`（gitignore） | cdylib 实现；产物在 `vendor/pusa-core/` |
+| 闭源核心 | `pusa-core`（gitignore） | cdylib **源码**不入库；预编译库在 `vendor/pusa-core/`（开源） |
 | 协议 | `protocol` | 前后端共用的 DTO / SSE 类型 |
 | UI | `ui` | Dioxus 界面（Web / Desktop 共用） |
 
@@ -49,7 +49,7 @@ pusa/
 ├── protocol/          # 共享 JSON/SSE 类型
 ├── shared/            # 开源 façade（JSON-RPC → cdylib）
 ├── pusa-core/         # 闭源源码（gitignore）；打包为 libpusa_core
-├── vendor/pusa-core/  # 预编译 cdylib（按 target triple）
+├── vendor/pusa-core/  # 预编译 cdylib（开源；按 target triple）
 ├── ui/                # Dioxus UI（壳层 + 聊天 + 桌面/Web 适配）
 ├── web/               # Web 入口
 ├── desktop/           # 桌面入口与资源
@@ -224,6 +224,7 @@ UI (chat facade)
 | `just server` | 启动 API（`scripts/server.sh`） |
 | `just desktop` | 桌面热重载（`scripts/desktop.sh`） |
 | `just desktop-mac` | 本机 macOS 打包 + 签名公证（`scripts/desktop-mac.sh`） |
+| `just desktop-mac-release` | 本机 DMG 上传 GitHub Release（`scripts/desktop-mac-release.sh`） |
 | `just desktop-ship` | 打 tag / 触发打包流水线 |
 | `just db-clear` | 清空 `data/` |
 | `just push` | 仅推送远端 |

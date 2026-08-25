@@ -1,6 +1,6 @@
 # vendor/pusa-core
 
-Closed-source `libpusa_core` cdylib，按 rustc target triple 分目录。
+闭源 `pusa-core` 源码打出的 **`libpusa_core` cdylib**，按 rustc target triple 分目录，**随开源仓一起发布**。
 
 ```sh
 just pusa-core
