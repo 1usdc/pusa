@@ -110,6 +110,24 @@ impl RuntimeContext {
             .await
     }
 
+    pub async fn llm_credential_upsert(
+        &self,
+        body: protocol::LlmCredentialUpsertBody,
+    ) -> Result<protocol::LlmConfigDto> {
+        self.call_json_async("llm_credential_upsert", json!({ "body": body }))
+            .await
+    }
+
+    pub async fn llm_credential_delete(&self, id: &str) -> Result<protocol::LlmConfigDto> {
+        self.call_json_async("llm_credential_delete", json!({ "id": id }))
+            .await
+    }
+
+    pub async fn llm_credential_activate(&self, id: &str) -> Result<protocol::LlmConfigDto> {
+        self.call_json_async("llm_credential_activate", json!({ "id": id }))
+            .await
+    }
+
     pub async fn persona_get(&self) -> Result<String> {
         self.call_json_async("persona_get", ffi::args_empty()).await
     }

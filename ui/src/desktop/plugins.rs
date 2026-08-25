@@ -1,4 +1,4 @@
-//! 应用市场：我的应用、官方搜索（含 GitHub）、AI 搜索，克隆到工作区 `application/`。
+//! 应用市场：我的应用、官方搜索（含 GitHub）、AI 搜索，克隆到工作区 `applications/`。
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -83,21 +83,26 @@ struct OfficialCatalogEntry {
 
 /// 解析「应用库」目录（容纳各已安装应用的父目录）。
 ///
-/// - 工作区本身是 `…/application/{app}`：返回上一级 `application/`（打开单个应用后仍能列出兄弟应用）
-/// - 工作区本身叫 `application`：直接返回它
-/// - 工作区下存在 `application/`：返回该目录
-/// - 向上查找祖先中的 `application/`
-/// - 否则回退为 `工作区/application`（后续 `ensure` 会创建）
+/// - 工作区本身是 `…/applications/{app}`：返回上一级 `applications/`（打开单个应用后仍能列出兄弟应用）
+/// - 工作区本身叫 `applications`（或旧名 `application`）：直接返回它
+/// - 工作区下存在 `applications/`（或旧名 `application/`）：返回该目录
+/// - 否则回退为 `工作区/applications`（后续 `ensure` 会创建）
+///
+/// 注意：不向上穿越到文件系统根去找 `applications/`，避免在 macOS 上误命中系统 `/Applications`。
 pub fn application_root() -> PathBuf {
     let ws = workspace_root();
     resolve_application_root(&ws)
+}
+
+fn is_applications_dirname(name: &str) -> bool {
+    name.eq_ignore_ascii_case("applications") || name.eq_ignore_ascii_case("application")
 }
 
 fn resolve_application_root(ws: &Path) -> PathBuf {
     if ws
         .file_name()
         .and_then(|s| s.to_str())
-        .is_some_and(|n| n.eq_ignore_ascii_case("application"))
+        .is_some_and(is_applications_dirname)
     {
         return ws.to_path_buf();
     }
@@ -105,40 +110,29 @@ fn resolve_application_root(ws: &Path) -> PathBuf {
         if parent
             .file_name()
             .and_then(|s| s.to_str())
-            .is_some_and(|n| n.eq_ignore_ascii_case("application"))
+            .is_some_and(is_applications_dirname)
         {
             return parent.to_path_buf();
         }
     }
-    let nested = ws.join("application");
+    let nested = ws.join("applications");
     if nested.is_dir() {
         return nested;
     }
-    let mut cur = ws;
-    while let Some(parent) = cur.parent() {
-        if parent
-            .file_name()
-            .and_then(|s| s.to_str())
-            .is_some_and(|n| n.eq_ignore_ascii_case("application"))
-        {
-            return parent.to_path_buf();
-        }
-        let candidate = parent.join("application");
-        if candidate.is_dir() {
-            return candidate;
-        }
-        cur = parent;
+    let legacy = ws.join("application");
+    if legacy.is_dir() {
+        return legacy;
     }
     nested
 }
 
 pub fn ensure_application_root() -> Result<PathBuf, String> {
     let root = application_root();
-    fs::create_dir_all(&root).map_err(|e| format!("无法创建 application 目录：{e}"))?;
+    fs::create_dir_all(&root).map_err(|e| format!("无法创建 applications 目录：{e}"))?;
     Ok(root)
 }
 
-/// 扫描 `application/` 下已安装的子目录名。
+/// 扫描 `applications/` 下已安装的子目录名。
 pub fn list_installed_ids() -> Vec<String> {
     let root = application_root();
     let Ok(entries) = fs::read_dir(&root) else {
@@ -182,7 +176,7 @@ fn read_install_meta(dir: &Path) -> Option<InstallMeta> {
     serde_json::from_str(&raw).ok()
 }
 
-/// 扫描 `application/` 下已安装应用，优先读取 `.pusa-plugin.json`。
+/// 扫描 `applications/` 下已安装应用，优先读取 `.pusa-plugin.json`。
 pub fn list_installed_plugins() -> Vec<PluginItem> {
     let root = application_root();
     let Ok(entries) = fs::read_dir(&root) else {
@@ -210,7 +204,7 @@ pub fn list_installed_plugins() -> Vec<PluginItem> {
                 m.name
             };
             let description = if m.description.trim().is_empty() {
-                format!("application/{dirname}/")
+                format!("applications/{dirname}/")
             } else {
                 m.description
             };
@@ -229,7 +223,7 @@ pub fn list_installed_plugins() -> Vec<PluginItem> {
         } else {
             (
                 dirname.to_string(),
-                format!("application/{dirname}/"),
+                format!("applications/{dirname}/"),
                 PluginSource::Local,
                 String::new(),
                 String::new(),
@@ -308,7 +302,7 @@ pub fn open_installed_plugin(id: &str) -> Result<(), String> {
     }
 }
 
-/// 卸载 `application/{id}`（删除目录）。
+/// 卸载 `applications/{id}`（删除目录）。
 pub fn uninstall_plugin(id: &str) -> Result<(), String> {
     let id = validate_plugin_id(id)?;
     let root = application_root();
@@ -318,12 +312,12 @@ pub fn uninstall_plugin(id: &str) -> Result<(), String> {
     }
     let canonical_root = root
         .canonicalize()
-        .map_err(|e| format!("无法解析 application 目录：{e}"))?;
+        .map_err(|e| format!("无法解析 applications 目录：{e}"))?;
     let canonical_target = target
         .canonicalize()
         .map_err(|e| format!("无法解析插件目录：{e}"))?;
     if !canonical_target.starts_with(&canonical_root) || canonical_target == canonical_root {
-        return Err("拒绝卸载：路径不在 application/ 下".into());
+        return Err("拒绝卸载：路径不在 applications/ 下".into());
     }
     fs::remove_dir_all(&canonical_target).map_err(|e| format!("卸载失败：{e}"))
 }
@@ -654,7 +648,7 @@ pub async fn search_apps_with_ai(query: &str, model: &str) -> Result<Vec<PluginI
     Ok(items)
 }
 
-/// `git clone --depth 1` 到 `application/{id}`。
+/// `git clone --depth 1` 到 `applications/{id}`。
 pub fn install_plugin(item: &PluginItem) -> Result<PathBuf, String> {
     let root = ensure_application_root()?;
     let target = root.join(&item.id);
@@ -743,7 +737,7 @@ fn sanitize_local_app_name(raw: &str) -> String {
     }
 }
 
-/// 在工作区 `application/{id}/` 脚手架本地应用（README + `.pusa-plugin.json`）。
+/// 在工作区 `applications/{id}/` 脚手架本地应用（README + `.pusa-plugin.json`）。
 pub fn scaffold_local_application(display_name: &str) -> Result<PathBuf, String> {
     let name = display_name.trim();
     let name = if name.is_empty() { "my-app" } else { name };
@@ -756,7 +750,7 @@ pub fn scaffold_local_application(display_name: &str) -> Result<PathBuf, String>
     fs::create_dir_all(&target).map_err(|e| format!("创建应用目录失败：{e}"))?;
 
     let readme = format!(
-        "# {name}\n\n本地脚手架应用，位于工作区 `application/{id}/`。\n\n包格式与加载逻辑见仓库 `application/README.md`。\n"
+        "# {name}\n\n本地脚手架应用，位于工作区 `applications/{id}/`。\n\n包格式与加载逻辑见仓库 `applications/README.md`。\n"
     );
     fs::write(target.join("README.md"), readme).map_err(|e| format!("写入 README 失败：{e}"))?;
 
@@ -766,7 +760,7 @@ pub fn scaffold_local_application(display_name: &str) -> Result<PathBuf, String>
         source: "local".into(),
         git_url: String::new(),
         homepage: String::new(),
-        description: format!("本地脚手架应用，位于工作区 application/{id}/"),
+        description: format!("本地脚手架应用，位于工作区 applications/{id}/"),
     };
     let meta_path = target.join(".pusa-plugin.json");
     let raw = serde_json::to_string_pretty(&meta).map_err(|e| e.to_string())?;
@@ -778,15 +772,16 @@ pub fn scaffold_local_application(display_name: &str) -> Result<PathBuf, String>
 }
 
 const SMART_UI_FILENAME: &str = ".pusa-smart-ui.json";
-const SMART_UI_SCAN_BUDGET: usize = 14_000;
+const SMART_UI_SCAN_BUDGET: usize = 18_000;
 
-fn plugin_dir(id: &str) -> Result<PathBuf, String> {
+/// 已安装应用目录（绝对路径优先）。
+pub fn plugin_dir(id: &str) -> Result<PathBuf, String> {
     let id = validate_plugin_id(id)?;
     let path = application_root().join(&id);
     if !path.is_dir() {
         return Err(format!("未找到已安装目录：{}", path.display()));
     }
-    Ok(path)
+    Ok(path.canonicalize().unwrap_or(path))
 }
 
 fn smart_ui_path(dir: &Path) -> PathBuf {
@@ -802,7 +797,12 @@ pub fn load_smart_ui(id: &str) -> Result<Option<protocol::PluginSmartUiDto>, Str
     }
     let raw = fs::read_to_string(&path).map_err(|e| format!("读取智能 UI 失败：{e}"))?;
     match serde_json::from_str::<protocol::PluginSmartUiDto>(&raw) {
-        Ok(dto) if !dto.actions.is_empty() => Ok(Some(dto)),
+        Ok(dto) if !dto.actions.is_empty() => {
+            let fixed = apply_package_manager_fixes(&dir, dto);
+            // 静默写回纠正后的命令，避免每次仍显示 yarn。
+            let _ = save_smart_ui(&dir, &fixed);
+            Ok(Some(fixed))
+        }
         // 损坏或空缓存：当作未缓存，触发重新生成。
         Ok(_) | Err(_) => Ok(None),
     }
@@ -821,7 +821,7 @@ pub fn list_ids_missing_smart_ui() -> Vec<String> {
         .collect()
 }
 
-/// 有缓存则读取，否则扫描项目并用 LLM 生成后写入 `application/{id}/.pusa-smart-ui.json`。
+/// 有缓存则读取，否则扫描项目并用 LLM 生成后写入 `applications/{id}/.pusa-smart-ui.json`。
 pub async fn ensure_smart_ui(
     id: &str,
     model: &str,
@@ -933,10 +933,125 @@ fn append_scripts_dir(out: &mut String, root: &Path) {
     }
 }
 
+/// 根据锁文件 / workspace 清单推断 JS 包管理器（优先级：pnpm > yarn > npm > bun）。
+fn detect_js_package_manager(root: &Path) -> Option<&'static str> {
+    let has = |name: &str| root.join(name).is_file();
+    let has_dir_file = |name: &str| root.join(name).exists();
+    if has("pnpm-lock.yaml") || has_dir_file("pnpm-workspace.yaml") {
+        return Some("pnpm");
+    }
+    if has("bun.lockb") || has("bun.lock") {
+        return Some("bun");
+    }
+    // package.json 的 packageManager 字段优先于裸 yarn.lock（避免 yarn1 误装 berry/pnpm 项目）。
+    if let Ok(raw) = fs::read_to_string(root.join("package.json")) {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) {
+            if let Some(pm) = v.get("packageManager").and_then(|x| x.as_str()) {
+                let pm = pm.to_ascii_lowercase();
+                if pm.starts_with("pnpm@") {
+                    return Some("pnpm");
+                }
+                if pm.starts_with("yarn@") {
+                    return Some("yarn");
+                }
+                if pm.starts_with("npm@") {
+                    return Some("npm");
+                }
+                if pm.starts_with("bun@") {
+                    return Some("bun");
+                }
+            }
+        }
+    }
+    if has("yarn.lock") {
+        return Some("yarn");
+    }
+    if has("package-lock.json") {
+        return Some("npm");
+    }
+    if root.join("package.json").is_file() {
+        return Some("npm");
+    }
+    None
+}
+
+fn append_package_manager_hint(out: &mut String, root: &Path) {
+    let Some(pm) = detect_js_package_manager(root) else {
+        return;
+    };
+    out.push_str("\n### 包管理器提示（辅助，若与 README 冲突以 README 为准）\n");
+    out.push_str(&format!("锁文件推断：{pm}\n"));
+    match pm {
+        "pnpm" => {
+            out.push_str(
+                "- 若 README「本地开发」写的是 pnpm，安装用 pnpm install\n\
+                 - 不要仅因存在 yarn.lock 残留就改用 yarn\n",
+            );
+        }
+        "yarn" => {
+            out.push_str("- 若 README 未另有说明，本地开发可用 yarn install\n");
+        }
+        "bun" => {
+            out.push_str("- 若 README 未另有说明，本地开发可用 bun install\n");
+        }
+        _ => {
+            out.push_str("- 若 README 未另有说明，本地开发可用 npm install\n");
+        }
+    }
+    out.push_str("- 锁文件/工作区清单：");
+    let mut flags = Vec::new();
+    for name in [
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "yarn.lock",
+        "package-lock.json",
+        "bun.lockb",
+        "bun.lock",
+    ] {
+        if root.join(name).exists() {
+            flags.push(name);
+        }
+    }
+    if flags.is_empty() {
+        out.push_str("（无）\n");
+    } else {
+        out.push_str(&format!("{}\n", flags.join(", ")));
+    }
+}
+
+/// 去掉模型常包的多余 `sh -c '…'` / `bash -c "…"` 外壳（终端已在交互 shell 中执行）。
+pub fn unwrap_shell_c_command(command: &str) -> String {
+    let t = command.trim();
+    for (prefix, quote) in [
+        ("sh -c ", '\''),
+        ("bash -c ", '\''),
+        ("sh -c ", '"'),
+        ("bash -c ", '"'),
+    ] {
+        if let Some(rest) = t.strip_prefix(prefix) {
+            let rest = rest.trim();
+            if rest.len() >= 2
+                && rest.starts_with(quote)
+                && rest.ends_with(quote)
+            {
+                return rest[1..rest.len() - 1].to_string();
+            }
+        }
+    }
+    t.to_string()
+}
+
 /// 扫描插件目录关键清单，拼成 LLM 上下文。
+///
+/// **主依据是 README.md**（安装 / 开发 / 启动命令以文档为准）；
+/// package.json、锁文件等仅作补充，避免模型只看 workspaces 误判包管理器。
 pub fn scan_plugin_project_context(id: &str) -> Result<String, String> {
     let dir = plugin_dir(id)?;
-    let mut out = format!("项目目录：application/{id}/\n");
+    let mut out = format!("项目目录：applications/{id}/\n");
+    out.push_str(
+        "生成规则：以 README 中的安装与开发说明为主提取按钮命令；\
+         其它清单文件仅在 README 未写清时作补充。\n",
+    );
 
     if let Ok(entries) = fs::read_dir(&dir) {
         let mut names = Vec::new();
@@ -957,11 +1072,27 @@ pub fn scan_plugin_project_context(id: &str) -> Result<String, String> {
         }
     }
 
+    // —— 主依据：README（尽量给足篇幅）——
+    out.push_str("\n## 【主依据】README（优先采用其中的安装/开发/启动命令）\n");
+    let mut readme_ok = false;
+    for rel in ["README.md", "README", "readme.md", "docs/README.md"] {
+        let before = out.len();
+        append_scan_file(&mut out, &dir, rel, 10_000);
+        if out.len() > before {
+            readme_ok = true;
+            break;
+        }
+    }
+    if !readme_ok {
+        out.push_str("（未找到 README，将回退到辅助清单推断。）\n");
+    }
+
+    // —— 辅助：清单 / 锁文件 / 脚本（README 未覆盖时再用）——
+    out.push_str("\n## 【辅助】清单与锁文件（仅补充 README 未写明的细节）\n");
+    append_package_manager_hint(&mut out, &dir);
     for rel in [
-        "README.md",
-        "README",
-        "readme.md",
         "package.json",
+        "pnpm-workspace.yaml",
         "Cargo.toml",
         "Makefile",
         "makefile",
@@ -969,7 +1100,6 @@ pub fn scan_plugin_project_context(id: &str) -> Result<String, String> {
         "Justfile",
         "pyproject.toml",
         "requirements.txt",
-        "setup.py",
         "go.mod",
         "composer.json",
         "Gemfile",
@@ -977,7 +1107,7 @@ pub fn scan_plugin_project_context(id: &str) -> Result<String, String> {
         "docker-compose.yml",
         "docker-compose.yaml",
     ] {
-        append_scan_file(&mut out, &dir, rel, 3_500);
+        append_scan_file(&mut out, &dir, rel, 2_000);
     }
     append_scripts_dir(&mut out, &dir);
 
@@ -990,7 +1120,7 @@ pub fn scan_plugin_project_context(id: &str) -> Result<String, String> {
         "index.js",
         "index.ts",
     ] {
-        append_scan_file(&mut out, &dir, rel, 600);
+        append_scan_file(&mut out, &dir, rel, 400);
     }
 
     if out.len() < 80 {
@@ -1025,6 +1155,7 @@ pub async fn generate_smart_ui(
                 .unwrap_or(0),
         );
     }
+    dto = apply_package_manager_fixes(&dir, dto);
     save_smart_ui(&dir, &dto)?;
     // 回读确认缓存落盘，避免「界面有内容、磁盘无文件」。
     if !smart_ui_path(&dir).is_file() {
@@ -1033,87 +1164,85 @@ pub async fn generate_smart_ui(
     Ok(dto)
 }
 
-/// 在插件根目录执行智能 UI 动作命令。
-pub fn run_smart_ui_command(id: &str, command: &str, detached: bool) -> Result<String, String> {
-    let command = command.trim();
-    if command.is_empty() {
-        return Err("命令为空".into());
+/// 若能检测包管理器，把误用的「裸装依赖」命令改成正确工具。
+/// 不改写带参数的命令（如 `npm install -g pkg`），以免覆盖 README 原意。
+fn rewrite_install_command_for_pm(command: &str, pm: &str) -> Option<String> {
+    let t = command.trim();
+    let lower = t.to_ascii_lowercase();
+    let is_bare_install = matches!(
+        lower.as_str(),
+        "yarn"
+            | "yarn install"
+            | "npm install"
+            | "npm i"
+            | "pnpm install"
+            | "pnpm i"
+            | "bun install"
+            | "bun i"
+    );
+    if !is_bare_install {
+        return None;
     }
-    let dir = plugin_dir(id)?;
-    let canonical = dir
-        .canonicalize()
-        .map_err(|e| format!("无法解析插件目录：{e}"))?;
-    let app_root = application_root()
-        .canonicalize()
-        .map_err(|e| format!("无法解析 application 目录：{e}"))?;
-    if !canonical.starts_with(&app_root) {
-        return Err("拒绝执行：路径不在 application/ 下".into());
-    }
-
-    #[cfg(windows)]
-    let mut cmd = {
-        let mut c = Command::new("cmd");
-        c.args(["/C", command]);
-        c
-    };
-    #[cfg(not(windows))]
-    let mut cmd = {
-        let mut c = Command::new("sh");
-        c.args(["-c", command]);
-        c
-    };
-    cmd.current_dir(&canonical);
-
-    if detached {
-        cmd.stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null());
-        cmd.spawn().map_err(|e| format!("启动失败：{e}"))?;
-        return Ok(format!("已在后台启动：{command}"));
-    }
-
-    let output = cmd.output().map_err(|e| format!("执行失败：{e}"))?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let mut combined = String::new();
-    if !stdout.trim().is_empty() {
-        combined.push_str(stdout.trim());
-    }
-    if !stderr.trim().is_empty() {
-        if !combined.is_empty() {
-            combined.push('\n');
-        }
-        combined.push_str(stderr.trim());
-    }
-    let preview = truncate_cmd_output(&combined, 400);
-    if output.status.success() {
-        if preview.is_empty() {
-            Ok(format!("已完成：{command}"))
-        } else {
-            Ok(preview)
-        }
-    } else {
-        let code = output
-            .status
-            .code()
-            .map(|c| c.to_string())
-            .unwrap_or_else(|| "?".into());
-        Err(if preview.is_empty() {
-            format!("命令失败（exit {code}）：{command}")
-        } else {
-            format!("命令失败（exit {code}）：{preview}")
-        })
-    }
+    Some(match pm {
+        "pnpm" => "pnpm install".into(),
+        "yarn" => "yarn install".into(),
+        "bun" => "bun install".into(),
+        _ => "npm install".into(),
+    })
 }
 
-fn truncate_cmd_output(s: &str, max: usize) -> String {
-    let t = s.trim();
-    if t.chars().count() <= max {
-        t.to_string()
-    } else {
-        let kept: String = t.chars().take(max).collect();
-        format!("{kept}…")
+fn yarn_script_to_pnpm(rest: &str) -> String {
+    let rest = rest.trim();
+    if rest.is_empty() {
+        return "pnpm install".into();
     }
+    if rest.starts_with("workspace ") {
+        // yarn workspace <pkg> <cmd> → pnpm --filter <pkg> <cmd>
+        let mut parts = rest.split_whitespace();
+        let _ = parts.next(); // workspace
+        let pkg = parts.next().unwrap_or("");
+        let cmd: Vec<&str> = parts.collect();
+        if pkg.is_empty() {
+            return format!("pnpm {rest}");
+        }
+        if cmd.is_empty() {
+            return format!("pnpm --filter {pkg} run");
+        }
+        return format!("pnpm --filter {pkg} {}", cmd.join(" "));
+    }
+    // yarn <script> / yarn run <script>
+    let rest = rest.strip_prefix("run ").unwrap_or(rest);
+    format!("pnpm run {rest}")
+}
+
+fn apply_package_manager_fixes(
+    dir: &Path,
+    mut dto: protocol::PluginSmartUiDto,
+) -> protocol::PluginSmartUiDto {
+    let pm = detect_js_package_manager(dir);
+    for action in &mut dto.actions {
+        action.command = unwrap_shell_c_command(&action.command);
+        if let Some(pm) = pm {
+            if let Some(fixed) = rewrite_install_command_for_pm(&action.command, pm) {
+                action.command = fixed;
+            } else if pm == "pnpm" {
+                let cmd = action.command.trim();
+                if let Some(rest) = cmd.strip_prefix("yarn ") {
+                    action.command = yarn_script_to_pnpm(rest);
+                } else if cmd == "yarn" {
+                    action.command = "pnpm install".into();
+                }
+            }
+        }
+    }
+    if pm == Some("pnpm") {
+        dto.summary = dto
+            .summary
+            .replace("Yarn Workspace", "pnpm workspace")
+            .replace("Yarn workspace", "pnpm workspace")
+            .replace("yarn workspace", "pnpm workspace");
+    }
+    dto
 }
 
 #[cfg(test)]
@@ -1128,11 +1257,11 @@ mod tests {
             "pusa-app-root-test-{}",
             std::process::id()
         ));
-        let app_dir = base.join("application").join("MyApp");
+        let app_dir = base.join("applications").join("MyApp");
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&app_dir).unwrap();
         let got = resolve_application_root(&app_dir);
-        assert_eq!(got, base.join("application"));
+        assert_eq!(got, base.join("applications"));
         let _ = fs::remove_dir_all(&base);
     }
 
@@ -1142,7 +1271,7 @@ mod tests {
             "pusa-app-root-repo-{}",
             std::process::id()
         ));
-        let apps = base.join("application");
+        let apps = base.join("applications");
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&apps).unwrap();
         let got = resolve_application_root(&base);
@@ -1152,8 +1281,52 @@ mod tests {
 
     #[test]
     fn fallback_when_no_application_dir() {
-        let base = PathBuf::from("/tmp/pusa-no-apps-xyz-should-not-exist- quietly");
+        let base = PathBuf::from("/tmp/pusa-no-apps-xyz-should-not-exist");
         let got = resolve_application_root(&base);
-        assert_eq!(got, base.join("application"));
+        assert_eq!(got, base.join("applications"));
+    }
+
+    #[test]
+    fn prefers_legacy_application_dir_if_present() {
+        let base = std::env::temp_dir().join(format!(
+            "pusa-app-root-legacy-{}",
+            std::process::id()
+        ));
+        let legacy = base.join("application");
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&legacy).unwrap();
+        let got = resolve_application_root(&base);
+        assert_eq!(got, legacy);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn detects_pnpm_over_yarn_lock() {
+        let base = std::env::temp_dir().join(format!(
+            "pusa-pm-detect-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+        fs::write(base.join("pnpm-lock.yaml"), "lockfileVersion: '9.0'\n").unwrap();
+        fs::write(base.join("yarn.lock"), "# yarn\n").unwrap();
+        assert_eq!(super::detect_js_package_manager(&base), Some("pnpm"));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn unwraps_sh_c_and_rewrites_yarn_install_to_pnpm() {
+        assert_eq!(
+            super::unwrap_shell_c_command("sh -c 'yarn install'"),
+            "yarn install"
+        );
+        assert_eq!(
+            super::rewrite_install_command_for_pm("yarn install", "pnpm").as_deref(),
+            Some("pnpm install")
+        );
+        assert_eq!(
+            super::yarn_script_to_pnpm("dev"),
+            "pnpm run dev"
+        );
     }
 }

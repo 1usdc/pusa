@@ -34,6 +34,9 @@
     /* 浅淡蓝圆形控件（搜索 / 发送空态上箭头；图标为白） */
     --search-button: #C8D3E8;
     --search-button-hover: #B8C5DD;
+    /* 聊天发送钮可发送态：柔和灰蓝（非全局 --button-primary 纯黑） */
+    --ac-chat-send-ready: #6B7C94;
+    --ac-chat-send-ready-hover: #556478;
 
     /* Dioxus component theme */
     --primary-color: #ffffff;
@@ -102,6 +105,14 @@
     --ac-chat-toolbar-pill-border: #d1d9e6;
     --ac-chat-toolbar-pill-shadow: 0 2px 6px #0f172a0f;
 
+    /* 聊天附件 chip：文件柔和灰蓝 / 目录浅橙+橙字（实心底） */
+    --ac-chat-attach-file-bg: #EEF2F7;
+    --ac-chat-attach-file-border: #C5CEDC;
+    --ac-chat-attach-file-fg: #6B7C94;
+    --ac-chat-attach-dir-bg: #FFF3E6;
+    --ac-chat-attach-dir-border: #F5C89A;
+    --ac-chat-attach-dir-fg: #E06712;
+
     /* 执行看板 · Agent 策略流水（成功 / 失败：表面、描边、时间线圆点） */
     --ac-agent-run-success-surface: #f2faf6;
     --ac-agent-run-success-edge: #bfe5d4;
@@ -130,4 +141,168 @@
     --skills-list-action-equip-on-bg: #e8edf5;
     --skills-list-action-equip-on-border: #c5cedc;
     --skills-list-action-delete: #9f7272;
+
+    /* 文件编辑器语法高亮（浅色） */
+    --ac-syn-keyword: #7c3aed;
+    --ac-syn-string: #b45309;
+    --ac-syn-comment: #6b7280;
+    --ac-syn-number: #0d9488;
+    --ac-syn-func: #2563eb;
+    --ac-syn-type: #db2777;
+    --ac-syn-tag: #dc2626;
+    --ac-syn-punct: #64748b;
+
+    /* 聊天错误图标（浅色） */
+    --ac-chat-error-icon: #dc2626;
+}
+/* 暗色主题：磨砂黑表面，无彩色光斑；边框流沙见 main.css */
+html[data-theme="dark"] {
+    color-scheme: dark;
+
+    --brand: #cccccc;
+    --brand-light: #9d9d9d;
+    --line: #ffffff14;
+    --button-primary: #cccccc;
+    --button-primary-light: #9d9d9d;
+    --button-secondary: #1c1c20;
+    --ac-chat-bubble-user-bg: #1c1c20;
+    /* 对齐 Cursor Dark Modern：主文字 #CCCCCC，次要 #9D9D9D */
+    --text-primary: #cccccc;
+    --text-secondary: #9d9d9d;
+    --text-tertiary: #868686;
+    --text-input: #9d9d9d;
+    --border-color: #3a3a40;
+    --border-color-light: #2a2a2e;
+    --border-color-hover: #6e6e76;
+    --border-color-dark: #cccccc;
+    --shadow-color: #00000088;
+    --study-button: #1a2420;
+    --remote-button: #241a1a;
+    --search-button: #2a2a2e;
+    --search-button-hover: #3a3a40;
+    --ac-chat-send-ready: #9d9d9d;
+    --ac-chat-send-ready-hover: #cccccc;
+
+    /* 磨砂黑阶梯（无蓝青染色） */
+    --primary-color: #0e0e10;
+    --primary-color-1: #141416;
+    --primary-color-2: #2a2a2e;
+    --primary-color-3: #1a1a1d;
+    --primary-color-4: #3a3a40;
+    --primary-color-5: #868686;
+    --secondary-color-1: #cccccc;
+    --secondary-color-2: #e8e8e8;
+    --secondary-color-3: #9d9d9d;
+    --secondary-color-4: #cccccc;
+    --secondary-color-5: #3a3a40;
+    --contrast-color: #fff;
+    --primary-error-color-light: #f87171;
+    --secondary-error-color-light: #fca5a5;
+
+    --ac-color-e2e8f0: #2a2a2e;
+    --ac-color-eff6ff: #141416;
+    --ac-color-93c5fd: #a8a8b0;
+    --ac-color-93c5fd99: #a8a8b066;
+    /* 关掉各处 radial「光斑」用的着色 token */
+    --ac-color-4285f42e: transparent;
+    --ac-color-14b8a614: transparent;
+    --ac-color-2563eb: #b0b0b8;
+    --ac-color-2b7fff: #b0b0b8;
+    --ac-color-ecfeff: #141416;
+    --ac-color-fffbeb: #1a1814;
+    --ac-color-fde68a: #6b5420;
+    --ac-color-bbf7d0: #1a2a20;
+    --ac-color-fecaca: #3a1a1a;
+
+    --skills-ambient-top: #0e0e10;
+    --skills-ambient-mid: #0e0e10;
+    --skills-ambient-bottom: #0e0e10;
+    --skills-glass-fill: rgb(20 20 22 / 0.82);
+    --skills-glass-fill-strong: rgb(26 26 29 / 0.92);
+    --skills-glass-stroke: rgb(255 255 255 / 0.1);
+    --skills-glass-inner: rgb(255 255 255 / 0.03);
+
+    --ac-refresh-pill-bg: #1a1a1d;
+    --ac-refresh-pill-border: #3a3a40;
+    --ac-refresh-pill-text: #a0a0a8;
+    --ac-refresh-pill-hover-bg: #222226;
+    --ac-refresh-pill-hover-border: #4a4a50;
+    --ac-refresh-pill-hover-text: #e8e8ec;
+
+    --ac-chat-toolbar-pill-bg: #1a1a1d;
+    --ac-chat-toolbar-pill-border: #3a3a40;
+    --ac-chat-toolbar-pill-shadow: 0 1px 0 rgb(255 255 255 / 0.04), 0 2px 8px #00000050;
+
+    --ac-chat-attach-file-bg: #1c1c20;
+    --ac-chat-attach-file-border: #3a3a40;
+    --ac-chat-attach-file-fg: #a0a0a8;
+    --ac-chat-attach-dir-bg: #1c1a16;
+    --ac-chat-attach-dir-border: #4a3e30;
+    --ac-chat-attach-dir-fg: #c4a882;
+
+    --ac-agent-run-success-surface: #141a16;
+    --ac-agent-run-success-edge: #243028;
+    --ac-agent-run-success-dot: #6a9a78;
+    --ac-agent-run-success-dot-glow: transparent;
+
+    --ac-agent-run-fail-surface: #1a1614;
+    --ac-agent-run-fail-edge: #3a3028;
+    --ac-agent-run-fail-dot: #c4926a;
+    --ac-agent-run-fail-dot-glow: transparent;
+
+    /* 选中卡：纯磨砂面，无角上柔光 */
+    --ac-agent-card-active-surface: #1a1a1d;
+
+    --skills-list-selected-bg: #1a1a1d;
+    --skills-list-action-equip: #8a8a94;
+    --skills-list-action-equip-on: #c4c4ca;
+    --skills-list-action-equip-on-bg: #222226;
+    --skills-list-action-equip-on-border: #3a3a40;
+    --skills-list-action-delete: #b08080;
+
+    /* 文件编辑器语法高亮（暗色，对齐 VS Code / Cursor Dark+） */
+    --ac-syn-keyword: #c586c0;
+    --ac-syn-string: #ce9178;
+    --ac-syn-comment: #6a9955;
+    --ac-syn-number: #b5cea8;
+    --ac-syn-func: #dcdcaa;
+    --ac-syn-type: #4ec9b0;
+    --ac-syn-tag: #569cd6;
+    --ac-syn-punct: #808080;
+
+    /* 聊天错误图标（暗色，对齐 GitHub / Cursor 暗色错误红） */
+    --ac-chat-error-icon: #f85149;
+
+    /* 边框光线：紫蓝银河（固定 opacity 0.2） */
+    --ac-sand-shine: #e4d4ff;
+    --ac-sand-mid: #a8c4ff;
+    --ac-sand-cyan: #c8c4ff;
+    --ac-sand-dim: #1a1820;
+    --ac-sand-opacity: 0.2;
+    --ac-sand-grad-y: linear-gradient(
+        180deg,
+        var(--ac-sand-dim) 0%,
+        var(--ac-sand-mid) 18%,
+        var(--ac-sand-shine) 42%,
+        var(--ac-sand-cyan) 58%,
+        var(--ac-sand-mid) 78%,
+        var(--ac-sand-dim) 100%
+    );
+    --ac-sand-grad-x: linear-gradient(
+        90deg,
+        var(--ac-sand-dim) 0%,
+        var(--ac-sand-mid) 18%,
+        var(--ac-sand-shine) 42%,
+        var(--ac-sand-cyan) 58%,
+        var(--ac-sand-mid) 78%,
+        var(--ac-sand-dim) 100%
+    );
+    --ac-sand-grad-border: linear-gradient(
+        135deg,
+        var(--ac-sand-dim) 0%,
+        var(--ac-sand-mid) 28%,
+        var(--ac-sand-shine) 50%,
+        var(--ac-sand-cyan) 72%,
+        var(--ac-sand-dim) 100%
+    );
 }

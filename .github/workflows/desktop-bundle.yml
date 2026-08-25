@@ -1,10 +1,25 @@
 name: Desktop Bundle
 
 # 触发方式：
-#   1) Actions 页面手动跑（workflow_dispatch）；
-#   2) 推 tag `desktop-v*`（如 `desktop-v0.1.0`）会自动构建并发 GitHub Release。
+#   1) Actions 手动 / just release-mac|release-windows|desktop-ship（workflow_dispatch）
+#   2) 推 tag `desktop-v*` → 双平台构建并发 Release
 on:
   workflow_dispatch:
+    inputs:
+      platform:
+        description: "构建平台：all | mac | windows"
+        required: true
+        type: choice
+        options:
+          - all
+          - mac
+          - windows
+        default: all
+      release_tag:
+        description: "发版 tag（如 desktop-v1.2.3）；留空只上传 artifact"
+        required: false
+        type: string
+        default: ""
   push:
     tags:
       - "desktop-v*"
@@ -22,6 +37,11 @@ jobs:
   bundle:
     name: ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
+    # tag 推送 → 双平台；workflow_dispatch → 按 inputs.platform 过滤
+    if: >-
+      github.event_name == 'push'
+      || github.event.inputs.platform == 'all'
+      || github.event.inputs.platform == matrix.platform_key
     strategy:
       fail-fast: false
       matrix:
@@ -33,6 +53,7 @@ jobs:
             os: macos-14
             target: aarch64-apple-darwin
             bundle_globs: "*.dmg"
+            platform_key: mac
           # Windows x86_64：MSVC runner 原生构建
           # dx 0.7 默认走 NSIS 而不是 WiX/MSI，bundle 落点是
           #   target\dx\desktop\bundle\windows\nsis\<bundle_name>_<ver>_x64-setup.exe
@@ -42,6 +63,7 @@ jobs:
             os: windows-latest
             target: x86_64-pc-windows-msvc
             bundle_globs: "*-setup.exe"
+            platform_key: windows
 
     steps:
       - uses: actions/checkout@v6
@@ -376,10 +398,18 @@ jobs:
   release:
     name: Publish GitHub Release
     needs: bundle
-    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    # tag 推送，或 workflow_dispatch 传了 release_tag
+    if: >-
+      success()
+      && (
+        startsWith(github.ref, 'refs/tags/desktop-v')
+        || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag != '' && inputs.release_tag || github.ref_name }}
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -390,6 +420,7 @@ jobs:
           mkdir -p release
           find artifacts -type f -exec cp -v {} release/ \;
           ls -lh release
+          test -n "$(ls -A release 2>/dev/null)" || { echo "::error::no artifacts for release"; exit 1; }
 
       # softprops/action-gh-release@v2 默认是 upsert：同名 asset 替换，
       # 但**老 asset 中没有同名对应的**会一直挂在 Release 上不清。
@@ -398,26 +429,42 @@ jobs:
       # 上传前先把已有 assets 全部删干净，保证 Release 只剩本次产物。
       # 注意：GitHub 自动生成的 "Source code (zip/tar.gz)" 是平台行为，
       # 不属于 assets，无法通过 API 删除。
+      #
+      # 单平台发版（release-mac / release-windows）时：只删「本平台」产物，
+      # 保留另一平台已有 asset，避免互相覆盖。
       - name: Purge existing release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ env.RELEASE_TAG }}
+          PLATFORM: ${{ github.event_name == 'workflow_dispatch' && inputs.platform || 'all' }}
         run: |
           set -euo pipefail
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release view "$TAG" --json assets -q '.assets[].name' \
-              | while IFS= read -r name; do
-                  [ -n "$name" ] || continue
-                  echo "delete asset: $name"
-                  gh release delete-asset "$TAG" "$name" --yes || true
-                done
-          else
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
             echo "release $TAG 不存在，跳过 purge"
+            exit 0
           fi
+          gh release view "$TAG" --json assets -q '.assets[].name' \
+            | while IFS= read -r name; do
+                [ -n "$name" ] || continue
+                case "$PLATFORM" in
+                  mac)
+                    [[ "$name" == *.dmg ]] || continue
+                    ;;
+                  windows)
+                    [[ "$name" == *-setup.exe || "$name" == *.msi ]] || continue
+                    ;;
+                  all|*)
+                    ;;
+                esac
+                echo "delete asset: $name"
+                gh release delete-asset "$TAG" "$name" --yes || true
+              done
 
       - name: Create / update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.sha }}
           files: release/*
           generate_release_notes: true
           fail_on_unmatched_files: true

@@ -6,7 +6,65 @@ use dioxus_free_icons::IconShape;
 // —— 侧栏模式切换（角色 / 技能 / 文件 / 插件）——
 // 选中态由 Fill/Line/Bold/Filled 区分，颜色走 `.ac-sidebar-nav-item.is-active { color: var(--brand) }`。
 
-/// Remix Icon `home-smile-2-fill` — 侧栏角色：选中。
+/// Remix Icon `bear-smile-fill` — 侧栏角色：选中。
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct RiBearSmileFill;
+
+impl IconShape for RiBearSmileFill {
+    fn view_box(&self) -> &str {
+        "0 0 24 24"
+    }
+    fn xmlns(&self) -> &str {
+        "http://www.w3.org/2000/svg"
+    }
+    fn fill_and_stroke<'a>(&self, user_color: &'a str) -> (&'a str, &'a str, &'a str) {
+        (user_color, "none", "0")
+    }
+    fn stroke_linecap(&self) -> &str {
+        "butt"
+    }
+    fn stroke_linejoin(&self) -> &str {
+        "miter"
+    }
+    fn child_elements(&self) -> Element {
+        rsx! {
+            path {
+                d: "M17.5 2C19.9853 2 22 4.01472 22 6.5C22 7.85621 21.4001 9.07229 20.4511 9.89732C20.8061 10.8644 21 11.9096 21 13C21 17.9706 16.9706 22 12 22C7.02944 22 3 17.9706 3 13C3 11.9096 3.19392 10.8644 3.54916 9.8972C2.59995 9.07229 2 7.85621 2 6.5C2 4.01472 4.01472 2 6.5 2C8.12553 2 9.54976 2.86189 10.3406 4.15362C10.8774 4.05251 11.4326 4 12 4C12.5674 4 13.1226 4.05251 13.6609 4.15294C14.4502 2.86189 15.8745 2 17.5 2ZM10 13H8C8 15.2091 9.79086 17 12 17C14.2091 17 16 15.2091 16 13H14C14 14.1046 13.1046 15 12 15C10.8954 15 10 14.1046 10 13Z",
+            }
+        }
+    }
+}
+
+/// Remix Icon `bear-smile-line` — 侧栏角色：未选中。
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct RiBearSmileLine;
+
+impl IconShape for RiBearSmileLine {
+    fn view_box(&self) -> &str {
+        "0 0 24 24"
+    }
+    fn xmlns(&self) -> &str {
+        "http://www.w3.org/2000/svg"
+    }
+    fn fill_and_stroke<'a>(&self, user_color: &'a str) -> (&'a str, &'a str, &'a str) {
+        (user_color, "none", "0")
+    }
+    fn stroke_linecap(&self) -> &str {
+        "butt"
+    }
+    fn stroke_linejoin(&self) -> &str {
+        "miter"
+    }
+    fn child_elements(&self) -> Element {
+        rsx! {
+            path {
+                d: "M12 17C14.2091 17 16 15.2091 16 13H14C14 14.1046 13.1046 15 12 15C10.8954 15 10 14.1046 10 13H8C8 15.2091 9.79086 17 12 17ZM6.5 2C4.01472 2 2 4.01472 2 6.5C2 7.85729 2.60121 9.07332 3.54934 9.89751C3.19384 10.8656 3 11.911 3 13C3 17.9706 7.02944 22 12 22C16.9706 22 21 17.9706 21 13C21 11.911 20.8062 10.8656 20.4507 9.89751C21.3988 9.07332 22 7.85729 22 6.5C22 4.01472 19.9853 2 17.5 2C15.8737 2 14.4505 2.8624 13.6601 4.15297C13.1215 4.05246 12.5665 4 12 4C11.4335 4 10.8785 4.05246 10.3399 4.15297C9.5495 2.8624 8.12635 2 6.5 2ZM4 6.5C4 5.11929 5.11929 4 6.5 4C7.58033 4 8.50304 4.68577 8.8517 5.64896L9.1696 6.52718L10.0675 6.26991C10.6801 6.09435 11.3282 6 12 6C12.6718 6 13.3199 6.09435 13.9325 6.26991L14.8304 6.52718L15.1483 5.64896C15.497 4.68577 16.4197 4 17.5 4C18.8807 4 20 5.11929 20 6.5C20 7.43301 19.4894 8.24804 18.7275 8.67859L17.9141 9.13832L18.3176 9.98107C18.7547 10.8939 19 11.9169 19 13C19 16.866 15.866 20 12 20C8.13401 20 5 16.866 5 13C5 11.9169 5.24529 10.8939 5.6824 9.98107L6.08595 9.13832L5.27248 8.6786C4.51064 8.24805 4 7.43301 4 6.5Z",
+            }
+        }
+    }
+}
+
+/// Remix Icon `home-smile-2-fill` — 保留备用。
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct RiHomeSmile2Fill;
 
@@ -389,6 +447,36 @@ impl IconShape for VscLayoutPanelOff {
         rsx! {
             path {
                 d: "M12.5 1H3.5C2.122 1 1 2.121 1 3.5V12.5C1 13.879 2.122 15 3.5 15H12.5C13.878 15 15 13.879 15 12.5V3.5C15 2.121 13.878 1 12.5 1ZM14 12.5C14 13.327 13.327 14 12.5 14H3.5C2.673 14 2 13.327 2 12.5V11H14V12.5ZM14 10H2V3.5C2 2.673 2.673 2 3.5 2H12.5C13.327 2 14 2.673 14 3.5V10Z",
+            }
+        }
+    }
+}
+
+/// Ant Design `VerticalAlignBottomOutlined`（react-icons `AiOutlineVerticalAlignBottom`）—
+/// 文件树「全部折叠」：底线 + 向下箭头。
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct AiOutlineVerticalAlignBottom;
+
+impl IconShape for AiOutlineVerticalAlignBottom {
+    fn view_box(&self) -> &str {
+        "64 64 896 896"
+    }
+    fn xmlns(&self) -> &str {
+        "http://www.w3.org/2000/svg"
+    }
+    fn fill_and_stroke<'a>(&self, user_color: &'a str) -> (&'a str, &'a str, &'a str) {
+        (user_color, "none", "0")
+    }
+    fn stroke_linecap(&self) -> &str {
+        "butt"
+    }
+    fn stroke_linejoin(&self) -> &str {
+        "miter"
+    }
+    fn child_elements(&self) -> Element {
+        rsx! {
+            path {
+                d: "M859.9 780H164.1c-4.5 0-8.1 3.6-8.1 8v60c0 4.4 3.6 8 8.1 8h695.8c4.5 0 8.1-3.6 8.1-8v-60c0-4.4-3.6-8-8.1-8zM505.7 669a8 8 0 0012.6 0l112-141.7c4.1-5.2.4-12.9-6.3-12.9h-74.1V176c0-4.4-3.6-8-8-8h-60c-4.4 0-8 3.6-8 8v338.3H400c-6.7 0-10.4 7.7-6.3 12.9l112 141.8z",
             }
         }
     }

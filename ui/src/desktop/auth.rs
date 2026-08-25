@@ -3,29 +3,30 @@
 
 use dioxus::document;
 use dioxus::prelude::*;
-use protocol::{AboutInfoDto, LlmConfigUpsertBody};
+use protocol::{AboutInfoDto, LlmConfigDto, LlmCredentialUpsertBody};
 
 use crate::desktop::agent;
+use crate::shell::LlmCredentialsPanel;
 use crate::shell::toast::{use_init_toast_ctx, use_toast, ToastViewport};
 use crate::Console;
+
+fn apply_cfg(cfg: LlmConfigDto, mut credentials: Signal<Vec<protocol::LlmCredentialDto>>, mut active_id: Signal<String>) {
+    credentials.set(cfg.credentials);
+    active_id.set(cfg.active_credential_id);
+}
 
 #[component]
 fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
     let toast = use_toast();
-    let mut api_key = use_signal(String::new);
-    let mut base_url = use_signal(|| "https://api.openai.com/v1".to_string());
-    let mut key_saved = use_signal(|| false);
+    let credentials = use_signal(Vec::<protocol::LlmCredentialDto>::new);
+    let active_id = use_signal(String::new);
     let mut load_hint = use_signal(|| None::<String>);
 
     use_effect(move || {
         spawn(async move {
             match agent::runtime_ctx().llm_config_get().await {
                 Ok(cfg) => {
-                    base_url.set(cfg.openai_v1_base);
-                    key_saved.set(cfg.api_key_configured);
-                    if !cfg.api_key.trim().is_empty() {
-                        api_key.set(cfg.api_key);
-                    }
+                    apply_cfg(cfg, credentials, active_id);
                     load_hint.set(None);
                 }
                 Err(err) => load_hint.set(Some(err.to_string())),
@@ -34,9 +35,9 @@ fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
     });
 
     rsx! {
-        div { class: "ac-settings-card",
+        div { class: "ac-settings-card ac-settings-card--wide",
             div { class: "ac-settings-head",
-                h1 { class: "ac-settings-title", "设置" }
+                h1 { class: "ac-settings-title", "API Key" }
                 button {
                     r#type: "button",
                     class: "ac-settings-close",
@@ -46,74 +47,46 @@ fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
                     "×"
                 }
             }
-            p { class: "ac-settings-lead",
-                "用于对话补全的 OpenAI 兼容接口。密钥与 Base URL 会保存到本机桌面数据库。"
-            }
-            if let Some(hint) = load_hint() {
-                p { class: "ac-settings-saved", "{hint}" }
-            }
-            label { class: "ac-settings-label", "API Key"
-                input {
-                    r#type: "password",
-                    class: "ac-settings-input",
-                    placeholder: "sk-…",
-                    value: "{api_key()}",
-                    oninput: move |e| api_key.set(e.value()),
-                }
-                if key_saved() && api_key().trim().is_empty() {
-                    p { class: "ac-settings-hint ac-settings-hint--ok", "本机已保存密钥，正在加载…" }
-                }
-            }
-            label { class: "ac-settings-label", "API Base URL（须以 /v1 结尾）"
-                input {
-                    r#type: "text",
-                    class: "ac-settings-input",
-                    placeholder: "https://api.openai.com/v1",
-                    value: "{base_url()}",
-                    oninput: move |e| base_url.set(e.value()),
-                }
-            }
-            div { class: "ac-settings-actions",
-                button {
-                    r#type: "button",
-                    class: "ac-settings-submit",
-                    onclick: move |_| {
-                        let api_key_value = api_key().trim().to_string();
-                        let base_value = if base_url().trim().is_empty() {
-                            "https://api.openai.com/v1".to_string()
-                        } else {
-                            base_url().trim().to_string()
-                        };
-                        if api_key_value.is_empty() && !key_saved() {
-                            load_hint.set(Some("请填写 API Key（首次保存必填）".into()));
-                            return;
-                        }
-                        spawn(async move {
-                            match agent::runtime_ctx()
-                                .llm_config_upsert(LlmConfigUpsertBody {
-                                    api_key: api_key_value,
-                                    openai_v1_base: base_value,
-                                    prefer_custom_key: None,
-                                    clear_api_key: false,
-                                    clear_openai_v1_base: false,
-                                })
-                                .await
-                            {
-                                Ok(cfg) => {
-                                    key_saved.set(cfg.api_key_configured);
-                                    if !cfg.api_key.trim().is_empty() {
-                                        api_key.set(cfg.api_key);
-                                    }
-                                    load_hint.set(None);
-                                    show_settings_modal.set(false);
-                                    toast.success("设置已保存");
-                                }
-                                Err(err) => load_hint.set(Some(err.to_string())),
+            LlmCredentialsPanel {
+                credentials: credentials(),
+                active_id: active_id(),
+                hint: load_hint(),
+                on_add: move |body: LlmCredentialUpsertBody| {
+                    spawn(async move {
+                        match agent::runtime_ctx().llm_credential_upsert(body).await {
+                            Ok(cfg) => {
+                                apply_cfg(cfg, credentials, active_id);
+                                load_hint.set(None);
+                                toast.success("已添加密钥");
                             }
-                        });
-                    },
-                    "保存"
-                }
+                            Err(err) => load_hint.set(Some(err.to_string())),
+                        }
+                    });
+                },
+                on_activate: move |id: String| {
+                    spawn(async move {
+                        match agent::runtime_ctx().llm_credential_activate(&id).await {
+                            Ok(cfg) => {
+                                apply_cfg(cfg, credentials, active_id);
+                                load_hint.set(None);
+                                toast.success("已切换当前密钥");
+                            }
+                            Err(err) => load_hint.set(Some(err.to_string())),
+                        }
+                    });
+                },
+                on_delete: move |id: String| {
+                    spawn(async move {
+                        match agent::runtime_ctx().llm_credential_delete(&id).await {
+                            Ok(cfg) => {
+                                apply_cfg(cfg, credentials, active_id);
+                                load_hint.set(None);
+                                toast.success("已删除密钥");
+                            }
+                            Err(err) => load_hint.set(Some(err.to_string())),
+                        }
+                    });
+                },
             }
         }
     }
@@ -199,10 +172,15 @@ pub fn DesktopAppShell() -> Element {
     let show_chat = use_signal(|| true);
     let chat_history_open = use_signal(|| false);
     let active_file_path = use_signal(|| None::<String>);
+    let active_role_name = use_signal(String::new);
     let mut show_settings_modal = use_signal(|| false);
     let show_about_modal = use_signal(|| false);
     let show_titlebar_settings_menu = use_signal(|| false);
     let _toast_ctx = use_init_toast_ctx();
+
+    use_effect(move || {
+        crate::shell::theme::restore_on_launch();
+    });
 
     use_effect(move || {
         let host_css = serde_json::to_string(desktop_host_shell_css()).unwrap_or_else(|_| "\"\"".to_string());
@@ -287,8 +265,9 @@ pub fn DesktopAppShell() -> Element {
                 show_chat,
                 chat_history_open,
                 active_file_path,
+                active_role_name,
             }
-            crate::StatusBar { show_terminal, active_file_path }
+            crate::StatusBar { show_terminal, active_file_path, active_role_name }
             if show_settings_modal() {
                 div { class: "ac-settings-modal-root",
                     div {

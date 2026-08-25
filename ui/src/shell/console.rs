@@ -8,22 +8,21 @@ use dioxus::events::FormEvent;
 use dioxus::html::input_data::MouseButton;
 use dioxus::html::point_interaction::ModifiersInteraction;
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::bs_icons::BsStopFill;
+use dioxus_free_icons::icons::bs_icons::{BsIntersect, BsStopFill};
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
 use dioxus_free_icons::icons::bs_icons::{
     BsGear, BsLayoutSidebar, BsLayoutSidebarInset, BsLayoutSidebarInsetReverse,
     BsLayoutSidebarReverse,
 };
 use dioxus_free_icons::icons::ld_icons::{
-    LdArrowUp, LdCheck, LdChevronDown, LdChevronUp, LdCopy, LdDownload, LdEye, LdGlobe,
-    LdMessageCircle, LdPaperclip, LdPencil, LdPlus, LdSave, LdScrollText, LdSearch,
-    LdShieldCheck, LdSparkles, LdTrash2, LdWandSparkles, LdX,
+    LdArrowUp, LdBug, LdCheck, LdChevronDown, LdChevronsDown, LdChevronUp, LdCopy, LdDownload,
+    LdEye, LdFileSearch, LdFolder, LdGlobe, LdInfinity, LdListTodo, LdMessageCircle,
+    LdMessageSquare, LdPaperclip, LdPencil, LdPlus, LdRefreshCw, LdSave, LdScrollText, LdSearch, LdShieldCheck,
+    LdSparkles, LdTrash2, LdWandSparkles, LdX,
 };
-#[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
-use dioxus_free_icons::icons::ld_icons::LdChevronsUp;
 use dioxus_free_icons::Icon;
 use crate::icons::{
-    PiMagicWandBold, PiMagicWandFill, RiApps2Fill, RiApps2Line, RiHomeSmile2Fill, RiHomeSmile2Line,
+    PiMagicWandBold, PiMagicWandFill, RiApps2Fill, RiApps2Line, RiBearSmileFill, RiBearSmileLine,
     TbFile, TbFileFilled,
 };
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
@@ -33,14 +32,17 @@ use crate::icons::{
 use keyboard_types::{Key, Modifiers};
 
 use crate::chat::{
-    activate_role, attachment_from_file_data, create_conversation, create_role,
+    activate_role, attachment_from_file_data, attachment_from_path, ce_clear, ce_focus_end,
+    ce_insert_chip, ce_insert_text, ce_serialize, ce_set_html, chip_html, compose_user_payload,
+    composer_seed_html, composer_seed_html_from_segs, create_conversation, create_role,
     delete_conversation, delete_role, install_skill, list_chat_models, list_conversations,
-    load_agent_run_detail, load_conversation_messages, load_equipped_skills,
-    load_installed_skills, load_roles, load_skill_market, run_chat_turn, toggle_skill_equip,
-    uninstall_installed_skill, update_conversation_title, update_role, ChatMarkdownBody,
-    ChatPendingAttachment, ChatThinkingHydrator, ChatThinkingPanel, StepPhase,
-    ThinkingStatus, ToolStatus, TraceFileOpen, UiAgentThinking, UiChatMessage, UiThinkingStep,
-    UiThinkingTool,
+    load_agent_run_detail, load_conversation_messages, load_equipped_skills, load_installed_skills,
+    load_roles, load_skill_market, parse_user_message_segments, pending_has_path, pending_remove_ids,
+    run_chat_turn, toggle_skill_equip, uninstall_installed_skill, update_conversation_title,
+    update_role, ChatMarkdownBody, ChatPendingAttachment, ChatThinkingHydrator, ChatThinkingPanel,
+    ChatUserSeg, ComposerBridgeEvent, StepPhase, ThinkingStatus, ToolStatus, TraceFileOpen,
+    UiAgentThinking, UiChatMessage, UiThinkingStep, UiThinkingTool, COMPOSER_ROOT_EDIT,
+    COMPOSER_ROOT_MAIN, INSTALL_BRIDGE_JS,
 };
 use crate::persona;
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
@@ -50,36 +52,132 @@ use crate::web::password_field::{AcPasswordInput, PasswordFieldStyle};
 use protocol::{
     AgentRunDetailDto, ChatMessageDto, ChatTurnRequest, ConversationSummaryDto,
     InstalledSkillDto, RoleCreateRequest, RoleDto, RoleUpdateRequest, SkillMarketItemDto,
-    SkillRegistryDto, SseEvent, StoredChatMessageDto,
+    SkillRegistryDto, SseEvent, StoredChatMessageDto, DEFAULT_CHAT_MAX_AGENT_STEPS,
 };
+
+/// 聊天栏工具条里的 Agent 工作模式（图：Agent / Plan / Debug / Multitask / Ask）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChatAgentMode {
+    Agent,
+    Plan,
+    /// 已从模式菜单隐藏，保留以兼容协议枚举。
+    #[allow(dead_code)]
+    Debug,
+    Multitask,
+    /// 已从模式菜单隐藏，保留以兼容协议枚举。
+    #[allow(dead_code)]
+    Ask,
+}
+
+impl ChatAgentMode {
+    const VISIBLE: [Self; 3] = [Self::Agent, Self::Plan, Self::Multitask];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Agent => "Agent",
+            Self::Plan => "Plan",
+            Self::Debug => "Debug",
+            Self::Multitask => "Multitask",
+            Self::Ask => "Ask",
+        }
+    }
+
+    fn shortcut(self) -> Option<&'static str> {
+        match self {
+            Self::Agent => Some("⌘I"),
+            _ => None,
+        }
+    }
+
+    fn allows_parallel(self) -> bool {
+        matches!(self, Self::Multitask)
+    }
+
+    fn to_turn_mode(self) -> protocol::ChatTurnMode {
+        match self {
+            Self::Agent => protocol::ChatTurnMode::Agent,
+            Self::Plan => protocol::ChatTurnMode::Plan,
+            Self::Debug => protocol::ChatTurnMode::Debug,
+            Self::Multitask => protocol::ChatTurnMode::Multitask,
+            Self::Ask => protocol::ChatTurnMode::Ask,
+        }
+    }
+}
 
 /// 聊天栏顶部"模型选择"下拉的一项。
 ///
-/// 数据来源：启动时用 [`fallback_chat_models`] 兜底；随后 `list_chat_models()`
-/// 拉取 Relay 公开接口 `GET /v1/models`（web / desktop 均经 facade）。
+/// 数据来源：用户自定义（本地持久化）+ Relay `GET /v1/models`（成功时合并）。
+/// `base_url` 拉不到模型时**不**再塞本地默认列表，仅展示自定义项。
 /// - `id`：模型 ID，例如 `gpt-5.4`；既是按钮主标题（大写化后展示），也是
 ///   `chat_model` signal 存的值（与上游 `/v1/chat/completions` 的 `model`
 ///   参数一致）。
 /// - `display_name`：可选副标题（鉴权版 `/v1/me/models` 的 admin 描述）；
 ///   公开列表通常为空，UI 不渲染副标题元素。
+/// - `custom`：用户手动添加的模型，可删除。
 #[derive(Debug, Clone)]
 struct ChatModelEntry {
     id: String,
     display_name: Option<String>,
+    custom: bool,
 }
 
-/// API 失败或返回空列表时保留的本地默认，避免 picker 空白。
-fn fallback_chat_models() -> Vec<ChatModelEntry> {
-    vec![
-        ChatModelEntry {
-            id: DEFAULT_CHAT_MODEL_ID.into(),
-            display_name: Some("稳定平衡".into()),
-        },
-        ChatModelEntry {
-            id: "gpt-5.5".into(),
-            display_name: Some("最新推理".into()),
-        },
-    ]
+fn load_custom_chat_model_ids() -> Vec<String> {
+    #[cfg(all(target_arch = "wasm32", feature = "web"))]
+    {
+        return crate::web::prefs::custom_chat_models_get();
+    }
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        return crate::desktop::files::custom_chat_models_get();
+    }
+    #[cfg(not(any(
+        all(target_arch = "wasm32", feature = "web"),
+        all(feature = "native", not(target_arch = "wasm32"))
+    )))]
+    {
+        Vec::new()
+    }
+}
+
+fn persist_custom_chat_model_ids(ids: &[String]) {
+    #[cfg(all(target_arch = "wasm32", feature = "web"))]
+    {
+        crate::web::prefs::custom_chat_models_set(ids);
+    }
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        crate::desktop::files::custom_chat_models_set(ids);
+    }
+}
+
+fn custom_chat_model_entries() -> Vec<ChatModelEntry> {
+    load_custom_chat_model_ids()
+        .into_iter()
+        .map(|id| ChatModelEntry {
+            id,
+            display_name: None,
+            custom: true,
+        })
+        .collect()
+}
+
+/// 合并远端列表与自定义：远端在前；自定义仅追加远端没有的 id。
+fn merge_chat_models(remote: Vec<ChatModelEntry>, custom: Vec<ChatModelEntry>) -> Vec<ChatModelEntry> {
+    let mut out = remote;
+    for c in custom {
+        if !out.iter().any(|m| m.id == c.id) {
+            out.push(c);
+        }
+    }
+    out
+}
+
+fn custom_ids_from_models(models: &[ChatModelEntry]) -> Vec<String> {
+    models
+        .iter()
+        .filter(|m| m.custom)
+        .map(|m| m.id.clone())
+        .collect()
 }
 
 /// `search_market` 返回的按源前缀警告（见 `shared` 的 `skills` 模块）；非开发者模式隐藏底层错误串。
@@ -148,6 +246,8 @@ enum CenterTabKind {
     SkillMarket { key: String },
     Plugin { key: String },
     File { path: String },
+    /// Markdown 预览（不写入操作缓存；关闭不影响编辑草稿）。
+    FileMdPreview { path: String },
     /// 工具轨迹中某次编辑的前后对比（不写入操作缓存）。
     FileDiff {
         path: String,
@@ -200,7 +300,7 @@ impl CenterTabKindCache {
             CenterTabKind::SkillMarket { key } => Some(Self::SkillMarket { key: key.clone() }),
             CenterTabKind::Plugin { key } => Some(Self::Plugin { key: key.clone() }),
             CenterTabKind::File { path } => Some(Self::File { path: path.clone() }),
-            CenterTabKind::FileDiff { .. } => None,
+            CenterTabKind::FileDiff { .. } | CenterTabKind::FileMdPreview { .. } => None,
         }
     }
 }
@@ -347,6 +447,215 @@ fn persist_center_session(tabs: &[CenterTab], active_id: &Option<String>) {
     }
 }
 
+/// 侧栏文件树展开/选中状态（桌面 `file_tree.json` / Web `localStorage`）。
+#[derive(Clone, serde::Serialize, serde::Deserialize, Default)]
+struct FileTreeCache {
+    #[serde(default)]
+    root: String,
+    #[serde(default)]
+    expanded: Vec<String>,
+    #[serde(default)]
+    selected_path: Option<String>,
+}
+
+#[derive(Clone)]
+struct FileTreeRestore {
+    expanded: HashSet<String>,
+    selected_path: Option<String>,
+    children_cache: HashMap<String, Result<Vec<super::files::FsEntryDto>, String>>,
+}
+
+fn read_file_tree_cache_raw() -> Option<String> {
+    #[cfg(all(target_arch = "wasm32", feature = "web"))]
+    {
+        return crate::web::prefs::file_tree_get();
+    }
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        return crate::desktop::files::file_tree_state_get();
+    }
+    #[cfg(not(any(
+        all(target_arch = "wasm32", feature = "web"),
+        all(feature = "native", not(target_arch = "wasm32"))
+    )))]
+    {
+        None
+    }
+}
+
+fn write_file_tree_cache_raw(raw: &str) {
+    #[cfg(all(target_arch = "wasm32", feature = "web"))]
+    {
+        crate::web::prefs::file_tree_set(raw);
+    }
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        crate::desktop::files::file_tree_state_set(raw);
+    }
+    #[cfg(not(any(
+        all(target_arch = "wasm32", feature = "web"),
+        all(feature = "native", not(target_arch = "wasm32"))
+    )))]
+    {
+        let _ = raw;
+    }
+}
+
+fn file_tree_roots_match(saved: &str, current: &str) -> bool {
+    use std::path::Path;
+    let a = saved.trim();
+    let b = current.trim();
+    if a.is_empty() || b.is_empty() {
+        return false;
+    }
+    if a == b {
+        return true;
+    }
+    let pa = Path::new(a);
+    let pb = Path::new(b);
+    let ca = pa.canonicalize().unwrap_or_else(|_| pa.to_path_buf());
+    let cb = pb.canonicalize().unwrap_or_else(|_| pb.to_path_buf());
+    ca == cb
+}
+
+fn file_tree_path_under_root(path: &str, root: &str) -> bool {
+    use std::path::Path;
+    let p = Path::new(path.trim());
+    let r = Path::new(root.trim());
+    if path.trim().is_empty() || root.trim().is_empty() {
+        return false;
+    }
+    p.starts_with(r)
+}
+
+fn file_tree_existing_dir_under_root(path: &str, root: &str) -> bool {
+    if !file_tree_path_under_root(path, root) {
+        return false;
+    }
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        use std::path::Path;
+        Path::new(path).is_dir()
+    }
+    #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+    {
+        let _ = path;
+        false
+    }
+}
+
+fn file_tree_existing_path_under_root(path: &str, root: &str) -> bool {
+    if !file_tree_path_under_root(path, root) {
+        return false;
+    }
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        use std::path::Path;
+        Path::new(path).exists()
+    }
+    #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+    {
+        let _ = path;
+        false
+    }
+}
+
+fn load_file_tree_restore(root: &str) -> FileTreeRestore {
+    let empty = FileTreeRestore {
+        expanded: HashSet::new(),
+        selected_path: None,
+        children_cache: HashMap::new(),
+    };
+    if root.trim().is_empty() || !super::files::fs_available() {
+        return empty;
+    }
+    let Some(raw) = read_file_tree_cache_raw() else {
+        return empty;
+    };
+    let Ok(cache) = serde_json::from_str::<FileTreeCache>(&raw) else {
+        return empty;
+    };
+    if !file_tree_roots_match(&cache.root, root) {
+        return empty;
+    }
+
+    let mut expanded = HashSet::new();
+    for dir in cache.expanded {
+        let trimmed = dir.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if file_tree_existing_dir_under_root(trimmed, root) {
+            expanded.insert(trimmed.to_string());
+        }
+    }
+
+    let selected_path = cache
+        .selected_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(str::to_string)
+        .filter(|p| file_tree_existing_path_under_root(p, root));
+
+    let mut children_cache = HashMap::new();
+    if let Some(ref sel) = selected_path {
+        super::files::fs_reveal_in_tree(root, sel, &mut expanded, &mut children_cache);
+    }
+    let _ = super::files::fs_cache_reload_open(&mut children_cache, root, &expanded);
+
+    FileTreeRestore {
+        expanded,
+        selected_path,
+        children_cache,
+    }
+}
+
+fn persist_file_tree_state(
+    root: &str,
+    expanded: &HashSet<String>,
+    selected_path: &Option<String>,
+) {
+    let root = root.trim();
+    if root.is_empty() || !super::files::fs_available() {
+        write_file_tree_cache_raw("");
+        return;
+    }
+    let mut dirs: Vec<String> = expanded
+        .iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty() && file_tree_path_under_root(s, root))
+        .collect();
+    dirs.sort();
+    dirs.dedup();
+    let selected_path = selected_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(str::to_string)
+        .filter(|p| file_tree_path_under_root(p, root));
+    if dirs.is_empty() && selected_path.is_none() {
+        // 仍记下当前根，避免下次把其它项目的展开误恢复；空展开即折叠态。
+        let cache = FileTreeCache {
+            root: root.to_string(),
+            expanded: Vec::new(),
+            selected_path: None,
+        };
+        if let Ok(raw) = serde_json::to_string(&cache) {
+            write_file_tree_cache_raw(&raw);
+        }
+        return;
+    }
+    let cache = FileTreeCache {
+        root: root.to_string(),
+        expanded: dirs,
+        selected_path,
+    };
+    if let Ok(raw) = serde_json::to_string(&cache) {
+        write_file_tree_cache_raw(&raw);
+    }
+}
+
 const CENTER_TAB_ROLE_ID: &str = "role";
 
 impl CenterTab {
@@ -408,6 +717,16 @@ impl CenterTab {
             },
         }
     }
+
+    fn file_md_preview(path: String) -> Self {
+        let name = super::files::fs_file_title(&path);
+        let id = format!("file-md-preview:{path}");
+        Self {
+            id,
+            title: format!("预览 · {name}"),
+            kind: CenterTabKind::FileMdPreview { path },
+        }
+    }
 }
 
 fn center_open_or_focus(tabs: &mut Vec<CenterTab>, active_id: &mut Option<String>, tab: CenterTab) {
@@ -450,6 +769,7 @@ fn center_tab_skill_key(kind: &CenterTabKind) -> Option<String> {
         CenterTabKind::Role
         | CenterTabKind::Plugin { .. }
         | CenterTabKind::File { .. }
+        | CenterTabKind::FileMdPreview { .. }
         | CenterTabKind::FileDiff { .. } => None,
     }
 }
@@ -468,12 +788,25 @@ fn center_tab_file_path(kind: &CenterTabKind) -> Option<&str> {
     }
 }
 
-/// 状态栏路径：普通文件或编辑对比标签。
+/// 状态栏路径：普通文件、Markdown 预览或编辑对比标签。
 fn center_tab_display_path(kind: &CenterTabKind) -> Option<&str> {
     match kind {
-        CenterTabKind::File { path } | CenterTabKind::FileDiff { path, .. } => Some(path.as_str()),
+        CenterTabKind::File { path }
+        | CenterTabKind::FileMdPreview { path }
+        | CenterTabKind::FileDiff { path, .. } => Some(path.as_str()),
         _ => None,
     }
+}
+
+fn is_markdown_path(path: &str) -> bool {
+    std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| {
+            e.eq_ignore_ascii_case("md")
+                || e.eq_ignore_ascii_case("markdown")
+                || e.eq_ignore_ascii_case("mdx")
+        })
 }
 
 /// 切换工作区根后刷新文件树信号，并切到「文件」侧栏。
@@ -510,7 +843,9 @@ fn apply_opened_project_root(
     home_logo_menu_open.set(false);
     center_tabs.with_mut(|tabs| {
         tabs.retain(|tab| match &tab.kind {
-            CenterTabKind::File { path } | CenterTabKind::FileDiff { path, .. } => {
+            CenterTabKind::File { path }
+            | CenterTabKind::FileMdPreview { path }
+            | CenterTabKind::FileDiff { path, .. } => {
                 Path::new(path).starts_with(Path::new(&root))
             }
             _ => true,
@@ -523,7 +858,7 @@ fn apply_opened_project_root(
     if !active_ok {
         active_center_id.set(tabs.first().map(|t| t.id.clone()));
     }
-    // 切根后重扫「我的应用」（例如从 monorepo 进入 application/{app}）。
+    // 切根后重扫「我的应用」（例如从 monorepo 进入 applications/{app}）。
     plugin_refresh_tick.with_mut(|n| *n = n.wrapping_add(1));
 }
 
@@ -540,7 +875,7 @@ fn is_mod_char_shortcut(e: &KeyboardEvent, ch: &str) -> bool {
     c.eq_ignore_ascii_case(ch) && is_primary_modifier(e.modifiers())
 }
 
-/// 新建 `extension/` 插件后：切到文件侧栏，展开并选中该目录；成功提示走全局 toast。
+/// 新建 `extensions/` 插件后：切到文件侧栏，展开并选中该目录；成功提示走全局 toast。
 fn apply_created_extension_plugin(
     plugin_path: String,
     fs_root_path: Signal<String>,
@@ -555,7 +890,10 @@ fn apply_created_extension_plugin(
 ) {
     use std::path::Path;
     let root = fs_root_path();
-    let extension_dir = Path::new(&root).join("extension");
+    let extension_dir = Path::new(&plugin_path)
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| Path::new(&root).join("extensions"));
     let extension_dir_s = extension_dir.to_string_lossy().into_owned();
     fs_expanded.with_mut(|open| {
         open.insert(root.clone());
@@ -577,7 +915,7 @@ fn apply_created_extension_plugin(
     toast.success(format!("已创建插件：{display}"));
 }
 
-/// 新建 `application/` 应用后：将该目录设为当前项目并打开；刷新应用列表。
+/// 新建 `applications/` 应用后：将该目录设为当前项目并打开；刷新应用列表。
 fn apply_created_local_application(
     app_path: String,
     fs_root_path: Signal<String>,
@@ -696,11 +1034,126 @@ fn reveal_and_select_workspace_file(
     resolved
 }
 
+/// 聊天附件点目录：显示侧栏 FILES、展开祖先，并切换该目录本身的展开/折叠。
+fn reveal_and_expand_workspace_dir(
+    path: &str,
+    mut show_sidebar: Signal<bool>,
+    mut sidebar_shutting_down: Signal<bool>,
+    mut active_tab: Signal<&'static str>,
+    mut fs_section_open: Signal<bool>,
+    fs_root_path: Signal<String>,
+    mut fs_expanded: Signal<HashSet<String>>,
+    mut fs_children_cache: Signal<
+        HashMap<String, Result<Vec<super::files::FsEntryDto>, String>>,
+    >,
+    mut fs_selected_path: Signal<Option<String>>,
+    mut fs_save_notice: Signal<Option<String>>,
+) -> String {
+    let resolved = super::files::fs_resolve_tool_path(path);
+    let resolved = if resolved.is_empty() {
+        path.trim().to_string()
+    } else {
+        resolved
+    };
+    if resolved.is_empty() {
+        return String::new();
+    }
+    let root = fs_root_path();
+    let opening = !fs_expanded().contains(&resolved);
+    fs_children_cache.with_mut(|cache| {
+        fs_expanded.with_mut(|open| {
+            super::files::fs_reveal_in_tree(&root, &resolved, open, cache);
+            if opening {
+                open.insert(resolved.clone());
+            } else {
+                open.remove(&resolved);
+            }
+        });
+        if opening {
+            super::files::fs_cache_reload(cache, &resolved);
+        }
+    });
+    fs_selected_path.set(Some(resolved.clone()));
+    fs_save_notice.set(None);
+    fs_section_open.set(true);
+    active_tab.set("files");
+    if sidebar_shutting_down() {
+        sidebar_shutting_down.set(false);
+    }
+    show_sidebar.set(true);
+    resolved
+}
+
+/// 输入区附件 chip 点击：文件打开中间栏并侧栏选中；目录在侧栏切换展开/折叠。
+fn activate_pending_attachment_path(
+    path: &str,
+    is_dir: bool,
+    show_sidebar: Signal<bool>,
+    sidebar_shutting_down: Signal<bool>,
+    show_center: Signal<bool>,
+    center_shutting_down: Signal<bool>,
+    active_tab: Signal<&'static str>,
+    fs_section_open: Signal<bool>,
+    fs_root_path: Signal<String>,
+    fs_expanded: Signal<HashSet<String>>,
+    fs_children_cache: Signal<
+        HashMap<String, Result<Vec<super::files::FsEntryDto>, String>>,
+    >,
+    fs_selected_path: Signal<Option<String>>,
+    fs_save_notice: Signal<Option<String>>,
+    mut center_tabs: Signal<Vec<CenterTab>>,
+    mut active_center_id: Signal<Option<String>>,
+    toast: super::toast::ToastCtx,
+) {
+    if !super::files::fs_available() {
+        toast.error("Web 端无法打开本机文件，请使用桌面版。");
+        return;
+    }
+    if is_dir {
+        let _ = reveal_and_expand_workspace_dir(
+            path,
+            show_sidebar,
+            sidebar_shutting_down,
+            active_tab,
+            fs_section_open,
+            fs_root_path,
+            fs_expanded,
+            fs_children_cache,
+            fs_selected_path,
+            fs_save_notice,
+        );
+        return;
+    }
+    let resolved = reveal_and_select_workspace_file(
+        path,
+        show_sidebar,
+        sidebar_shutting_down,
+        show_center,
+        center_shutting_down,
+        active_tab,
+        fs_section_open,
+        fs_root_path,
+        fs_expanded,
+        fs_children_cache,
+        fs_selected_path,
+        fs_save_notice,
+    );
+    if resolved.is_empty() {
+        return;
+    }
+    center_tabs.with_mut(|tabs| {
+        active_center_id.with_mut(|active| {
+            center_open_or_focus(tabs, active, CenterTab::file(resolved));
+        });
+    });
+}
+
 /// 聊天消息列表滚动容器（`scrollTop` / `scrollHeight`）。
 const AC_CHAT_THREAD_DOM_ID: &str = "ac-chat-thread";
-/// 视为“仍在底部附近”的阈值；仅此时流式更新自动跟随到底部。
-#[cfg(target_arch = "wasm32")]
-const AC_CHAT_THREAD_STICKY_BOTTOM_PX: i32 = 72;
+/// 距底部超过该像素才显示「回到底部」；隐藏要用更小的滞后阈值，避免边界抖。
+const CHAT_JUMP_BOTTOM_SHOW_PX: f64 = 160.0;
+/// 已显示时，距底部低于该像素才隐藏（须小于 `CHAT_JUMP_BOTTOM_SHOW_PX`）。
+const CHAT_JUMP_BOTTOM_HIDE_PX: f64 = 80.0;
 
 /// 侧栏默认宽度（像素），与 `main.css` 中 `.ac-sidebar` 一致。
 const AC_SIDEBAR_DEFAULT_WIDTH_PX: f64 = 280.0;
@@ -894,8 +1347,9 @@ const DEFAULT_CHAT_MODEL_ID: &str = "gpt-5.4";
 
 /// 聊天栏 chat_model 信号的初始值。
 ///
-/// Web：优先复用 `localStorage` 里上次保存的选择；桌面 / 移动端无 prefs 存储，
-/// 直接用 [`DEFAULT_CHAT_MODEL_ID`]。这样浏览器刷新或重开标签页后仍能记住模型。
+/// Web：优先复用 `localStorage` 里上次保存的选择；桌面读 prefs 同理。
+/// 无缓存时用 [`DEFAULT_CHAT_MODEL_ID`]。远端列表失败时不再注入内置模型清单，
+/// 但已选中的 ID 仍可继续用于发请求（可配合自定义模型）。
 fn initial_chat_model() -> String {
     #[cfg(all(target_arch = "wasm32", feature = "web"))]
     {
@@ -903,15 +1357,24 @@ fn initial_chat_model() -> String {
             return saved;
         }
     }
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        if let Some(saved) = crate::desktop::files::chat_model_get() {
+            return saved;
+        }
+    }
     DEFAULT_CHAT_MODEL_ID.to_string()
 }
 
-/// 将当前 chat 模型 ID 持久化到 `localStorage`（仅 web 生效，其它平台空实现）。
-#[cfg_attr(not(all(target_arch = "wasm32", feature = "web")), allow(unused_variables))]
+/// 将当前 chat 模型 ID 持久化到本地偏好（Web 用 `localStorage`，桌面写应用数据目录）。
 fn persist_chat_model(model_id: &str) {
     #[cfg(all(target_arch = "wasm32", feature = "web"))]
     {
         crate::web::prefs::chat_model_set(model_id);
+    }
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        crate::desktop::files::chat_model_set(model_id);
     }
 }
 
@@ -926,32 +1389,7 @@ enum ConsoleResizeKind {
     Terminal,
 }
 
-/// 当前消息线程是否仍贴近底部。
-#[cfg(target_arch = "wasm32")]
-fn chat_thread_is_near_bottom() -> bool {
-    use wasm_bindgen::JsCast;
-    let Some(w) = web_sys::window() else {
-        return true;
-    };
-    let Some(doc) = w.document() else {
-        return true;
-    };
-    let Some(el) = doc.get_element_by_id(AC_CHAT_THREAD_DOM_ID) else {
-        return true;
-    };
-    let Ok(he) = el.dyn_into::<web_sys::HtmlElement>() else {
-        return true;
-    };
-    let distance = he.scroll_height() - he.scroll_top() - he.client_height();
-    distance <= AC_CHAT_THREAD_STICKY_BOTTOM_PX
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn chat_thread_is_near_bottom() -> bool {
-    true
-}
-
-/// 在下一微任务将消息线程滚到底部（发送后、流式增量与切换会话时跟随最新消息）。
+/// 一次性置底（打开会话 / 加载历史）。不用于流式跟随，也不在靠近底部时持续吸底。
 #[cfg(target_arch = "wasm32")]
 fn schedule_chat_thread_scroll_bottom() {
     use wasm_bindgen::JsCast;
@@ -977,7 +1415,162 @@ fn schedule_chat_thread_scroll_bottom() {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn schedule_chat_thread_scroll_bottom() {}
+fn schedule_chat_thread_scroll_bottom() {
+    // 桌面 WebView：commit 后再走两帧 rAF，等新气泡和输入框收起完成布局。
+    let _ = dioxus::document::eval(
+        r#"(function(){
+  const go = () => {
+    const el = document.getElementById('ac-chat-thread');
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  };
+  go();
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => {
+      go();
+      requestAnimationFrame(go);
+    });
+  }
+})()"#,
+    );
+}
+
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+fn chat_scroll_metrics_show_jump(
+    scroll_top: f64,
+    scroll_height: f64,
+    client_height: f64,
+    currently_shown: bool,
+) -> Option<bool> {
+    if !scroll_top.is_finite() || !scroll_height.is_finite() || !client_height.is_finite() {
+        return None;
+    }
+    if scroll_height <= 0.0 || client_height <= 0.0 {
+        return None;
+    }
+    let dist = (scroll_height - scroll_top - client_height).max(0.0);
+    Some(if currently_shown {
+        dist >= CHAT_JUMP_BOTTOM_HIDE_PX
+    } else {
+        dist > CHAT_JUMP_BOTTOM_SHOW_PX
+    })
+}
+
+fn set_show_jump_bottom(mut show_jump_bottom: Signal<bool>, show: bool) {
+    if show_jump_bottom() != show {
+        show_jump_bottom.set(show);
+    }
+}
+
+/// Web：只读 `#ac-chat-thread`。量不到则保持现状（不把按钮打灭）。
+#[cfg(target_arch = "wasm32")]
+fn chat_thread_show_jump_from_dom(currently_shown: bool) -> Option<bool> {
+    use wasm_bindgen::JsCast;
+    let w = web_sys::window()?;
+    let doc = w.document()?;
+    let el = doc.get_element_by_id(AC_CHAT_THREAD_DOM_ID)?;
+    let he = el.dyn_into::<web_sys::HtmlElement>().ok()?;
+    chat_scroll_metrics_show_jump(
+        f64::from(he.scroll_top()),
+        f64::from(he.scroll_height()),
+        f64::from(he.client_height()),
+        currently_shown,
+    )
+}
+
+/// 桌面端：只认长期 JS 监听（`#ac-chat-thread` 的 scroll / 内容变化），带显示滞后。
+#[cfg(not(target_arch = "wasm32"))]
+fn chat_jump_bottom_listen_js() -> String {
+    format!(
+        r#"(async () => {{
+  const SHOW_PX = {show_px};
+  const HIDE_PX = {hide_px};
+  const ID = '{id}';
+  let last = false;
+  let bound = null;
+  let ro = null;
+  let contentMo = null;
+  const report = () => {{
+    const el = bound;
+    if (!el) return;
+    const sh = el.scrollHeight;
+    const ch = el.clientHeight;
+    if (!(sh > 0) || !(ch > 0)) return;
+    const dist = Math.max(0, sh - el.scrollTop - ch);
+    const show = last ? dist >= HIDE_PX : dist > SHOW_PX;
+    if (last === show) return;
+    last = show;
+    try {{ dioxus.send(show); }} catch (_) {{}}
+  }};
+  const bind = () => {{
+    const el = document.getElementById(ID);
+    if (!el) return;
+    if (el === bound) return;
+    if (bound) bound.removeEventListener('scroll', report);
+    if (ro) {{ try {{ ro.disconnect(); }} catch (_) {{}} ro = null; }}
+    if (contentMo) {{ try {{ contentMo.disconnect(); }} catch (_) {{}} contentMo = null; }}
+    bound = el;
+    el.addEventListener('scroll', report, {{ passive: true }});
+    if (typeof ResizeObserver === 'function') {{
+      ro = new ResizeObserver(report);
+      ro.observe(el);
+    }}
+    contentMo = new MutationObserver(report);
+    contentMo.observe(el, {{ childList: true, subtree: true, characterData: true }});
+    report();
+  }};
+  bind();
+  const mo = new MutationObserver(bind);
+  mo.observe(document.documentElement, {{ childList: true, subtree: true }});
+}})()"#,
+        show_px = CHAT_JUMP_BOTTOM_SHOW_PX,
+        hide_px = CHAT_JUMP_BOTTOM_HIDE_PX,
+        id = AC_CHAT_THREAD_DOM_ID,
+    )
+}
+
+#[cfg(test)]
+mod jump_bottom_visibility_tests {
+    use super::*;
+
+    fn show_at(dist: f64, currently_shown: bool) -> Option<bool> {
+        // scroll_top = scroll_height - client_height - dist
+        let client_height = 300.0;
+        let scroll_height = 800.0;
+        let scroll_top = scroll_height - client_height - dist;
+        chat_scroll_metrics_show_jump(scroll_top, scroll_height, client_height, currently_shown)
+    }
+
+    #[test]
+    fn hidden_until_past_show_threshold() {
+        assert_eq!(show_at(160.0, false), Some(false));
+        assert_eq!(show_at(160.1, false), Some(true));
+    }
+
+    #[test]
+    fn shown_until_below_hide_threshold() {
+        assert_eq!(show_at(80.0, true), Some(true));
+        assert_eq!(show_at(79.9, true), Some(false));
+    }
+
+    #[test]
+    fn hysteresis_band_keeps_current() {
+        assert_eq!(show_at(100.0, false), Some(false));
+        assert_eq!(show_at(100.0, true), Some(true));
+    }
+
+    #[test]
+    fn invalid_metrics_do_not_toggle() {
+        assert_eq!(
+            chat_scroll_metrics_show_jump(0.0, 0.0, 300.0, true),
+            None
+        );
+        assert_eq!(
+            chat_scroll_metrics_show_jump(f64::NAN, 800.0, 300.0, false),
+            None
+        );
+    }
+}
 
 #[cfg(target_arch = "wasm32")]
 async fn ui_sleep_ms(ms: u32) {
@@ -1010,21 +1603,21 @@ fn OpenAiSetupModal(
         if modal_visible() {
             div { class: "ac-api-modal-backdrop",
                 div { class: "ac-api-modal",
-                    h2 { class: "ac-api-modal-title", "配置 OpenAI" }
+                    h2 { class: "ac-api-modal-title", "配置 API Key" }
                     p { class: "ac-api-modal-desc",
-                        "服务端未设置 OpenAI 配置。请填写 API Key 与兼容端点的 Base URL（须以 /v1 结尾）；配置将保存到服务端数据库。"
+                        "服务端未设置模型配置。请填写 OpenAI（sk-…）或 Anthropic（sk-ant-…）格式的 API Key，以及兼容端点的 Base URL（须以 /v1 结尾）；配置将保存到服务端数据库。"
                     }
                     div { class: "ac-api-modal-field",
                         label { class: "ac-auth-label", "API Key"
                             AcPasswordInput {
-                                placeholder: "sk-…",
+                                placeholder: "sk-… 或 sk-ant-…",
                                 value: api_key,
                                 variant: PasswordFieldStyle::Modal,
                             }
                         }
                     }
                     div { class: "ac-api-modal-field",
-                        label { class: "ac-auth-label", "API Base URL"
+                        label { class: "ac-auth-label", "Base URL"
                             input {
                                 r#type: "text",
                                 class: "ac-api-modal-input",
@@ -1095,13 +1688,54 @@ fn welcome_chat_messages() -> Vec<UiChatMessage> {
     }]
 }
 
+fn clear_chat_message_edit(
+    mut chat_editing_msg_idx: Signal<Option<usize>>,
+    mut chat_edit_pending: Signal<Vec<ChatPendingAttachment>>,
+    mut chat_edit_can_send: Signal<bool>,
+    mut chat_edit_seed_html: Signal<String>,
+    mut chat_edit_epoch: Signal<u64>,
+) {
+    if chat_editing_msg_idx().is_none() {
+        return;
+    }
+    chat_editing_msg_idx.set(None);
+    chat_edit_pending.set(Vec::new());
+    chat_edit_can_send.set(false);
+    chat_edit_seed_html.set(String::new());
+    chat_edit_epoch += 1;
+    ce_clear(COMPOSER_ROOT_EDIT);
+}
+
+fn push_composer_attachment(
+    root: &str,
+    mut pending: Signal<Vec<ChatPendingAttachment>>,
+    mut can_send: Signal<bool>,
+    att: ChatPendingAttachment,
+) {
+    pending.write().push(att.clone());
+    can_send.set(true);
+    // insertChip：有 caret / 上次 caret 则插到该处，否则追加末尾；插入后 caret 在 chip 后。
+    ce_insert_chip(root, &chip_html(&att));
+}
+
 fn stored_message_to_ui(message: StoredChatMessageDto) -> Option<UiChatMessage> {
     match message.role.as_str() {
-        "user" => Some(UiChatMessage::User {
-            id: Some(message.id),
-            content: message.content,
-            attachments: Vec::new(),
-        }),
+        "user" => {
+            let segs = parse_user_message_segments(&message.content, &[]);
+            let attachments = segs
+                .iter()
+                .filter_map(|seg| match seg {
+                    ChatUserSeg::Attachment(att) => Some(att.clone()),
+                    ChatUserSeg::Text(_) => None,
+                })
+                .collect();
+            Some(UiChatMessage::User {
+                id: Some(message.id),
+                content: message.content,
+                attachments,
+                segs,
+            })
+        }
         "assistant" => Some(UiChatMessage::Assistant {
             id: Some(message.id),
             content: message.content,
@@ -1219,31 +1853,29 @@ fn upsert_thinking_step_index(thinking: &mut UiAgentThinking, index: usize) -> u
     thinking.steps.len() - 1
 }
 
-fn with_last_assistant<F>(msgs: &mut [UiChatMessage], f: F)
+fn with_assistant_at<F>(msgs: &mut [UiChatMessage], idx: usize, f: F)
 where
     F: FnOnce(&mut String, &mut UiAgentThinking),
 {
     if let Some(UiChatMessage::Assistant {
         content, thinking, ..
-    }) = msgs
-        .iter_mut()
-        .rev()
-        .find(|m| matches!(m, UiChatMessage::Assistant { .. }))
+    }) = msgs.get_mut(idx)
     {
         f(content, thinking);
     }
 }
 
-/// 将单条 SSE 事件应用到聊天消息（流式增量与落库后的消息 id）。
+/// 将单条 SSE 事件应用到指定助手气泡（并行 Multitask 时不能总打最后一条）。
 fn apply_chat_sse_event(
     ev: SseEvent,
     mut chat_messages: Signal<Vec<UiChatMessage>>,
+    assistant_idx: usize,
     err_text: &mut Option<String>,
 ) {
     match ev {
         SseEvent::AgentStepStart { index, .. } => {
             let mut msgs = chat_messages();
-            with_last_assistant(&mut msgs, |_, thinking| {
+            with_assistant_at(&mut msgs, assistant_idx, |_, thinking| {
                 thinking.status = ThinkingStatus::Running;
                 thinking.expanded = true;
                 let _ = upsert_thinking_step_index(thinking, index);
@@ -1252,7 +1884,7 @@ fn apply_chat_sse_event(
         }
         SseEvent::AgentThinking { index } => {
             let mut msgs = chat_messages();
-            with_last_assistant(&mut msgs, |_, thinking| {
+            with_assistant_at(&mut msgs, assistant_idx, |_, thinking| {
                 let pos = upsert_thinking_step_index(thinking, index);
                 thinking.steps[pos].phase = StepPhase::Thinking;
             });
@@ -1260,7 +1892,7 @@ fn apply_chat_sse_event(
         }
         SseEvent::ThinkingDelta { step_index, text } => {
             let mut msgs = chat_messages();
-            with_last_assistant(&mut msgs, |_, thinking| {
+            with_assistant_at(&mut msgs, assistant_idx, |_, thinking| {
                 let pos = upsert_thinking_step_index(thinking, step_index);
                 thinking.steps[pos].model_text.push_str(&text);
             });
@@ -1268,24 +1900,30 @@ fn apply_chat_sse_event(
         }
         SseEvent::AnswerDelta { text } => {
             let mut msgs = chat_messages();
-            with_last_assistant(&mut msgs, |content, _thinking| {
+            with_assistant_at(&mut msgs, assistant_idx, |content, _thinking| {
                 content.push_str(&text);
             });
             chat_messages.set(msgs);
         }
         SseEvent::Delta { text } => {
+            // Legacy Delta: phase-aware routing (never dual-write).
+            // Running (thinking / observing) → thinking panel only;
+            // after AgentFinalizing (status Done) → answer bubble only.
             let mut msgs = chat_messages();
-            with_last_assistant(&mut msgs, |content, thinking| {
-                content.push_str(&text);
-                if let Some(step) = thinking.steps.last_mut() {
-                    step.model_text.push_str(&text);
+            with_assistant_at(&mut msgs, assistant_idx, |content, thinking| {
+                if matches!(thinking.status, ThinkingStatus::Running) {
+                    let index = thinking.steps.last().map(|s| s.index).unwrap_or(1);
+                    let pos = upsert_thinking_step_index(thinking, index);
+                    thinking.steps[pos].model_text.push_str(&text);
+                } else {
+                    content.push_str(&text);
                 }
             });
             chat_messages.set(msgs);
         }
         SseEvent::AgentObserving { index } => {
             let mut msgs = chat_messages();
-            with_last_assistant(&mut msgs, |_, thinking| {
+            with_assistant_at(&mut msgs, assistant_idx, |_, thinking| {
                 let pos = upsert_thinking_step_index(thinking, index);
                 thinking.steps[pos].phase = StepPhase::Observing;
             });
@@ -1302,7 +1940,7 @@ fn apply_chat_sse_event(
             let name = name.clone();
             let args = args.clone();
             let mut msgs = chat_messages();
-            with_last_assistant(&mut msgs, |_, thinking| {
+            with_assistant_at(&mut msgs, assistant_idx, |_, thinking| {
                 let index = step_index.unwrap_or_else(|| thinking.steps.len().max(1));
                 let pos = upsert_thinking_step_index(thinking, index);
                 let step = &mut thinking.steps[pos];
@@ -1330,7 +1968,7 @@ fn apply_chat_sse_event(
         SseEvent::ToolResult { id, summary, .. } => {
             let id = id.clone();
             let mut msgs = chat_messages();
-            with_last_assistant(&mut msgs, |_, thinking| {
+            with_assistant_at(&mut msgs, assistant_idx, |_, thinking| {
                 for step in thinking.steps.iter_mut() {
                     if let Some(tool) = step.tools.iter_mut().find(|t| t.id == id) {
                         tool.summary = Some(summary.clone());
@@ -1346,7 +1984,7 @@ fn apply_chat_sse_event(
             duration_ms,
         } => {
             let mut msgs = chat_messages();
-            with_last_assistant(&mut msgs, |_, thinking| {
+            with_assistant_at(&mut msgs, assistant_idx, |_, thinking| {
                 let pos = upsert_thinking_step_index(thinking, index);
                 let step = &mut thinking.steps[pos];
                 if !model_output.is_empty() {
@@ -1359,7 +1997,7 @@ fn apply_chat_sse_event(
         }
         SseEvent::AgentFinalizing => {
             let mut msgs = chat_messages();
-            with_last_assistant(&mut msgs, |_, thinking| {
+            with_assistant_at(&mut msgs, assistant_idx, |_, thinking| {
                 thinking.status = ThinkingStatus::Done;
                 thinking.expanded = true;
                 if thinking.total_duration_ms.is_none() {
@@ -1378,28 +2016,24 @@ fn apply_chat_sse_event(
             ..
         } => {
             let mut msgs = chat_messages();
-            for msg in msgs.iter_mut().rev() {
-                if let UiChatMessage::Assistant {
-                    id,
-                    agent_run_id: run_id,
-                    thinking,
-                    ..
-                } = msg
-                {
-                    if id.is_none() {
-                        *id = Some(assistant_message_id);
-                        *run_id = Some(agent_run_id);
-                        thinking.status = ThinkingStatus::Done;
-                        thinking.expanded = true;
-                        break;
-                    }
+            if let Some(UiChatMessage::Assistant {
+                id,
+                agent_run_id: run_id,
+                thinking,
+                ..
+            }) = msgs.get_mut(assistant_idx)
+            {
+                if id.is_none() {
+                    *id = Some(assistant_message_id);
+                    *run_id = Some(agent_run_id);
+                    thinking.status = ThinkingStatus::Done;
+                    thinking.expanded = true;
                 }
             }
-            for msg in msgs.iter_mut().rev() {
-                if let UiChatMessage::User { id, .. } = msg {
+            if assistant_idx > 0 {
+                if let Some(UiChatMessage::User { id, .. }) = msgs.get_mut(assistant_idx - 1) {
                     if id.is_none() {
                         *id = Some(user_message_id);
-                        break;
                     }
                 }
             }
@@ -1408,7 +2042,7 @@ fn apply_chat_sse_event(
         SseEvent::Error { message } => {
             *err_text = Some(crate::chat::friendly_chat_error_message(&message));
             let mut msgs = chat_messages();
-            with_last_assistant(&mut msgs, |_, thinking| {
+            with_assistant_at(&mut msgs, assistant_idx, |_, thinking| {
                 thinking.status = ThinkingStatus::Error;
                 thinking.expanded = true;
             });
@@ -1427,7 +2061,15 @@ fn copy_text_to_clipboard(text: String) {
         }
     }
 
-    #[cfg(not(all(target_arch = "wasm32", feature = "web")))]
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        let _ = crate::desktop::files::clipboard_set_text(&text);
+    }
+
+    #[cfg(all(
+        not(all(target_arch = "wasm32", feature = "web")),
+        not(all(feature = "native", not(target_arch = "wasm32")))
+    ))]
     {
         let _ = text;
     }
@@ -1474,35 +2116,49 @@ fn build_agent_run_full_text(detail: &AgentRunDetailDto) -> String {
     out
 }
 
-/// 聊天草稿输入（Web / 桌面共用）。
-///
-/// 使用受控 `value`，确保发送后 `chat_draft` 清空会立即同步到输入框。
-/// `input_epoch` 在发送 / 快捷填充时递增，用于强制刷新输入节点。
-///
-/// **Enter** 发送（与发送按钮同逻辑）；**Shift+Enter** 换行；IME 组合中不发送。
-/// **粘贴**：若剪贴板含图片，走附件管线（见 `on_paste_images`）；纯文本仍默认粘贴。
+/// 单 contenteditable：文字与 chip 在 DOM 内混排；按键不写正文 signal。
+/// props 保持稳定（仅 epoch/disabled/seed 变化才重渲），避免虚拟 DOM 清空编辑器。
+/// `disabled` 才会把 `contenteditable` 关掉；`busy` 只挡住 Enter 发送，不锁输入。
+/// **Enter** → `enter_tick += 1`；**Shift+Enter** 换行。
+/// Agent 模式 busy 时 Enter 吞掉、草稿保留；Multitask 可继续发并行任务。
 #[component]
-fn ChatComposerField(
-    mut chat_draft: Signal<String>,
-    input_epoch: u64,
+fn ChatComposerCe(
+    root_id: String,
+    epoch: u64,
+    seed_html: String,
     disabled: bool,
-    on_enter_send: EventHandler<()>,
-    on_paste_images: EventHandler<ClipboardEvent>,
-    #[props(default = 4)] rows: u32,
+    busy: Signal<bool>,
+    allow_send_while_busy: Option<Signal<bool>>,
+    mut enter_tick: Signal<u64>,
+    mut paste_tick: Signal<u64>,
 ) -> Element {
+    let root_for_mount = root_id.clone();
+    let seed_for_mount = seed_html.clone();
     rsx! {
-        textarea {
-            key: "chat-composer-{input_epoch}",
-            class: "ac-chat-input-field",
-            placeholder: "向它下达指令…",
-            value: "{chat_draft()}",
-            disabled: if disabled { true },
-            rows: "{rows}",
-            oninput: move |e| {
-                chat_draft.set(e.value());
+        div {
+            key: "ce-{root_id}-{epoch}",
+            class: "ac-chat-composer-ce ac-chat-input-field is-empty",
+            "data-ac-composer": "{root_id}",
+            "data-placeholder": "向它下达指令…",
+            contenteditable: if disabled { "false" } else { "true" },
+            role: "textbox",
+            aria_multiline: "true",
+            onmounted: move |_| {
+                let root = root_for_mount.clone();
+                let seed = seed_for_mount.clone();
+                spawn(async move {
+                    if seed.is_empty() {
+                        ce_clear(&root);
+                    } else {
+                        ce_set_html(&root, &seed);
+                    }
+                    ce_focus_end(&root);
+                });
             },
-            onpaste: move |e: ClipboardEvent| {
-                on_paste_images.call(e);
+            onpaste: move |_e: ClipboardEvent| {
+                // Desktop 图片由 JS capture 钩子处理；wasm 侧用 tick 通知父级读剪贴板较难，
+                // 这里仍依赖桌面钩子 / 浏览器默认粘贴文本。bump 供将来扩展。
+                paste_tick += 1;
             },
             onkeydown: move |e: KeyboardEvent| {
                 if e.key() != Key::Enter {
@@ -1518,8 +2174,101 @@ fn ChatComposerField(
                     return;
                 }
                 e.prevent_default();
-                on_enter_send.call(());
+                // 只在事件里读 busy，避免 props 随 chat_busy 变化把编辑器重渲清空。
+                if busy() && !allow_send_while_busy.map(|s| s()).unwrap_or(false) {
+                    return;
+                }
+                enter_tick += 1;
             },
+        }
+    }
+}
+
+/// 用户消息内联编辑区：底部提供附件与重新发送按钮。
+#[component]
+fn ChatUserMessageEdit(
+    root_id: String,
+    epoch: u64,
+    seed_html: String,
+    disabled: bool,
+    busy: Signal<bool>,
+    mut pending: Signal<Vec<ChatPendingAttachment>>,
+    mut can_send: Signal<bool>,
+    mut chat_attachment_seq: Signal<u64>,
+    mut enter_tick: Signal<u64>,
+    mut paste_tick: Signal<u64>,
+    on_resend: EventHandler<()>,
+) -> Element {
+    let can_resend = can_send();
+    rsx! {
+        div { class: "ac-chat-bubble-edit",
+            ChatComposerCe {
+                root_id,
+                epoch,
+                seed_html,
+                disabled,
+                busy,
+                allow_send_while_busy: None,
+                enter_tick,
+                paste_tick,
+            }
+            div { class: "ac-chat-bubble-edit-actions",
+                label { class: "ac-chat-bubble-edit-upload",
+                    input {
+                        r#type: "file",
+                        class: "ac-chat-file-input",
+                        accept: "image/*,*/*",
+                        multiple: true,
+                        disabled: if disabled { true },
+                        onchange: move |e: FormEvent| {
+                            let files: Vec<_> = e.data().files().into_iter().collect();
+                            if files.is_empty() {
+                                return;
+                            }
+                            spawn(async move {
+                                for file in files {
+                                    let id = chat_attachment_seq();
+                                    chat_attachment_seq.set(id + 1);
+                                    if let Some(att) = attachment_from_file_data(id, file).await {
+                                        push_composer_attachment(
+                                            COMPOSER_ROOT_EDIT,
+                                            pending,
+                                            can_send,
+                                            att,
+                                        );
+                                    }
+                                }
+                            });
+                        },
+                    }
+                    Icon {
+                        icon: LdPaperclip,
+                        width: 13,
+                        height: 13,
+                        fill: "currentColor",
+                        class: "ac-chat-upload-icon",
+                    }
+                }
+                button {
+                    r#type: "button",
+                    class: if can_resend && !disabled {
+                        "ac-chat-send-btn ac-chat-bubble-edit-send ac-chat-send-btn--ready"
+                    } else {
+                        "ac-chat-send-btn ac-chat-bubble-edit-send"
+                    },
+                    disabled: disabled || !can_resend,
+                    title: "重新发送",
+                    aria_label: "重新发送",
+                    onclick: move |_| on_resend.call(()),
+                    Icon {
+                        icon: LdArrowUp,
+                        width: 14,
+                        height: 14,
+                        fill: "currentColor",
+                        class: "ac-chat-send-icon",
+                    }
+                }
+            }
         }
     }
 }
@@ -1542,6 +2291,7 @@ fn WebShellTitlebar(
     let mut show_titlebar_settings_menu = ctx.show_titlebar_settings_menu;
     // 设置 API Key 入口：在设置中配置 OpenAI 兼容接口凭证。
     let _developer_mode = ctx.developer_mode;
+    let mut ui_theme = use_signal(crate::shell::theme::load);
     let sidebar_switch_on = show_sidebar() && !sidebar_shutting_down();
     let chat_switch_on = show_chat();
     let center_switch_on = show_center();
@@ -1695,7 +2445,11 @@ fn WebShellTitlebar(
                                         show_titlebar_settings_menu.set(false);
                                         show_settings_modal.set(true);
                                     },
-                                    "设置 API Key"
+                                    "API Key"
+                                }
+                                crate::shell::theme::TitlebarThemeToggle {
+                                    ui_theme,
+                                    show_titlebar_settings_menu,
                                 }
                                 button {
                                     r#type: "button",
@@ -1741,6 +2495,7 @@ pub fn Console(
     mut show_chat: Signal<bool>,
     mut chat_history_open: Signal<bool>,
     mut active_file_path: Signal<Option<String>>,
+    mut active_role_name: Signal<String>,
 ) -> Element {
     let toast = super::toast::use_toast();
     let mut chat_width = use_signal(|| AC_CHAT_DEFAULT_WIDTH_PX);
@@ -1767,7 +2522,7 @@ pub fn Console(
     let mut role_error = use_signal(|| None::<String>);
     let mut editing_role_id = use_signal(|| None::<i64>);
     let mut editing_role_name = use_signal(|| "还没有名字呢".to_string());
-    let mut active_tab = use_signal(|| "role");
+    let mut active_tab = use_signal(|| "files");
     // 有操作缓存则恢复上次打开的中间栏标签；否则保持空列表 → 首页空态。
     let restored_center = use_hook(load_center_session_restore);
     let mut center_tabs = use_signal({
@@ -1780,13 +2535,41 @@ pub fn Console(
     });
     // 技能侧栏默认「我的技能」（installed），与应用侧栏「我的应用」对齐。
     let mut skill_view = use_signal(|| "installed");
+    let restored_file_tree = use_hook({
+        let center_file = restored_center.selected_file_path.clone();
+        move || {
+            let root = super::files::fs_workspace_root();
+            let mut restore = load_file_tree_restore(&root);
+            // 中间栏恢复的文件标签也要在树里可见。
+            if let Some(path) = center_file.as_deref() {
+                if file_tree_existing_path_under_root(path, &root) {
+                    super::files::fs_reveal_in_tree(
+                        &root,
+                        path,
+                        &mut restore.expanded,
+                        &mut restore.children_cache,
+                    );
+                }
+            }
+            restore
+        }
+    });
     let fs_root_path = use_signal(super::files::fs_workspace_root);
     let fs_section_open = use_signal(|| true);
-    let fs_expanded = use_signal(HashSet::<String>::new);
-    let fs_children_cache =
-        use_signal(HashMap::<String, Result<Vec<super::files::FsEntryDto>, String>>::new);
+    let fs_expanded = use_signal({
+        let expanded = restored_file_tree.expanded.clone();
+        move || expanded
+    });
+    let fs_children_cache = use_signal({
+        let cache = restored_file_tree.children_cache.clone();
+        move || cache
+    });
     let mut fs_selected_path = use_signal({
-        let path = restored_center.selected_file_path.clone();
+        // 中间栏活动文件优先；否则用上次文件树选中项。
+        let path = restored_center
+            .selected_file_path
+            .clone()
+            .or_else(|| restored_file_tree.selected_path.clone());
         move || path
     });
     let fs_create_mode = use_signal(|| None::<super::files::FsCreateKind>);
@@ -1801,6 +2584,10 @@ pub fn Console(
     let mut fs_load_errors = use_signal(HashMap::<String, String>::new);
     let mut fs_save_notice = use_signal(|| None::<String>);
     let fs_just_written = use_signal(HashSet::<String>::new);
+    let mut terminal_pending_cd = use_signal(|| None::<String>);
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    let mut terminal_pending_run =
+        use_signal(|| None::<crate::desktop::terminal::TerminalRunRequest>);
     let mut skill_search = use_signal(String::new);
     let mut skill_market_query = use_signal(String::new);
     let mut skill_market_search_epoch = use_signal(|| 0_u64);
@@ -1835,11 +2622,11 @@ pub fn Console(
     let plugin_refresh_tick = use_signal(|| 0_u64);
     // 删除角色确认：`(id, display_name)`，替代原生 `confirm`
     let mut delete_role_confirm = use_signal(|| None::<(i64, String)>);
-    // 首页空态「创建插件」：输入插件名后脚手架到工作区 `extension/`
+    // 首页空态「创建插件」：输入插件名后脚手架到工作区 `extensions/`
     let mut create_plugin_open = use_signal(|| false);
     let mut create_plugin_name = use_signal(String::new);
     let mut create_plugin_error = use_signal(|| None::<String>);
-    // 首页空态「创建应用」：输入应用名后脚手架到工作区 `application/`
+    // 首页空态「创建应用」：输入应用名后脚手架到工作区 `applications/`
     let mut create_app_open = use_signal(|| false);
     let mut create_app_name = use_signal(String::new);
     let mut create_app_error = use_signal(|| None::<String>);
@@ -1874,19 +2661,130 @@ pub fn Console(
     let mut agent_detail_error = use_signal(|| None::<String>);
     let mut agent_detail_copy_notice = use_signal(|| None::<String>);
     let mut chat_messages = use_signal(welcome_chat_messages);
-    // 默认不“吸底”：用户可以自由滚动历史；仅在 AI 正在回答（chat_busy = true）期间，
-    // 下方 use_effect 会自动把它打开实现流式跟随；回答结束自动关闭。
-    let mut chat_should_stick_bottom = use_signal(|| false);
     // 一次性「置底请求」计数器：每次会话切换 / 历史加载完成后递增，
     // 配套 use_effect 监听变化并在 dioxus 完成 commit 之后 schedule 一次滚到底；
-    // 与 `chat_should_stick_bottom` 解耦，不会触发持续吸底。
+    // 生成过程中不跟随，用户可自由上下滚动。
     let mut chat_scroll_bottom_request = use_signal(|| 0_u64);
-    let mut chat_draft = use_signal(|| String::new());
-    let mut chat_input_epoch = use_signal(|| 0_u64);
+    // 距底部超过阈值时显示「回到底部」；点击只一次性置底，不打开持续吸底。
+    let mut show_jump_bottom = use_signal(|| false);
+    let mut chat_pending = use_signal(Vec::<ChatPendingAttachment>::new);
+    // 仅布尔：JS input 事件在 sendable 变化时才写入，避免每键重渲 Console。
+    let mut chat_can_send = use_signal(|| false);
+    let mut chat_composer_epoch = use_signal(|| 0_u64);
+    let mut chat_composer_seed = use_signal(String::new);
     let mut chat_busy = use_signal(|| false);
+    // 进行中回合 id：切走会话 / 停止时从集合移除，旧 spawn 不再改 messages / busy。
+    let mut chat_turn_gen = use_signal(|| 0_u64);
+    let mut chat_live_turns = use_signal(HashSet::<u64>::new);
+    let mut composer_allow_parallel = use_signal(|| false);
     let mut chat_model = use_signal(initial_chat_model);
-    let mut chat_attachments = use_signal(|| Vec::<ChatPendingAttachment>::new());
     let mut chat_attachment_seq = use_signal(|| 1_u64);
+    let mut chat_editing_msg_idx = use_signal(|| None::<usize>);
+    let mut chat_edit_pending = use_signal(Vec::<ChatPendingAttachment>::new);
+    let mut chat_edit_can_send = use_signal(|| false);
+    let mut chat_edit_epoch = use_signal(|| 0_u64);
+    let mut chat_edit_seed = use_signal(String::new);
+    let mut chat_enter_tick = use_signal(|| 0_u64);
+    let mut chat_paste_tick = use_signal(|| 0_u64);
+    let mut chat_edit_enter_tick = use_signal(|| 0_u64);
+    let mut chat_edit_paste_tick = use_signal(|| 0_u64);
+    let mut chat_edit_truncate_at = use_signal(|| 0_usize);
+
+    use_effect(move || {
+        // 只依赖会话 ID：切会话时退出编辑。
+        // 切勿在这里读取 chat_editing_*，否则进入编辑会再次触发 effect 并把编辑态清掉。
+        let _ = active_conversation_id();
+        chat_editing_msg_idx.set(None);
+        chat_edit_pending.set(Vec::new());
+        chat_edit_can_send.set(false);
+        chat_edit_seed.set(String::new());
+        chat_edit_epoch += 1;
+        ce_clear(COMPOSER_ROOT_EDIT);
+    });
+
+    // contenteditable 桥：input / remove / activate 经 dioxus.send 回传。
+    use_effect(move || {
+        spawn(async move {
+            let mut eval = dioxus::document::eval(INSTALL_BRIDGE_JS);
+            loop {
+                let Ok(ev) = eval.recv::<ComposerBridgeEvent>().await else {
+                    break;
+                };
+                let root = ev.root.as_deref().unwrap_or("");
+                match ev.kind.as_str() {
+                    "input" => {
+                        if let Some(sendable) = ev.sendable {
+                            if root == COMPOSER_ROOT_MAIN {
+                                if chat_can_send() != sendable {
+                                    chat_can_send.set(sendable);
+                                }
+                            } else if root == COMPOSER_ROOT_EDIT {
+                                if chat_edit_can_send() != sendable {
+                                    chat_edit_can_send.set(sendable);
+                                }
+                            }
+                        }
+                    }
+                    "remove" => {
+                        if root == COMPOSER_ROOT_MAIN {
+                            chat_pending.with_mut(|list| pending_remove_ids(list, &ev.ids));
+                            if let Some(sendable) = ev.sendable {
+                                if chat_can_send() != sendable {
+                                    chat_can_send.set(sendable);
+                                }
+                            }
+                        } else if root == COMPOSER_ROOT_EDIT {
+                            chat_edit_pending.with_mut(|list| pending_remove_ids(list, &ev.ids));
+                            if let Some(sendable) = ev.sendable {
+                                if chat_edit_can_send() != sendable {
+                                    chat_edit_can_send.set(sendable);
+                                }
+                            }
+                        }
+                    }
+                    "activate" => {
+                        let id = match ev.id {
+                            Some(id) => id,
+                            None => continue,
+                        };
+                        let att = if root == COMPOSER_ROOT_MAIN {
+                            chat_pending().into_iter().find(|a| a.id == id)
+                        } else if root == COMPOSER_ROOT_EDIT {
+                            chat_edit_pending().into_iter().find(|a| a.id == id)
+                        } else {
+                            None
+                        };
+                        let Some(att) = att else {
+                            continue;
+                        };
+                        let Some(path) = att.source_path.clone() else {
+                            continue;
+                        };
+                        activate_pending_attachment_path(
+                            &path,
+                            att.is_dir,
+                            show_sidebar,
+                            sidebar_shutting_down,
+                            show_center,
+                            center_shutting_down,
+                            active_tab,
+                            fs_section_open,
+                            fs_root_path,
+                            fs_expanded,
+                            fs_children_cache,
+                            fs_selected_path,
+                            fs_save_notice,
+                            center_tabs,
+                            active_center_id,
+                            toast,
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        });
+    });
+
     // Desktop WebView：dioxus 剪贴板事件不含文件，挂 JS capture 钩子读 clipboardData。
     #[cfg(not(target_arch = "wasm32"))]
     use_effect(move || {
@@ -1899,12 +2797,8 @@ pub fn Console(
                     break;
                 };
                 if let Some(t) = payload.text {
-                    chat_draft.with_mut(|draft| {
-                        if !draft.is_empty() && !draft.ends_with('\n') && !draft.ends_with(' ') {
-                            draft.push(' ');
-                        }
-                        draft.push_str(&t);
-                    });
+                    ce_insert_text(COMPOSER_ROOT_MAIN, &t);
+                    chat_can_send.set(true);
                 }
                 for img in payload.images {
                     let id = chat_attachment_seq();
@@ -1912,43 +2806,66 @@ pub fn Console(
                     if let Some(att) =
                         crate::chat::desktop_paste::attachment_from_paste_image(id, img)
                     {
-                        chat_attachments.with_mut(|list| list.push(att));
+                        push_composer_attachment(
+                            COMPOSER_ROOT_MAIN,
+                            chat_pending,
+                            chat_can_send,
+                            att,
+                        );
                     }
                 }
             }
         });
     });
     let mut chat_model_sheet_open = use_signal(|| false);
-    // 聊天栏模型选择列表：先塞本地兜底，再异步用 Relay `GET /v1/models` 覆盖。
-    let mut chat_models = use_signal(fallback_chat_models);
+    let mut chat_agent_mode = use_signal(|| ChatAgentMode::Agent);
+    let mut chat_agent_mode_sheet_open = use_signal(|| false);
+    use_effect(move || {
+        composer_allow_parallel.set(chat_agent_mode().allows_parallel());
+    });
+    // 先只加载本地自定义；远端成功后再合并。失败/空列表不回退内置默认。
+    let mut chat_models = use_signal(custom_chat_model_entries);
     let mut chat_models_load_hint = use_signal(|| None::<String>);
+    let mut custom_model_draft = use_signal(String::new);
     use_hook(|| {
         spawn(async move {
             match list_chat_models().await {
                 Ok(dtos) if !dtos.is_empty() => {
-                    let entries: Vec<ChatModelEntry> = dtos
+                    let remote: Vec<ChatModelEntry> = dtos
                         .into_iter()
                         .map(|m| ChatModelEntry {
                             id: m.id,
                             display_name: m.display_name,
+                            custom: false,
                         })
                         .collect();
-                    chat_models.set(entries);
+                    let merged = merge_chat_models(remote, custom_chat_model_entries());
+                    chat_models.set(merged);
                     chat_models_load_hint.set(None);
                 }
                 Ok(_) => {
-                    // 空列表：保留兜底，轻提示。
-                    chat_models_load_hint.set(Some("模型列表为空，已使用本地默认".into()));
+                    chat_models.set(custom_chat_model_entries());
+                    chat_models_load_hint.set(Some("服务未返回模型，仅显示自定义".into()));
                 }
                 Err(_) => {
-                    chat_models_load_hint.set(Some("模型列表暂时不可用，已使用本地默认".into()));
+                    chat_models.set(custom_chat_model_entries());
+                    chat_models_load_hint.set(Some("无法获取模型列表，仅显示自定义".into()));
                 }
             }
         });
     });
     #[cfg(target_arch = "wasm32")]
-    let chat_stream_abort =
-        use_signal(|| std::rc::Rc::new(std::cell::RefCell::new(None::<web_sys::AbortController>)));
+    let chat_stream_abort = use_signal(|| {
+        std::rc::Rc::new(std::cell::RefCell::new(
+            HashMap::<u64, web_sys::AbortController>::new(),
+        ))
+    });
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    let chat_stream_abort = use_signal(|| {
+        Rc::new(RefCell::new(
+            HashMap::<u64, std::sync::Arc<crate::desktop::agent::ChatAbort>>::new(),
+        ))
+    });
 
     #[cfg(all(target_arch = "wasm32", feature = "web"))]
     let developer_mode = use_context::<crate::web::ShellChromeCtx>().developer_mode;
@@ -1979,6 +2896,14 @@ pub fn Console(
         let tabs = center_tabs();
         let active = active_center_id();
         persist_center_session(&tabs, &active);
+    });
+
+    // 侧栏文件树展开/选中：随变更写入，重启后恢复同一工作区下的展开目录。
+    use_effect(move || {
+        let root = fs_root_path();
+        let expanded = fs_expanded();
+        let selected = fs_selected_path();
+        persist_file_tree_state(&root, &expanded, &selected);
     });
 
     // 底部状态栏：选中文件 / 编辑对比标签时展示路径。
@@ -2087,6 +3012,19 @@ pub fn Console(
             }
             role_loading.set(false);
         });
+    });
+
+    // 把当前启用角色昵称同步到状态栏（左侧）。
+    use_effect(move || {
+        let name = role_list()
+            .iter()
+            .find(|r| r.is_active)
+            .map(|r| r.name.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_default();
+        if active_role_name.peek().as_str() != name {
+            active_role_name.set(name);
+        }
     });
 
     use_effect(move || {
@@ -2207,123 +3145,154 @@ pub fn Console(
         });
     });
 
-    use_effect(move || {
-        let _ = chat_messages();
-        if chat_should_stick_bottom() {
-            schedule_chat_thread_scroll_bottom();
-        }
-    });
-
-    // 回答开始（chat_busy: false → true）自动开启吸底；回答结束（true → false）自动关闭。
-    // 走 effect 而不是在每条 chat_busy.set(false) 处手动同步，新增的退出路径也无需补代码。
-    use_effect(move || {
-        chat_should_stick_bottom.set(chat_busy());
-    });
-
     // 监听一次性「置底请求」：每次递增都在 dioxus 完成本帧 commit 之后调一次 schedule，
     // 内部走一个 microtask 取 DOM scroll_height，此时新一批消息已经渲染完成，能稳定置底。
+    // 只读 `chat_scroll_bottom_request`。不可读 `show_jump_bottom`，否则用户上翻时
+    // JS 把「回到底部」打开展示，本 effect 会再跑并把列表吸回底部。
     use_effect(move || {
         let _ = chat_scroll_bottom_request();
         schedule_chat_thread_scroll_bottom();
+        if *show_jump_bottom.peek() {
+            show_jump_bottom.set(false);
+        }
     });
 
-    let submit_chat = Rc::new(RefCell::new(move || {
-        if chat_busy() {
-            return;
-        }
-        let text = chat_draft().trim().to_string();
-        let pending = chat_attachments();
-        if text.is_empty() && pending.is_empty() {
-            return;
-        }
-        chat_busy.set(true);
-        chat_draft.set(String::new());
-        chat_attachments.set(Vec::new());
-        chat_input_epoch += 1;
-
-        let image_urls: Vec<String> = pending
-            .iter()
-            .filter_map(|a| a.image_data_url.clone())
-            .collect();
-        let non_image_names: Vec<String> = pending
-            .iter()
-            .filter(|a| a.image_data_url.is_none())
-            .map(|a| a.name.clone())
-            .collect();
-        let mut send_text = text.clone();
-        if !non_image_names.is_empty() {
-            let names = non_image_names.join(", ");
-            if send_text.is_empty() {
-                send_text = format!("[附件: {names}]");
-            } else {
-                send_text.push_str(&format!("\n\n[附件: {names}]"));
-            }
-        }
-        // 纯图无文案时给模型一个简短提示，避免空 text part。
-        if send_text.is_empty() && !image_urls.is_empty() {
-            send_text = "请查看附图。".into();
-        }
-
-        let mut dto: Vec<ChatMessageDto> = chat_messages()
-            .iter()
-            .filter_map(|m| match m {
-                UiChatMessage::User { content, .. } => Some(ChatMessageDto {
-                    role: "user".into(),
-                    content: content.clone(),
-                    images: Vec::new(),
-                }),
-                UiChatMessage::Assistant {
-                    id,
-                    content,
-                    agent_run_id,
-                    ..
-                } => {
-                    if content.trim().is_empty() || (id.is_none() && agent_run_id.is_none()) {
-                        None
-                    } else {
-                        Some(ChatMessageDto {
-                            role: "assistant".into(),
-                            content: content.clone(),
-                            images: Vec::new(),
-                        })
-                    }
-                }
-            })
-            .collect();
-        dto.push(ChatMessageDto {
-            role: "user".into(),
-            content: send_text.clone(),
-            images: image_urls,
-        });
-
-        let mut ui_msgs = chat_messages();
-        ui_msgs.push(UiChatMessage::User {
-            id: None,
-            content: send_text.clone(),
-            attachments: pending,
-        });
-        ui_msgs.push(UiChatMessage::Assistant {
-            id: None,
-            content: String::new(),
-            agent_run_id: None,
-            thinking: UiAgentThinking::running(),
-        });
-        chat_messages.set(ui_msgs);
-
-        let model_for_turn = chat_model().trim().to_string();
-        if model_for_turn.is_empty() {
-            chat_busy.set(false);
-            return;
-        }
-        let system = persona_prompt();
-        let conversation_id = active_conversation_id();
+    // 桌面 WebView：用 JS 读真实 scrollTop/Height，不依赖 Dioxus scroll 事件字段。
+    #[cfg(not(target_arch = "wasm32"))]
+    use_effect(move || {
         spawn(async move {
+            let mut eval = dioxus::document::eval(&chat_jump_bottom_listen_js());
+            loop {
+                let Ok(show) = eval.recv::<bool>().await else {
+                    break;
+                };
+                set_show_jump_bottom(show_jump_bottom, show);
+            }
+        });
+    });
+
+    enum ChatSubmitFrom {
+        Composer,
+        Edit { truncate_at: usize },
+    }
+
+    let submit_chat = Rc::new(RefCell::new(move |from: ChatSubmitFrom| {
+        if chat_busy() && !chat_agent_mode().allows_parallel() {
+            return;
+        }
+        let (root, truncate_at, is_composer) = match from {
+            ChatSubmitFrom::Composer => (COMPOSER_ROOT_MAIN, None, true),
+            ChatSubmitFrom::Edit { truncate_at } => (COMPOSER_ROOT_EDIT, Some(truncate_at), false),
+        };
+        spawn(async move {
+            let registry = if is_composer {
+                chat_pending()
+            } else {
+                chat_edit_pending()
+            };
+            let snap = ce_serialize(root).await;
+            let (mut send_text, pending, segs) = compose_user_payload(&snap, &registry);
+            if send_text.trim().is_empty() && pending.is_empty() {
+                return;
+            }
+            let turn_mode = chat_agent_mode().to_turn_mode();
+            chat_turn_gen += 1;
+            let my_gen = chat_turn_gen();
+            chat_live_turns.write().insert(my_gen);
+            chat_busy.set(true);
+            if is_composer {
+                ce_clear(COMPOSER_ROOT_MAIN);
+                chat_pending.set(Vec::new());
+                chat_can_send.set(false);
+                chat_composer_seed.set(String::new());
+                chat_composer_epoch += 1;
+            } else {
+                chat_editing_msg_idx.set(None);
+                ce_clear(COMPOSER_ROOT_EDIT);
+                chat_edit_pending.set(Vec::new());
+                chat_edit_can_send.set(false);
+                chat_edit_seed.set(String::new());
+                chat_edit_epoch += 1;
+            }
+            if let Some(idx) = truncate_at {
+                let mut msgs = chat_messages();
+                msgs.truncate(idx);
+                chat_messages.set(msgs);
+            }
+
+            let image_urls: Vec<String> = pending
+                .iter()
+                .filter_map(|a| a.image_data_url.clone())
+                .collect();
+            // 纯图无文案时给模型一个简短提示，避免空 text part。
+            if send_text.is_empty() && !image_urls.is_empty() {
+                send_text = "请查看附图。".into();
+            }
+
+            let mut dto: Vec<ChatMessageDto> = chat_messages()
+                .iter()
+                .filter_map(|m| match m {
+                    UiChatMessage::User { content, .. } => Some(ChatMessageDto {
+                        role: "user".into(),
+                        content: content.clone(),
+                        images: Vec::new(),
+                    }),
+                    UiChatMessage::Assistant {
+                        id,
+                        content,
+                        agent_run_id,
+                        ..
+                    } => {
+                        if content.trim().is_empty() || (id.is_none() && agent_run_id.is_none()) {
+                            None
+                        } else {
+                            Some(ChatMessageDto {
+                                role: "assistant".into(),
+                                content: content.clone(),
+                                images: Vec::new(),
+                            })
+                        }
+                    }
+                })
+                .collect();
+            dto.push(ChatMessageDto {
+                role: "user".into(),
+                content: send_text.clone(),
+                images: image_urls,
+            });
+
+            let mut ui_msgs = chat_messages();
+            ui_msgs.push(UiChatMessage::User {
+                id: None,
+                content: send_text.clone(),
+                attachments: pending,
+                segs,
+            });
+            ui_msgs.push(UiChatMessage::Assistant {
+                id: None,
+                content: String::new(),
+                agent_run_id: None,
+                thinking: UiAgentThinking::running(),
+            });
+            chat_messages.set(ui_msgs);
+            chat_scroll_bottom_request += 1;
+            let assistant_idx = chat_messages().len().saturating_sub(1);
+
+            let model_for_turn = chat_model().trim().to_string();
+            if model_for_turn.is_empty() {
+                chat_live_turns.write().remove(&my_gen);
+                chat_busy.set(!chat_live_turns.read().is_empty());
+                return;
+            }
+            let system = persona_prompt();
+            let conversation_id = active_conversation_id();
             let req = ChatTurnRequest {
                 conversation_id: Some(conversation_id),
                 messages: dto,
                 system: Some(system),
                 model: model_for_turn,
-                max_agent_steps: None,
+                max_agent_steps: Some(DEFAULT_CHAT_MAX_AGENT_STEPS),
+                mode: turn_mode,
             };
 
             let mut err_text: Option<String> = None;
@@ -2333,35 +3302,64 @@ pub fn Console(
                 let ac = match web_sys::AbortController::new() {
                     Ok(c) => c,
                     Err(_) => {
-                        chat_busy.set(false);
+                        chat_live_turns.write().remove(&my_gen);
+                        chat_busy.set(!chat_live_turns.read().is_empty());
                         return;
                     }
                 };
-                *chat_stream_abort().borrow_mut() = Some(ac.clone());
+                chat_stream_abort().borrow_mut().insert(my_gen, ac.clone());
                 let sig = ac.signal();
                 let r = run_chat_turn(req, Some(&sig), |ev| {
-                    apply_chat_sse_event(ev, chat_messages, &mut err_text);
+                    if !chat_live_turns.read().contains(&my_gen) {
+                        return;
+                    }
+                    apply_chat_sse_event(ev, chat_messages, assistant_idx, &mut err_text);
                 })
                 .await;
                 let aborted = sig.aborted();
-                *chat_stream_abort().borrow_mut() = None;
+                chat_stream_abort().borrow_mut().remove(&my_gen);
                 (r, aborted)
             };
 
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+            let (run_result, user_aborted) = {
+                let ac = crate::desktop::agent::ChatAbort::new();
+                chat_stream_abort().borrow_mut().insert(my_gen, ac.clone());
+                let r = run_chat_turn(req, ac.clone(), |ev| {
+                    if !chat_live_turns.read().contains(&my_gen) {
+                        return;
+                    }
+                    apply_chat_sse_event(ev, chat_messages, assistant_idx, &mut err_text);
+                })
+                .await;
+                let aborted = ac.is_aborted();
+                chat_stream_abort().borrow_mut().remove(&my_gen);
+                (r, aborted)
+            };
+
+            #[cfg(all(not(target_arch = "wasm32"), not(feature = "native")))]
             let (run_result, user_aborted) = {
                 let r = run_chat_turn(req, |ev| {
-                    apply_chat_sse_event(ev, chat_messages, &mut err_text);
+                    if !chat_live_turns.read().contains(&my_gen) {
+                        return;
+                    }
+                    apply_chat_sse_event(ev, chat_messages, assistant_idx, &mut err_text);
                 })
                 .await;
                 (r, false)
             };
 
-            if user_aborted {
-                // 中止流式输出：丢弃本轮未完成的助手气泡，不写入「已停止」文案。
+            let still_this_turn = chat_live_turns.read().contains(&my_gen);
+
+            if user_aborted && still_this_turn {
                 let mut msgs = chat_messages();
-                if matches!(msgs.last(), Some(UiChatMessage::Assistant { .. })) {
-                    msgs.pop();
+                if assistant_idx < msgs.len()
+                    && matches!(
+                        msgs.get(assistant_idx),
+                        Some(UiChatMessage::Assistant { id: None, .. })
+                    )
+                {
+                    msgs.remove(assistant_idx);
                 }
                 chat_messages.set(msgs);
             }
@@ -2371,88 +3369,95 @@ pub fn Console(
                     err_text = Some(crate::chat::friendly_chat_error_message(&e.to_string()));
                 }
             }
-            if let Some(msg) = err_text {
-                let mut msgs = chat_messages();
-                if let Some(UiChatMessage::Assistant {
-                    content, thinking, ..
-                }) = msgs.last_mut()
-                {
-                    if content.is_empty() {
-                        *content = format!("❌ {}", msg);
-                    } else {
-                        content.push_str(&format!("\n❌ {}", msg));
+            if still_this_turn {
+                if let Some(msg) = err_text {
+                    let mut msgs = chat_messages();
+                    if let Some(UiChatMessage::Assistant {
+                        content, thinking, ..
+                    }) = msgs.get_mut(assistant_idx)
+                    {
+                        if content.is_empty() {
+                            *content = format!("❌ {}", msg);
+                        } else {
+                            content.push_str(&format!("\n❌ {}", msg));
+                        }
+                        thinking.dismissed = true;
                     }
-                    thinking.dismissed = true;
+                    chat_messages.set(msgs);
                 }
-                chat_messages.set(msgs);
             }
 
             if let Ok(list) = list_conversations().await {
                 conversations.set(list);
             }
-            chat_busy.set(false);
+            chat_live_turns.write().remove(&my_gen);
+            chat_busy.set(!chat_live_turns.read().is_empty());
         });
     }));
 
-    let enter_send_chat = {
+    // Enter 发送：composer 只 bump tick，避免 EventHandler 破坏 props memo。
+    // 不要在此读取 chat_busy：否则回合结束时 effect 会重跑，把草稿自动发出去。
+    use_effect({
         let submit_chat = submit_chat.clone();
-        move |_| (*submit_chat.borrow_mut())()
-    };
+        move || {
+            let tick = chat_enter_tick();
+            if tick == 0 {
+                return;
+            }
+            (*submit_chat.borrow_mut())(ChatSubmitFrom::Composer);
+        }
+    });
 
-    let on_composer_paste = move |e: ClipboardEvent| {
+    use_effect({
+        let submit_chat = submit_chat.clone();
+        move || {
+            let tick = chat_edit_enter_tick();
+            if tick == 0 {
+                return;
+            }
+            let truncate_at = chat_edit_truncate_at();
+            (*submit_chat.borrow_mut())(ChatSubmitFrom::Edit { truncate_at });
+        }
+    });
+
+    let _ = chat_paste_tick;
+    let _ = chat_edit_paste_tick;
+
+    let abort_chat_stream = Rc::new(move || {
         #[cfg(target_arch = "wasm32")]
         {
-            use crate::chat::wasm_paste;
-            let Some(dt) = wasm_paste::clipboard_data_from_event(&e) else {
-                return;
-            };
-            let (images, text) = wasm_paste::extract_clipboard_images(&dt);
-            if images.is_empty() {
-                return;
+            for c in chat_stream_abort().borrow().values() {
+                c.abort();
             }
-            // 有图片时拦截默认粘贴，避免把图片当乱码文本插入；文本则手动并入草稿。
-            e.prevent_default();
-            if let Some(t) = text {
-                chat_draft.with_mut(|draft| {
-                    if !draft.is_empty() && !draft.ends_with('\n') && !draft.ends_with(' ') {
-                        draft.push(' ');
-                    }
-                    draft.push_str(&t);
-                });
-            }
-            spawn(async move {
-                for (name, mime, file) in images {
-                    let Some(bytes) = wasm_paste::read_web_file_bytes(&file).await else {
-                        continue;
-                    };
-                    let id = chat_attachment_seq();
-                    chat_attachment_seq.set(id + 1);
-                    let att = crate::chat::attachment_from_bytes(id, name, mime, bytes);
-                    chat_attachments.with_mut(|list| list.push(att));
-                }
-            });
         }
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
         {
-            // Desktop：由 `desktop_paste` JS capture 钩子处理（见上方 use_effect）。
-            let _ = e;
+            for c in chat_stream_abort().borrow().values() {
+                c.abort();
+            }
         }
+    });
+
+    // 切走当前会话：中止流并立刻解锁 composer，旧回合不得再改 busy / messages。
+    let detach_busy_chat = {
+        let abort_chat_stream = abort_chat_stream.clone();
+        Rc::new(RefCell::new(move || {
+            if !chat_busy() {
+                return;
+            }
+            abort_chat_stream();
+            chat_live_turns.write().clear();
+            chat_busy.set(false);
+        }))
     };
 
     let send_or_pause_chat = {
         let submit_chat = submit_chat.clone();
-        #[cfg(target_arch = "wasm32")]
-        let chat_stream_abort = chat_stream_abort;
         move |_| {
             if chat_busy() {
-                #[cfg(target_arch = "wasm32")]
-                {
-                    if let Some(c) = chat_stream_abort().borrow().as_ref() {
-                        c.abort();
-                    }
-                }
+                abort_chat_stream();
             } else {
-                (*submit_chat.borrow_mut())();
+                (*submit_chat.borrow_mut())(ChatSubmitFrom::Composer);
             }
         }
     };
@@ -2537,11 +3542,11 @@ pub fn Console(
     } else {
         String::new()
     };
-    // 模型 sheet 打开时在侧栏加类，配合 CSS 解除 overflow 裁切
+    // 模型 / Agent 模式 sheet 打开时在侧栏加类，配合 CSS 解除 overflow 裁切
     let chat_aside_class = format!(
         "{}{}",
         chat_class,
-        if chat_model_sheet_open() {
+        if chat_model_sheet_open() || chat_agent_mode_sheet_open() {
             " ac-chat-menus-open"
         } else {
             ""
@@ -2552,6 +3557,12 @@ pub fn Console(
         div {
             class: "{console_class}",
             onkeydown: move |e: KeyboardEvent| {
+                if is_mod_char_shortcut(&e, "i") && show_chat() && !chat_busy() {
+                    e.prevent_default();
+                    chat_model_sheet_open.set(false);
+                    chat_agent_mode_sheet_open.toggle();
+                    return;
+                }
                 if !center_tabs().is_empty()
                     || !super::files::fs_available()
                     || create_plugin_open()
@@ -2749,29 +3760,6 @@ pub fn Console(
                         nav { class: "ac-sidebar-nav",
                             button {
                                 r#type: "button",
-                                class: if active_tab() == "role" {
-                                    "ac-sidebar-nav-item is-active"
-                                } else {
-                                    "ac-sidebar-nav-item"
-                                },
-                                title: "角色设定",
-                                aria_label: "角色设定",
-                                onclick: move |_| {
-                                    active_tab.set("role");
-                                    center_tabs.with_mut(|tabs| {
-                                        active_center_id.with_mut(|active| {
-                                            center_open_or_focus(tabs, active, CenterTab::role());
-                                        });
-                                    });
-                                },
-                                if active_tab() == "role" {
-                                    Icon { icon: RiHomeSmile2Fill, width: 16, height: 16, fill: "currentColor", class: "ac-sidebar-nav-icon" }
-                                } else {
-                                    Icon { icon: RiHomeSmile2Line, width: 16, height: 16, fill: "currentColor", class: "ac-sidebar-nav-icon" }
-                                }
-                            }
-                            button {
-                                r#type: "button",
                                 class: if active_tab() == "files" {
                                     "ac-sidebar-nav-item is-active"
                                 } else {
@@ -2786,6 +3774,29 @@ pub fn Console(
                                     Icon { icon: TbFileFilled, width: 16, height: 16, fill: "currentColor", class: "ac-sidebar-nav-icon" }
                                 } else {
                                     Icon { icon: TbFile, width: 16, height: 16, fill: "currentColor", class: "ac-sidebar-nav-icon" }
+                                }
+                            }
+                            button {
+                                r#type: "button",
+                                class: if active_tab() == "search" {
+                                    "ac-sidebar-nav-item is-active"
+                                } else {
+                                    "ac-sidebar-nav-item"
+                                },
+                                title: "搜索",
+                                aria_label: "搜索",
+                                onclick: move |_| {
+                                    active_tab.set("search");
+                                    if !super::files::fs_available() {
+                                        toast.warning("Web 端无法搜索本机文件");
+                                    }
+                                },
+                                Icon {
+                                    icon: LdSearch,
+                                    width: 16,
+                                    height: 16,
+                                    fill: "currentColor",
+                                    class: "ac-sidebar-nav-icon",
                                 }
                             }
                             button {
@@ -2822,6 +3833,29 @@ pub fn Console(
                                     Icon { icon: RiApps2Fill, width: 16, height: 16, fill: "currentColor", class: "ac-sidebar-nav-icon" }
                                 } else {
                                     Icon { icon: RiApps2Line, width: 16, height: 16, fill: "currentColor", class: "ac-sidebar-nav-icon" }
+                                }
+                            }
+                            button {
+                                r#type: "button",
+                                class: if active_tab() == "role" {
+                                    "ac-sidebar-nav-item is-active"
+                                } else {
+                                    "ac-sidebar-nav-item"
+                                },
+                                title: "角色设定",
+                                aria_label: "角色设定",
+                                onclick: move |_| {
+                                    active_tab.set("role");
+                                    center_tabs.with_mut(|tabs| {
+                                        active_center_id.with_mut(|active| {
+                                            center_open_or_focus(tabs, active, CenterTab::role());
+                                        });
+                                    });
+                                },
+                                if active_tab() == "role" {
+                                    Icon { icon: RiBearSmileFill, width: 16, height: 16, fill: "currentColor", class: "ac-sidebar-nav-icon" }
+                                } else {
+                                    Icon { icon: RiBearSmileLine, width: 16, height: 16, fill: "currentColor", class: "ac-sidebar-nav-icon" }
                                 }
                             }
                         }
@@ -3218,6 +4252,26 @@ pub fn Console(
                                     });
                                 },
                             }
+                        } else if active_tab() == "search" {
+                            super::search::SidebarSearchPanel {
+                                root_path: fs_root_path(),
+                                dirty: fs_dirty,
+                                drafts: fs_drafts,
+                                baselines: fs_baselines,
+                                on_open_file: move |path: String| {
+                                    fs_selected_path.set(Some(path.clone()));
+                                    fs_save_notice.set(None);
+                                    if center_shutting_down() {
+                                        center_shutting_down.set(false);
+                                    }
+                                    show_center.set(true);
+                                    center_tabs.with_mut(|tabs| {
+                                        active_center_id.with_mut(|active| {
+                                            center_open_or_focus(tabs, active, CenterTab::file(path));
+                                        });
+                                    });
+                                },
+                            }
                         } else if active_tab() == "files" {
                             super::files::SidebarFileExplorer {
                                 root_path: fs_root_path(),
@@ -3242,6 +4296,70 @@ pub fn Console(
                                             center_open_or_focus(tabs, active, CenterTab::file(path));
                                         });
                                     });
+                                },
+                                on_open_in_terminal: move |dir: String| {
+                                    terminal_pending_cd.set(Some(dir));
+                                    show_terminal.set(true);
+                                },
+                                on_add_to_chat: move |paths: Vec<String>| {
+                                    for path in paths {
+                                        if pending_has_path(&chat_pending(), &path) {
+                                            continue;
+                                        }
+                                        let id = chat_attachment_seq();
+                                        chat_attachment_seq.set(id + 1);
+                                        let att = attachment_from_path(id, path);
+                                        push_composer_attachment(
+                                            COMPOSER_ROOT_MAIN,
+                                            chat_pending,
+                                            chat_can_send,
+                                            att,
+                                        );
+                                    }
+                                    show_chat.set(true);
+                                },
+                                on_add_to_new_chat: {
+                                    let detach_busy_chat = detach_busy_chat.clone();
+                                    move |paths: Vec<String>| {
+                                        detach_busy_chat.borrow_mut()();
+                                        show_chat.set(true);
+                                        spawn(async move {
+                                            match create_conversation().await {
+                                                Ok(conversation) => {
+                                                    let id = conversation.id.clone();
+                                                    let mut list = conversations();
+                                                    list.retain(|item| item.id != id);
+                                                    list.insert(0, conversation);
+                                                    conversations.set(list);
+                                                    active_conversation_id.set(id);
+                                                    chat_messages.set(welcome_chat_messages());
+                                                    chat_title_editing.set(false);
+                                                    chat_title_editing_id.set(None);
+                                                    chat_title_draft.set(String::new());
+                                                    chat_history_error.set(None);
+                                                    chat_pending.set(Vec::new());
+                                                    chat_can_send.set(false);
+                                                    chat_composer_seed.set(String::new());
+                                                    ce_clear(COMPOSER_ROOT_MAIN);
+                                                    let mut atts = Vec::new();
+                                                    for path in paths {
+                                                        let att_id = chat_attachment_seq();
+                                                        chat_attachment_seq.set(att_id + 1);
+                                                        atts.push(attachment_from_path(att_id, path));
+                                                    }
+                                                    let can = !atts.is_empty();
+                                                    chat_composer_seed.set(composer_seed_html("", &atts));
+                                                    chat_pending.set(atts);
+                                                    chat_can_send.set(can);
+                                                    chat_composer_epoch += 1;
+                                                }
+                                                Err(e) => {
+                                                    chat_history_error.set(Some(e.to_string()));
+                                                    fs_notice.set(Some(e.to_string()));
+                                                }
+                                            }
+                                        });
+                                    }
                                 },
                             }
                         } else {
@@ -3428,142 +4546,184 @@ pub fn Console(
 
             div { class: "{center_class}",
                 if !center_tabs().is_empty() {
-                    div { class: "ac-center-tabs", role: "tablist",
-                        for tab in center_tabs() {
-                            {
-                                let tab_id = tab.id.clone();
-                                let tab_id_close = tab.id.clone();
-                                let tab_id_middle = tab.id.clone();
-                                let is_active = active_center_id().as_deref() == Some(tab.id.as_str());
-                                let title = tab.title.clone();
-                                let kind_focus = tab.kind.clone();
-                                let file_dirty = center_tab_file_path(&tab.kind)
-                                    .is_some_and(|p| fs_dirty().contains(p));
-                                rsx! {
-                                    div {
-                                        key: "{tab_id}",
-                                        class: if is_active {
-                                            "ac-center-tab is-active"
-                                        } else {
-                                            "ac-center-tab"
-                                        },
-                                        role: "tab",
-                                        aria_selected: is_active,
-                                        title: "{title}",
-                                        onmousedown: move |e| {
-                                            if e.trigger_button() != Some(MouseButton::Auxiliary) {
-                                                return;
-                                            }
-                                            e.prevent_default();
-                                            let removed = center_tabs.with_mut(|tabs| {
-                                                active_center_id.with_mut(|active| {
-                                                    center_close_tab(tabs, active, &tab_id_middle)
-                                                })
-                                            });
-                                            if let Some(removed) = removed {
-                                                if let Some(key) = center_tab_skill_key(&removed.kind) {
-                                                    if selected_skill_key().as_deref() == Some(key.as_str()) {
-                                                        selected_skill_key.set(None);
-                                                    }
-                                                }
-                                                if let Some(key) = center_tab_plugin_key(&removed.kind) {
-                                                    if selected_plugin_key().as_deref() == Some(key) {
-                                                        selected_plugin_key.set(None);
-                                                    }
-                                                }
-                                                if let Some(path) = center_tab_file_path(&removed.kind) {
-                                                    let path = path.to_string();
-                                                    fs_drafts.with_mut(|m| {
-                                                        fs_baselines.with_mut(|b| {
-                                                            fs_dirty.with_mut(|d| {
-                                                                fs_load_errors.with_mut(|e| {
-                                                                    fs_forget_open_file(&path, m, b, d, e);
-                                                                });
-                                                            });
+                    {
+                        let active_md_preview_path = center_active_kind(
+                            &center_tabs(),
+                            &active_center_id(),
+                        )
+                        .and_then(|kind| match kind {
+                            CenterTabKind::File { path } if is_markdown_path(&path) => Some(path),
+                            _ => None,
+                        });
+                        rsx! {
+                            div { class: "ac-center-tabs", role: "tablist",
+                                div { class: "ac-center-tabs-scroll",
+                                    for tab in center_tabs() {
+                                        {
+                                            let tab_id = tab.id.clone();
+                                            let tab_id_close = tab.id.clone();
+                                            let tab_id_middle = tab.id.clone();
+                                            let is_active = active_center_id().as_deref() == Some(tab.id.as_str());
+                                            let title = tab.title.clone();
+                                            let kind_focus = tab.kind.clone();
+                                            let file_dirty = center_tab_file_path(&tab.kind)
+                                                .is_some_and(|p| fs_dirty().contains(p));
+                                            rsx! {
+                                                div {
+                                                    key: "{tab_id}",
+                                                    class: if is_active {
+                                                        "ac-center-tab is-active"
+                                                    } else {
+                                                        "ac-center-tab"
+                                                    },
+                                                    role: "tab",
+                                                    aria_selected: is_active,
+                                                    title: "{title}",
+                                                    onmousedown: move |e| {
+                                                        if e.trigger_button() != Some(MouseButton::Auxiliary) {
+                                                            return;
+                                                        }
+                                                        e.prevent_default();
+                                                        let removed = center_tabs.with_mut(|tabs| {
+                                                            active_center_id.with_mut(|active| {
+                                                                center_close_tab(tabs, active, &tab_id_middle)
+                                                            })
                                                         });
-                                                    });
-                                                    fs_save_notice.set(None);
-                                                }
-                                            }
-                                            if let Some(next) = center_active_kind(&center_tabs(), &active_center_id()) {
-                                                if let Some(key) = center_tab_skill_key(&next) {
-                                                    selected_skill_key.set(Some(key));
-                                                }
-                                                if let Some(key) = center_tab_plugin_key(&next) {
-                                                    selected_plugin_key.set(Some(key.to_string()));
-                                                }
-                                            }
-                                        },
-                                        onclick: move |_| {
-                                            active_center_id.set(Some(tab_id.clone()));
-                                            if let Some(key) = center_tab_skill_key(&kind_focus) {
-                                                selected_skill_key.set(Some(key));
-                                            }
-                                            if let Some(key) = center_tab_plugin_key(&kind_focus) {
-                                                selected_plugin_key.set(Some(key.to_string()));
-                                            }
-                                            if let Some(path) = center_tab_display_path(&kind_focus) {
-                                                fs_selected_path.set(Some(path.to_string()));
-                                                fs_save_notice.set(None);
-                                            }
-                                        },
-                                        if file_dirty {
-                                            span { class: "ac-center-tab-dirty", title: "未保存", "●" }
-                                        }
-                                        span { class: "ac-center-tab-title", "{title}" }
-                                        button {
-                                            r#type: "button",
-                                            class: "ac-center-tab-close",
-                                            title: "关闭标签页",
-                                            aria_label: "关闭标签页",
-                                            onclick: move |e| {
-                                                e.stop_propagation();
-                                                let removed = center_tabs.with_mut(|tabs| {
-                                                    active_center_id.with_mut(|active| {
-                                                        center_close_tab(tabs, active, &tab_id_close)
-                                                    })
-                                                });
-                                                if let Some(removed) = removed {
-                                                    if let Some(key) = center_tab_skill_key(&removed.kind) {
-                                                        if selected_skill_key().as_deref() == Some(key.as_str()) {
-                                                            selected_skill_key.set(None);
-                                                        }
-                                                    }
-                                                    if let Some(key) = center_tab_plugin_key(&removed.kind) {
-                                                        if selected_plugin_key().as_deref() == Some(key) {
-                                                            selected_plugin_key.set(None);
-                                                        }
-                                                    }
-                                                    if let Some(path) = center_tab_file_path(&removed.kind) {
-                                                        let path = path.to_string();
-                                                        fs_drafts.with_mut(|m| {
-                                                            fs_baselines.with_mut(|b| {
-                                                                fs_dirty.with_mut(|d| {
-                                                                    fs_load_errors.with_mut(|e| {
-                                                                        fs_forget_open_file(&path, m, b, d, e);
+                                                        if let Some(removed) = removed {
+                                                            if let Some(key) = center_tab_skill_key(&removed.kind) {
+                                                                if selected_skill_key().as_deref() == Some(key.as_str()) {
+                                                                    selected_skill_key.set(None);
+                                                                }
+                                                            }
+                                                            if let Some(key) = center_tab_plugin_key(&removed.kind) {
+                                                                if selected_plugin_key().as_deref() == Some(key) {
+                                                                    selected_plugin_key.set(None);
+                                                                }
+                                                            }
+                                                            if let Some(path) = center_tab_file_path(&removed.kind) {
+                                                                let path = path.to_string();
+                                                                fs_drafts.with_mut(|m| {
+                                                                    fs_baselines.with_mut(|b| {
+                                                                        fs_dirty.with_mut(|d| {
+                                                                            fs_load_errors.with_mut(|e| {
+                                                                                fs_forget_open_file(&path, m, b, d, e);
+                                                                            });
+                                                                        });
                                                                     });
                                                                 });
+                                                                fs_save_notice.set(None);
+                                                            }
+                                                        }
+                                                        if let Some(next) = center_active_kind(&center_tabs(), &active_center_id()) {
+                                                            if let Some(key) = center_tab_skill_key(&next) {
+                                                                selected_skill_key.set(Some(key));
+                                                            }
+                                                            if let Some(key) = center_tab_plugin_key(&next) {
+                                                                selected_plugin_key.set(Some(key.to_string()));
+                                                            }
+                                                        }
+                                                    },
+                                                    onclick: move |_| {
+                                                        active_center_id.set(Some(tab_id.clone()));
+                                                        if let Some(key) = center_tab_skill_key(&kind_focus) {
+                                                            selected_skill_key.set(Some(key));
+                                                        }
+                                                        if let Some(key) = center_tab_plugin_key(&kind_focus) {
+                                                            selected_plugin_key.set(Some(key.to_string()));
+                                                        }
+                                                        if let Some(path) = center_tab_display_path(&kind_focus) {
+                                                            fs_selected_path.set(Some(path.to_string()));
+                                                            fs_save_notice.set(None);
+                                                        }
+                                                    },
+                                                    if file_dirty {
+                                                        span { class: "ac-center-tab-dirty", title: "未保存", "●" }
+                                                    }
+                                                    span { class: "ac-center-tab-title", "{title}" }
+                                                    button {
+                                                        r#type: "button",
+                                                        class: "ac-center-tab-close",
+                                                        title: "关闭标签页",
+                                                        aria_label: "关闭标签页",
+                                                        onclick: move |e| {
+                                                            e.stop_propagation();
+                                                            let removed = center_tabs.with_mut(|tabs| {
+                                                                active_center_id.with_mut(|active| {
+                                                                    center_close_tab(tabs, active, &tab_id_close)
+                                                                })
                                                             });
-                                                        });
-                                                        fs_save_notice.set(None);
+                                                            if let Some(removed) = removed {
+                                                                if let Some(key) = center_tab_skill_key(&removed.kind) {
+                                                                    if selected_skill_key().as_deref() == Some(key.as_str()) {
+                                                                        selected_skill_key.set(None);
+                                                                    }
+                                                                }
+                                                                if let Some(key) = center_tab_plugin_key(&removed.kind) {
+                                                                    if selected_plugin_key().as_deref() == Some(key) {
+                                                                        selected_plugin_key.set(None);
+                                                                    }
+                                                                }
+                                                                if let Some(path) = center_tab_file_path(&removed.kind) {
+                                                                    let path = path.to_string();
+                                                                    fs_drafts.with_mut(|m| {
+                                                                        fs_baselines.with_mut(|b| {
+                                                                            fs_dirty.with_mut(|d| {
+                                                                                fs_load_errors.with_mut(|e| {
+                                                                                    fs_forget_open_file(&path, m, b, d, e);
+                                                                                });
+                                                                            });
+                                                                        });
+                                                                    });
+                                                                    fs_save_notice.set(None);
+                                                                }
+                                                            }
+                                                            if let Some(next) = center_active_kind(&center_tabs(), &active_center_id()) {
+                                                                if let Some(key) = center_tab_skill_key(&next) {
+                                                                    selected_skill_key.set(Some(key));
+                                                                }
+                                                                if let Some(key) = center_tab_plugin_key(&next) {
+                                                                    selected_plugin_key.set(Some(key.to_string()));
+                                                                }
+                                                            }
+                                                        },
+                                                        Icon {
+                                                            icon: LdX,
+                                                            width: 12,
+                                                            height: 12,
+                                                            fill: "currentColor",
+                                                            class: "ac-center-tab-close-icon",
+                                                        }
                                                     }
                                                 }
-                                                if let Some(next) = center_active_kind(&center_tabs(), &active_center_id()) {
-                                                    if let Some(key) = center_tab_skill_key(&next) {
-                                                        selected_skill_key.set(Some(key));
-                                                    }
-                                                    if let Some(key) = center_tab_plugin_key(&next) {
-                                                        selected_plugin_key.set(Some(key.to_string()));
-                                                    }
-                                                }
-                                            },
-                                            Icon {
-                                                icon: LdX,
-                                                width: 12,
-                                                height: 12,
-                                                fill: "currentColor",
-                                                class: "ac-center-tab-close-icon",
                                             }
+                                        }
+                                    }
+                                }
+                                if let Some(preview_path) = active_md_preview_path {
+                                    button {
+                                        r#type: "button",
+                                        class: "ac-center-tabs-md-preview",
+                                        title: "预览 Markdown",
+                                        aria_label: "预览 Markdown",
+                                        onclick: move |_| {
+                                            let path = preview_path.clone();
+                                            center_tabs.with_mut(|tabs| {
+                                                active_center_id.with_mut(|active| {
+                                                    center_open_or_focus(
+                                                        tabs,
+                                                        active,
+                                                        CenterTab::file_md_preview(path),
+                                                    );
+                                                });
+                                            });
+                                            show_center.set(true);
+                                        },
+                                        Icon {
+                                            icon: LdFileSearch,
+                                            width: 15,
+                                            height: 15,
+                                            fill: "currentColor",
+                                            class: "ac-center-tabs-md-preview-icon",
                                         }
                                     }
                                 }
@@ -3799,6 +4959,31 @@ pub fn Console(
                                             });
                                         });
                                     },
+                                    on_run_in_terminal: move |(plugin_id, command): (String, String)| {
+                                        #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+                                        {
+                                            match crate::desktop::plugins::plugin_dir(&plugin_id) {
+                                                Ok(cwd) => {
+                                                    terminal_pending_run.set(Some(
+                                                        crate::desktop::terminal::TerminalRunRequest {
+                                                            session_name: "pusa".into(),
+                                                            cwd: Some(
+                                                                cwd.to_string_lossy().into_owned(),
+                                                            ),
+                                                            command,
+                                                        },
+                                                    ));
+                                                    show_terminal.set(true);
+                                                }
+                                                Err(e) => toast.error(e),
+                                            }
+                                        }
+                                        #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+                                        {
+                                            let _ = (plugin_id, command);
+                                            toast.error("智能 UI 命令仅桌面版可在终端执行。");
+                                        }
+                                    },
                                 }
                             },
                             Some(CenterTabKind::File { path }) => rsx! {
@@ -3810,6 +4995,14 @@ pub fn Console(
                                     dirty: fs_dirty,
                                     load_errors: fs_load_errors,
                                     save_notice: fs_save_notice,
+                                }
+                            },
+                            Some(CenterTabKind::FileMdPreview { path }) => rsx! {
+                                super::files::FileMdPreviewPane {
+                                    key: "md-preview:{path}",
+                                    path,
+                                    drafts: fs_drafts,
+                                    load_errors: fs_load_errors,
                                 }
                             },
                             Some(CenterTabKind::FileDiff {
@@ -3893,78 +5086,6 @@ pub fn Console(
                                         }
                                         "人格提示词"
                                     }
-                                    button {
-                                        r#type: "button",
-                                        class: "ac-persona-magic-btn",
-                                        disabled: persona_polishing(),
-                                        onclick: move |_| {
-                                            if persona_polishing() {
-                                                return;
-                                            }
-                                            let current = persona_prompt().trim().to_string();
-                                            if current.is_empty() {
-                                                persona_polish_hint.set(Some("请先填写人格提示词，再使用 AI 润色。".into()));
-                                                return;
-                                            }
-                                            persona_polishing.set(true);
-                                            persona_polish_hint.set(None);
-                                            let model_for_polish = chat_model();
-                                            spawn(async move {
-                                                #[cfg(all(target_arch = "wasm32", feature = "web"))]
-                                                {
-                                                    let configured = match llm_config::fetch_llm_config().await {
-                                                        Some(cfg) => {
-                                                            llm_server_openai.set(Some(cfg.api_key_configured));
-                                                            cfg.api_key_configured
-                                                        }
-                                                        None => llm_server_openai().unwrap_or(false),
-                                                    };
-                                                    if !configured {
-                                                        llm_modal_api_key.set(String::new());
-                                                        llm_modal_base.set(llm_config::DEFAULT_OPENAI_V1_BASE.to_string());
-                                                        show_llm_modal.set(true);
-                                                        persona_polishing.set(false);
-                                                        return;
-                                                    }
-                                                }
-
-                                                let model_trim = model_for_polish.trim().to_string();
-                                                if model_trim.is_empty() {
-                                                    persona_polish_hint.set(Some("请先在聊天栏选择模型，再使用 AI 润色。".into()));
-                                                    persona_polishing.set(false);
-                                                    return;
-                                                }
-                                                match persona::polish_persona_remote(
-                                                    &current,
-                                                    &model_trim,
-                                                )
-                                                .await
-                                                {
-                                                    Ok(polished) => {
-                                                        persona_prompt.set(polished);
-                                                        persona_textarea_epoch.with_mut(|n| *n += 1);
-                                                        persona_polish_hint.set(Some("AI 润色完成，可继续调整后保存人格。".into()));
-                                                    }
-                                                    Err(e) => {
-                                                        persona_polish_hint.set(Some(format!("AI 润色失败：{e}")));
-                                                    }
-                                                }
-                                                persona_polishing.set(false);
-                                            });
-                                        },
-                                        Icon {
-                                            icon: LdSparkles,
-                                            width: 16,
-                                            height: 16,
-                                            fill: "currentColor",
-                                            class: "ac-persona-prompt-icon",
-                                        }
-                                        if persona_polishing() {
-                                            "润色中..."
-                                        } else {
-                                            "AI 魔法润色"
-                                        }
-                                    }
                                 }
                                 // 受控 `value`：与聊天输入框一致，确保「AI 魔法润色」读到的是当前输入，而非脱节的 initial_value。
                                 textarea {
@@ -3990,23 +5111,78 @@ pub fn Console(
                                 button {
                                     r#type: "button",
                                     class: "ac-role-btn ac-role-btn-secondary",
+                                    disabled: persona_polishing(),
                                     onclick: move |_| {
-                                        show_sidebar.set(false);
-                                        show_center.set(false);
-                                        show_chat.set(true);
+                                        if persona_polishing() {
+                                            return;
+                                        }
+                                        let current = persona_prompt().trim().to_string();
+                                        if current.is_empty() {
+                                            persona_polish_hint.set(Some("请先填写人格提示词，再使用 AI 润色。".into()));
+                                            return;
+                                        }
+                                        persona_polishing.set(true);
+                                        persona_polish_hint.set(None);
+                                        let model_for_polish = chat_model();
+                                        spawn(async move {
+                                            #[cfg(all(target_arch = "wasm32", feature = "web"))]
+                                            {
+                                                let configured = match llm_config::fetch_llm_config().await {
+                                                    Some(cfg) => {
+                                                        llm_server_openai.set(Some(cfg.api_key_configured));
+                                                        cfg.api_key_configured
+                                                    }
+                                                    None => llm_server_openai().unwrap_or(false),
+                                                };
+                                                if !configured {
+                                                    llm_modal_api_key.set(String::new());
+                                                    llm_modal_base.set(llm_config::DEFAULT_OPENAI_V1_BASE.to_string());
+                                                    show_llm_modal.set(true);
+                                                    persona_polishing.set(false);
+                                                    return;
+                                                }
+                                            }
+
+                                            let model_trim = model_for_polish.trim().to_string();
+                                            if model_trim.is_empty() {
+                                                persona_polish_hint.set(Some("请先在聊天栏选择模型，再使用 AI 润色。".into()));
+                                                persona_polishing.set(false);
+                                                return;
+                                            }
+                                            match persona::polish_persona_remote(
+                                                &current,
+                                                &model_trim,
+                                            )
+                                            .await
+                                            {
+                                                Ok(polished) => {
+                                                    persona_prompt.set(polished);
+                                                    persona_textarea_epoch.with_mut(|n| *n += 1);
+                                                    persona_polish_hint.set(Some("AI 润色完成，可继续调整后保存人格。".into()));
+                                                }
+                                                Err(e) => {
+                                                    persona_polish_hint.set(Some(format!("AI 润色失败：{e}")));
+                                                }
+                                            }
+                                            persona_polishing.set(false);
+                                        });
                                     },
                                     Icon {
-                                        icon: LdMessageCircle,
+                                        icon: LdSparkles,
                                         width: 18,
                                         height: 18,
                                         fill: "currentColor",
                                         class: "ac-role-btn-icon",
                                     }
-                                    "去对话"
+                                    if persona_polishing() {
+                                        "润色中..."
+                                    } else {
+                                        "AI 魔法润色"
+                                    }
                                 }
                                 button {
                                     r#type: "button",
-                                    class: "ac-role-btn ac-role-btn-primary",
+                                    class: "ac-role-btn ac-role-btn-primary ac-persona-save-btn",
                                     onclick: move |_| {
                                         let text = persona_prompt();
                                         let role_name = editing_role_name();
@@ -4291,44 +5467,60 @@ pub fn Console(
                                 rsx! {
                                     crate::desktop::terminal::DesktopTerminal {
                                         show_terminal,
+                                        pending_cd: terminal_pending_cd,
+                                        pending_run: terminal_pending_run,
                                         on_resize_start: move |event: MouseEvent| {
                                             active_resize.set(Some(ConsoleResizeKind::Terminal));
                                             last_pointer_y.set(Some(event.data.client_coordinates().y));
                                         },
-                                        on_toggle_maximize: move |_| {
+                                        is_maximized: (terminal_height() - AC_TERMINAL_MAX_HEIGHT_PX).abs() < 0.5,
+                                        on_maximize: move |_| {
                                             let current = terminal_height();
-                                            if (current - AC_TERMINAL_MAX_HEIGHT_PX).abs() < 0.5 {
-                                                let restore = terminal_pre_maximize_height()
-                                                    .unwrap_or(AC_TERMINAL_DEFAULT_HEIGHT_PX)
-                                                    .clamp(
-                                                        AC_TERMINAL_MIN_HEIGHT_PX,
-                                                        AC_TERMINAL_MAX_HEIGHT_PX,
-                                                    );
-                                                terminal_height.set(restore);
-                                                terminal_pre_maximize_height.set(None);
-                                            } else {
+                                            if (current - AC_TERMINAL_MAX_HEIGHT_PX).abs() >= 0.5 {
                                                 terminal_pre_maximize_height.set(Some(current));
                                                 terminal_height.set(AC_TERMINAL_MAX_HEIGHT_PX);
                                             }
+                                        },
+                                        on_minimize: move |_| {
+                                            let restore = terminal_pre_maximize_height()
+                                                .unwrap_or(AC_TERMINAL_DEFAULT_HEIGHT_PX)
+                                                .clamp(
+                                                    AC_TERMINAL_MIN_HEIGHT_PX,
+                                                    AC_TERMINAL_MAX_HEIGHT_PX,
+                                                );
+                                            terminal_height.set(restore);
+                                            terminal_pre_maximize_height.set(None);
+                                        },
+                                        on_add_to_pusa: move |text: String| {
+                                            let trimmed = text.trim_end().to_string();
+                                            if trimmed.is_empty() {
+                                                return;
+                                            }
+                                            show_chat.set(true);
+                                            let payload = format!("```terminal\n{trimmed}\n```\n");
+                                            ce_insert_text(COMPOSER_ROOT_MAIN, &payload);
+                                            chat_can_send.set(true);
+                                            ce_focus_end(COMPOSER_ROOT_MAIN);
                                         },
                                     }
                                 }
                             }
                             #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
                             {
+                                let terminal_is_max =
+                                    (terminal_height() - AC_TERMINAL_MAX_HEIGHT_PX).abs() < 0.5;
                                 rsx! {
                                     div { class: "ac-terminal-panel",
                                         div { class: "ac-terminal-toolbar",
                                             span { class: "ac-terminal-toolbar-title", "终端" }
                                             div { class: "ac-terminal-toolbar-actions",
-                                                button {
-                                                    r#type: "button",
-                                                    class: "ac-terminal-toolbar-btn",
-                                                    title: "最大化终端",
-                                                    aria_label: "最大化终端",
-                                                    onclick: move |_| {
-                                                        let current = terminal_height();
-                                                        if (current - AC_TERMINAL_MAX_HEIGHT_PX).abs() < 0.5 {
+                                                if terminal_is_max {
+                                                    button {
+                                                        r#type: "button",
+                                                        class: "ac-terminal-toolbar-btn",
+                                                        title: "最小化终端",
+                                                        aria_label: "最小化终端",
+                                                        onclick: move |_| {
                                                             let restore = terminal_pre_maximize_height()
                                                                 .unwrap_or(AC_TERMINAL_DEFAULT_HEIGHT_PX)
                                                                 .clamp(
@@ -4337,16 +5529,33 @@ pub fn Console(
                                                                 );
                                                             terminal_height.set(restore);
                                                             terminal_pre_maximize_height.set(None);
-                                                        } else {
-                                                            terminal_pre_maximize_height.set(Some(current));
-                                                            terminal_height.set(AC_TERMINAL_MAX_HEIGHT_PX);
+                                                        },
+                                                        Icon {
+                                                            icon: LdChevronDown,
+                                                            width: 14,
+                                                            height: 14,
+                                                            fill: "currentColor",
                                                         }
-                                                    },
-                                                    Icon {
-                                                        icon: LdChevronsUp,
-                                                        width: 14,
-                                                        height: 14,
-                                                        fill: "currentColor",
+                                                    }
+                                                } else {
+                                                    button {
+                                                        r#type: "button",
+                                                        class: "ac-terminal-toolbar-btn",
+                                                        title: "最大化终端",
+                                                        aria_label: "最大化终端",
+                                                        onclick: move |_| {
+                                                            let current = terminal_height();
+                                                            if (current - AC_TERMINAL_MAX_HEIGHT_PX).abs() >= 0.5 {
+                                                                terminal_pre_maximize_height.set(Some(current));
+                                                                terminal_height.set(AC_TERMINAL_MAX_HEIGHT_PX);
+                                                            }
+                                                        },
+                                                        Icon {
+                                                            icon: LdChevronUp,
+                                                            width: 14,
+                                                            height: 14,
+                                                            fill: "currentColor",
+                                                        }
                                                     }
                                                 }
                                                 button {
@@ -4403,12 +5612,1062 @@ pub fn Console(
                         sidebar_shutting_down,
                     }
                 }
-                if let Some(err) = chat_history_error() {
-                    div { class: "ac-chat-header",
-                        div { class: "ac-chat-history-error", "{err}" }
+                div { class: "ac-chat-workspace",
+                    div { class: "ac-chat-main",
+                        if let Some(err) = chat_history_error() {
+                            div { class: "ac-chat-header",
+                                div { class: "ac-chat-history-error", "{err}" }
+                            }
+                        }
+                        div {
+                            class: "ac-chat-body scrollbar-hide",
+                    onclick: move |_| {
+                        if chat_editing_msg_idx().is_some() {
+                            clear_chat_message_edit(
+                                chat_editing_msg_idx,
+                                chat_edit_pending,
+                                chat_edit_can_send,
+                                chat_edit_seed,
+                                chat_edit_epoch,
+                            );
+                        }
+                    },
+                    div { class: "ac-chat-thread-pane",
+                    div {
+                        id: AC_CHAT_THREAD_DOM_ID,
+                        class: "ac-chat-thread scrollbar-hide",
+                        onscroll: move |evt| {
+                            // Native：可见性只由长期 JS 监听驱动，避免 onscroll eval 与之抢写。
+                            #[cfg(not(target_arch = "wasm32"))]
+                            {
+                                let _ = evt;
+                            }
+                            #[cfg(target_arch = "wasm32")]
+                            {
+                                let _ = evt;
+                                if let Some(show) =
+                                    chat_thread_show_jump_from_dom(show_jump_bottom())
+                                {
+                                    set_show_jump_bottom(show_jump_bottom, show);
+                                }
+                            }
+                        },
+                        for (msg_idx, msg) in chat_messages.read().iter().cloned().enumerate() {
+                            match msg {
+                                UiChatMessage::User {
+                                    content,
+                                    attachments,
+                                    segs,
+                                    ..
+                                } => {
+                                    let is_editing = chat_editing_msg_idx() == Some(msg_idx);
+                                    let display_segs = if segs.is_empty() {
+                                        parse_user_message_segments(&content, &attachments)
+                                    } else {
+                                        segs
+                                    };
+                                    let visible_content = display_segs
+                                        .iter()
+                                        .filter_map(|seg| match seg {
+                                            ChatUserSeg::Text(t) => Some(t.as_str()),
+                                            ChatUserSeg::Attachment(_) => None,
+                                        })
+                                        .collect::<Vec<_>>()
+                                        .join("");
+                                    let content_for_click = visible_content.clone();
+                                    let attachments_for_click = attachments.clone();
+                                    let segs_for_edit = display_segs.clone();
+                                    rsx! {
+                                    div {
+                                        class: "ac-chat-message ac-chat-message-user",
+                                        onmousedown: move |evt| evt.stop_propagation(),
+                                        onclick: move |evt| evt.stop_propagation(),
+                                        if is_editing {
+                                            div {
+                                                class: "ac-chat-bubble ac-chat-bubble-user ac-chat-bubble-user-editing",
+                                                onmousedown: move |evt| evt.stop_propagation(),
+                                                onclick: move |evt| evt.stop_propagation(),
+                                                ChatUserMessageEdit {
+                                                    root_id: COMPOSER_ROOT_EDIT.to_string(),
+                                                    epoch: chat_edit_epoch(),
+                                                    seed_html: chat_edit_seed(),
+                                                    disabled: chat_busy(),
+                                                    busy: chat_busy,
+                                                    pending: chat_edit_pending,
+                                                    can_send: chat_edit_can_send,
+                                                    chat_attachment_seq,
+                                                    enter_tick: chat_edit_enter_tick,
+                                                    paste_tick: chat_edit_paste_tick,
+                                                    on_resend: {
+                                                        let submit_chat = submit_chat.clone();
+                                                        move |_| {
+                                                            (*submit_chat.borrow_mut())(
+                                                                ChatSubmitFrom::Edit { truncate_at: msg_idx },
+                                                            );
+                                                        }
+                                                    },
+                                                }
+                                            }
+                                        } else {
+                                            div { class: "ac-chat-user-stack",
+                                                div {
+                                                    class: "ac-chat-bubble ac-chat-bubble-user",
+                                                    onmousedown: move |evt| evt.stop_propagation(),
+                                                    onclick: move |evt| evt.stop_propagation(),
+                                                    for (seg_i, seg) in display_segs.into_iter().enumerate() {
+                                                        match seg {
+                                                            ChatUserSeg::Text(text) => {
+                                                                if !text.is_empty() {
+                                                                    rsx! {
+                                                                        span {
+                                                                            key: "t-{seg_i}",
+                                                                            class: "ac-chat-bubble-user-text",
+                                                                            "{text}"
+                                                                        }
+                                                                    }
+                                                                } else {
+                                                                    rsx! {}
+                                                                }
+                                                            }
+                                                            ChatUserSeg::Attachment(att) => {
+                                                                if let Some(url) = att.preview_url.clone() {
+                                                                    rsx! {
+                                                                        span {
+                                                                            key: "a-{att.id}-{seg_i}",
+                                                                            class: "ac-chat-attach-thumb",
+                                                                            title: "{att.name}",
+                                                                            img {
+                                                                                class: "ac-chat-attach-thumb-img",
+                                                                                src: "{url}",
+                                                                                alt: "{att.name}",
+                                                                                draggable: false,
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                } else {
+                                                                    let title = att
+                                                                        .source_path
+                                                                        .clone()
+                                                                        .unwrap_or_else(|| att.name.clone());
+                                                                    let mut chip_class = if att.is_dir {
+                                                                        "ac-chat-attach-chip is-dir".to_string()
+                                                                    } else {
+                                                                        "ac-chat-attach-chip is-file".to_string()
+                                                                    };
+                                                                    if att.source_path.is_some() {
+                                                                        chip_class.push_str(" is-activatable");
+                                                                    }
+                                                                    let is_dir = att.is_dir;
+                                                                    let path_for_click = att.source_path.clone();
+                                                                    rsx! {
+                                                                        span {
+                                                                            key: "a-{att.id}-{seg_i}",
+                                                                            class: "{chip_class}",
+                                                                            title: "{title}",
+                                                                            onclick: move |evt: MouseEvent| {
+                                                                                evt.stop_propagation();
+                                                                                let Some(path) = path_for_click.clone() else {
+                                                                                    return;
+                                                                                };
+                                                                                activate_pending_attachment_path(
+                                                                                    &path,
+                                                                                    is_dir,
+                                                                                    show_sidebar,
+                                                                                    sidebar_shutting_down,
+                                                                                    show_center,
+                                                                                    center_shutting_down,
+                                                                                    active_tab,
+                                                                                    fs_section_open,
+                                                                                    fs_root_path,
+                                                                                    fs_expanded,
+                                                                                    fs_children_cache,
+                                                                                    fs_selected_path,
+                                                                                    fs_save_notice,
+                                                                                    center_tabs,
+                                                                                    active_center_id,
+                                                                                    toast,
+                                                                                );
+                                                                            },
+                                                                            span { class: "ac-chat-attach-chip-icon",
+                                                                                span { class: "ac-chat-attach-chip-type-icon",
+                                                                                    if is_dir {
+                                                                                        Icon {
+                                                                                            icon: LdFolder,
+                                                                                            width: 14,
+                                                                                            height: 14,
+                                                                                            fill: "currentColor",
+                                                                                        }
+                                                                                    } else {
+                                                                                        Icon {
+                                                                                            icon: TbFile,
+                                                                                            width: 14,
+                                                                                            height: 14,
+                                                                                            fill: "currentColor",
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                            span { class: "ac-chat-attach-chip-name", "{att.name}" }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                if !chat_busy() {
+                                                    div { class: "ac-chat-user-actions",
+                                                        button {
+                                                            r#type: "button",
+                                                            class: "ac-chat-ai-action-btn",
+                                                            title: "复制",
+                                                            aria_label: "复制我的消息",
+                                                            onclick: {
+                                                                let content = content_for_click.clone();
+                                                                move |evt: MouseEvent| {
+                                                                    evt.stop_propagation();
+                                                                    copy_text_to_clipboard(content.clone());
+                                                                }
+                                                            },
+                                                            Icon {
+                                                                icon: LdCopy,
+                                                                width: 14,
+                                                                height: 14,
+                                                                fill: "currentColor",
+                                                                class: "ac-chat-ai-action-icon",
+                                                            }
+                                                        }
+                                                        button {
+                                                            r#type: "button",
+                                                            class: "ac-chat-ai-action-btn",
+                                                            title: "编辑",
+                                                            aria_label: "编辑我的消息",
+                                                            onclick: move |evt: MouseEvent| {
+                                                                evt.stop_propagation();
+                                                                chat_editing_msg_idx.set(Some(msg_idx));
+                                                                chat_edit_truncate_at.set(msg_idx);
+                                                                chat_edit_pending.set(attachments_for_click.clone());
+                                                                chat_edit_seed.set(composer_seed_html_from_segs(
+                                                                    &segs_for_edit,
+                                                                ));
+                                                                chat_edit_can_send.set(
+                                                                    !content_for_click.trim().is_empty()
+                                                                        || !attachments_for_click.is_empty(),
+                                                                );
+                                                                chat_edit_epoch += 1;
+                                                            },
+                                                            Icon {
+                                                                icon: LdPencil,
+                                                                width: 14,
+                                                                height: 14,
+                                                                fill: "currentColor",
+                                                                class: "ac-chat-ai-action-icon",
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    }
+                                },
+                                UiChatMessage::Assistant {
+                                    content,
+                                    agent_run_id,
+                                    thinking,
+                                    ..
+                                } => {
+                                    let answer_ready = !content.trim().is_empty();
+                                    let running = matches!(
+                                        thinking.status,
+                                        ThinkingStatus::Running
+                                    );
+                                    let is_error = matches!(thinking.status, ThinkingStatus::Error);
+                                    let show_bubble = answer_ready && !running;
+                                    let show_thinking = thinking.has_visible_content()
+                                        || (chat_busy() && !show_bubble);
+                                    let thinking_busy = running;
+                                    rsx! {
+                                    div { class: "ac-chat-message ac-chat-message-ai",
+                                        ChatThinkingHydrator {
+                                            msg_index: msg_idx,
+                                            chat_messages,
+                                        }
+                                        div { class: "ac-chat-ai-stack",
+                                            if show_thinking {
+                                                ChatThinkingPanel {
+                                                    msg_index: msg_idx,
+                                                    chat_messages,
+                                                    thinking: thinking.clone(),
+                                                    busy: thinking_busy,
+                                                    on_open_trace_file: {
+                                                        let detach_busy_chat = detach_busy_chat.clone();
+                                                        move |action: TraceFileOpen| {
+                                                        match action {
+                                                            TraceFileOpen::File { path } => {
+                                                                if !super::files::fs_available() {
+                                                                    toast.error(
+                                                                        "Web 端无法打开本机文件，请使用桌面版。",
+                                                                    );
+                                                                    return;
+                                                                }
+                                                                let resolved =
+                                                                    reveal_and_select_workspace_file(
+                                                                        &path,
+                                                                        show_sidebar,
+                                                                        sidebar_shutting_down,
+                                                                        show_center,
+                                                                        center_shutting_down,
+                                                                        active_tab,
+                                                                        fs_section_open,
+                                                                        fs_root_path,
+                                                                        fs_expanded,
+                                                                        fs_children_cache,
+                                                                        fs_selected_path,
+                                                                        fs_save_notice,
+                                                                    );
+                                                                if resolved.is_empty() {
+                                                                    return;
+                                                                }
+                                                                center_tabs.with_mut(|tabs| {
+                                                                    active_center_id.with_mut(|active| {
+                                                                        center_open_or_focus(
+                                                                            tabs,
+                                                                            active,
+                                                                            CenterTab::file(resolved),
+                                                                        );
+                                                                    });
+                                                                });
+                                                            }
+                                                            TraceFileOpen::Diff {
+                                                                path,
+                                                                tool_id,
+                                                                old_text,
+                                                                new_text,
+                                                            } => {
+                                                                if !super::files::fs_available() {
+                                                                    toast.error(
+                                                                        "Web 端无法打开本机文件，请使用桌面版。",
+                                                                    );
+                                                                    return;
+                                                                }
+                                                                let resolved =
+                                                                    reveal_and_select_workspace_file(
+                                                                        &path,
+                                                                        show_sidebar,
+                                                                        sidebar_shutting_down,
+                                                                        show_center,
+                                                                        center_shutting_down,
+                                                                        active_tab,
+                                                                        fs_section_open,
+                                                                        fs_root_path,
+                                                                        fs_expanded,
+                                                                        fs_children_cache,
+                                                                        fs_selected_path,
+                                                                        fs_save_notice,
+                                                                    );
+                                                                let path = if resolved.is_empty() {
+                                                                    path
+                                                                } else {
+                                                                    resolved
+                                                                };
+                                                                if path.is_empty() {
+                                                                    return;
+                                                                }
+                                                                // 无 old/new 时退化为普通打开（带行号）。
+                                                                if old_text.is_empty() && new_text.is_empty() {
+                                                                    center_tabs.with_mut(|tabs| {
+                                                                        active_center_id.with_mut(|active| {
+                                                                            center_open_or_focus(
+                                                                                tabs,
+                                                                                active,
+                                                                                CenterTab::file(path),
+                                                                            );
+                                                                        });
+                                                                    });
+                                                                    return;
+                                                                }
+                                                                center_tabs.with_mut(|tabs| {
+                                                                    active_center_id.with_mut(|active| {
+                                                                        center_open_or_focus(
+                                                                            tabs,
+                                                                            active,
+                                                                            CenterTab::file_diff(
+                                                                                tool_id,
+                                                                                path,
+                                                                                old_text,
+                                                                                new_text,
+                                                                            ),
+                                                                        );
+                                                                    });
+                                                                });
+                                                            }
+                                                            TraceFileOpen::Conversation { id } => {
+                                                                let detach_busy_chat = detach_busy_chat.clone();
+                                                                spawn(async move {
+                                                                    detach_busy_chat.borrow_mut()();
+                                                                    match load_conversation_messages(
+                                                                        id.clone(),
+                                                                        200,
+                                                                    )
+                                                                    .await
+                                                                    {
+                                                                        Ok(messages) => {
+                                                                            active_conversation_id.set(id);
+                                                                            chat_messages.set(
+                                                                                stored_messages_to_ui(messages),
+                                                                            );
+                                                                            chat_title_editing.set(false);
+                                                                            chat_title_editing_id.set(None);
+                                                                            chat_title_draft.set(String::new());
+                                                                            chat_history_error.set(None);
+                                                                            chat_scroll_bottom_request += 1;
+                                                                        }
+                                                                        Err(e) => chat_history_error
+                                                                            .set(Some(e.to_string())),
+                                                                    }
+                                                                    if let Ok(list) =
+                                                                        list_conversations().await
+                                                                    {
+                                                                        conversations.set(list);
+                                                                    }
+                                                                });
+                                                            }
+                                                        }
+                                                        }
+                                                    },
+                                                }
+                                            }
+                                            if show_bubble {
+                                                div { class: "ac-chat-bubble ac-chat-bubble-ai is-visible",
+                                                    ChatMarkdownBody {
+                                                        content: content.clone(),
+                                                    }
+                                                }
+                                            }
+                                            if show_bubble {
+                                            div { class: if is_error {
+                                                    "ac-chat-ai-actions is-error"
+                                                } else {
+                                                    "ac-chat-ai-actions"
+                                                },
+                                                button {
+                                                    r#type: "button",
+                                                    class: "ac-chat-ai-action-btn",
+                                                    title: "复制",
+                                                    aria_label: "复制助手回复",
+                                                    onclick: {
+                                                        let content = content.clone();
+                                                        move |_| copy_text_to_clipboard(content.clone())
+                                                    },
+                                                    Icon {
+                                                        icon: LdCopy,
+                                                        width: 14,
+                                                        height: 14,
+                                                        fill: "currentColor",
+                                                        class: "ac-chat-ai-action-icon",
+                                                    }
+                                                    if is_error {
+                                                        span { class: "ac-chat-ai-action-text", "复制" }
+                                                    }
+                                                }
+                                                if is_error {
+                                                    button {
+                                                        r#type: "button",
+                                                        class: "ac-chat-ai-action-btn",
+                                                        title: "重试",
+                                                        aria_label: "重试上一轮请求",
+                                                        onclick: {
+                                                            let submit_chat = submit_chat.clone();
+                                                            let retry_msg_idx = msg_idx;
+                                                            move |_| {
+                                                                let Some(UiChatMessage::User {
+                                                                    content,
+                                                                    attachments,
+                                                                    segs,
+                                                                    ..
+                                                                }) = chat_messages().get(retry_msg_idx.saturating_sub(1)).cloned() else {
+                                                                    return;
+                                                                };
+                                                                let seed_html = if !segs.is_empty() {
+                                                                    composer_seed_html_from_segs(&segs)
+                                                                } else {
+                                                                    composer_seed_html(&content, &attachments)
+                                                                };
+                                                                chat_pending.set(attachments);
+                                                                chat_can_send.set(true);
+                                                                chat_composer_seed.set(seed_html.clone());
+                                                                chat_composer_epoch += 1;
+                                                                let submit_chat_run = submit_chat.clone();
+                                                                spawn(async move {
+                                                                    ce_set_html(COMPOSER_ROOT_MAIN, &seed_html);
+                                                                    (*submit_chat_run.borrow_mut())(ChatSubmitFrom::Composer);
+                                                                });
+                                                            }
+                                                        },
+                                                        Icon {
+                                                            icon: LdRefreshCw,
+                                                            width: 14,
+                                                            height: 14,
+                                                            fill: "currentColor",
+                                                            class: "ac-chat-ai-action-icon",
+                                                        }
+                                                        span { class: "ac-chat-ai-action-text", "重试" }
+                                                    }
+                                                }
+                                                if developer_mode() {
+                                                    if let Some(run_id) = agent_run_id {
+                                                        button {
+                                                            r#type: "button",
+                                                            class: "ac-chat-ai-action-btn",
+                                                            title: "查看详情",
+                                                            aria_label: "查看助手回复详情",
+                                                            onclick: move |_| {
+                                                                agent_detail_loading.set(true);
+                                                                agent_detail_error.set(None);
+                                                                selected_agent_run_detail.set(None);
+                                                                spawn(async move {
+                                                                    match load_agent_run_detail(run_id).await {
+                                                                        Ok(detail) => {
+                                                                            selected_agent_run_detail.set(Some(detail));
+                                                                            agent_detail_error.set(None);
+                                                                        }
+                                                                        Err(e) => {
+                                                                            agent_detail_error.set(Some(e.to_string()));
+                                                                        }
+                                                                    }
+                                                                    agent_detail_loading.set(false);
+                                                                });
+                                                            },
+                                                            Icon {
+                                                                icon: LdEye,
+                                                                width: 14,
+                                                                height: 14,
+                                                                fill: "currentColor",
+                                                                class: "ac-chat-ai-action-icon",
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            }
+                                        }
+                                    }
+                                    }
+                                },
+                            }
+                        }
                     }
-                }
-                div { class: "ac-chat-body scrollbar-hide",
+                        }
+                    }
+                    div {
+                        class: if show_jump_bottom() {
+                            "ac-chat-jump-bottom-host"
+                        } else {
+                            "ac-chat-jump-bottom-host is-hidden"
+                        },
+                        aria_hidden: if show_jump_bottom() { "false" } else { "true" },
+                        button {
+                            r#type: "button",
+                            class: "ac-chat-jump-bottom",
+                            title: "回到底部",
+                            aria_label: "回到底部",
+                            tabindex: if show_jump_bottom() { "0" } else { "-1" },
+                            onclick: move |evt| {
+                                evt.stop_propagation();
+                                show_jump_bottom.set(false);
+                                schedule_chat_thread_scroll_bottom();
+                            },
+                            Icon {
+                                icon: LdChevronsDown,
+                                width: 13,
+                                height: 13,
+                                fill: "currentColor",
+                            }
+                        }
+                    }
+                        div {
+                            class: "ac-chat-input-wrap",
+                            onclick: move |_| {
+                                if chat_editing_msg_idx().is_some() {
+                                    clear_chat_message_edit(
+                                        chat_editing_msg_idx,
+                                        chat_edit_pending,
+                                        chat_edit_can_send,
+                                        chat_edit_seed,
+                                        chat_edit_epoch,
+                                    );
+                                }
+                            },
+                            div { class: "ac-chat-input-shell",
+                        div { class: "ac-chat-composer-stack",
+                            ChatComposerCe {
+                                root_id: COMPOSER_ROOT_MAIN.to_string(),
+                                epoch: chat_composer_epoch(),
+                                seed_html: chat_composer_seed(),
+                                disabled: false,
+                                busy: chat_busy,
+                                allow_send_while_busy: Some(composer_allow_parallel),
+                                enter_tick: chat_enter_tick,
+                                paste_tick: chat_paste_tick,
+                            }
+                            div { class: "ac-chat-composer-toolbar",
+                                div { class: "ac-chat-mode-wrap",
+                                    button {
+                                        r#type: "button",
+                                        class: if chat_agent_mode_sheet_open() {
+                                            "ac-chat-agent-mode-btn ac-chat-toolbar-pill is-open"
+                                        } else {
+                                            "ac-chat-agent-mode-btn ac-chat-toolbar-pill"
+                                        },
+                                        title: "{chat_agent_mode().label()} 模式",
+                                        aria_label: "切换 Agent 模式",
+                                        aria_expanded: chat_agent_mode_sheet_open(),
+                                        aria_haspopup: "menu",
+                                        disabled: chat_busy(),
+                                        onclick: move |_| {
+                                            if chat_busy() {
+                                                return;
+                                            }
+                                            chat_model_sheet_open.set(false);
+                                            chat_agent_mode_sheet_open.toggle();
+                                        },
+                                        match chat_agent_mode() {
+                                            ChatAgentMode::Agent => rsx! {
+                                                Icon {
+                                                    icon: LdInfinity,
+                                                    width: 15,
+                                                    height: 15,
+                                                    fill: "currentColor",
+                                                    class: "ac-chat-agent-mode-btn-icon",
+                                                }
+                                            },
+                                            ChatAgentMode::Plan => rsx! {
+                                                Icon {
+                                                    icon: LdListTodo,
+                                                    width: 15,
+                                                    height: 15,
+                                                    fill: "currentColor",
+                                                    class: "ac-chat-agent-mode-btn-icon",
+                                                }
+                                            },
+                                            ChatAgentMode::Debug => rsx! {
+                                                Icon {
+                                                    icon: LdBug,
+                                                    width: 15,
+                                                    height: 15,
+                                                    fill: "currentColor",
+                                                    class: "ac-chat-agent-mode-btn-icon",
+                                                }
+                                            },
+                                            ChatAgentMode::Multitask => rsx! {
+                                                Icon {
+                                                    icon: BsIntersect,
+                                                    width: 15,
+                                                    height: 15,
+                                                    fill: "currentColor",
+                                                    class: "ac-chat-agent-mode-btn-icon",
+                                                }
+                                            },
+                                            ChatAgentMode::Ask => rsx! {
+                                                Icon {
+                                                    icon: LdMessageSquare,
+                                                    width: 15,
+                                                    height: 15,
+                                                    fill: "currentColor",
+                                                    class: "ac-chat-agent-mode-btn-icon",
+                                                }
+                                            },
+                                        }
+                                        span { class: "ac-chat-agent-mode-btn-label",
+                                            "{chat_agent_mode().label()}"
+                                        }
+                                    }
+                                    if chat_agent_mode_sheet_open() {
+                                        div {
+                                            class: "ac-chat-mode-sheet-backdrop",
+                                            onclick: move |_| chat_agent_mode_sheet_open.set(false),
+                                        }
+                                        div {
+                                            class: "ac-chat-mode-sheet ac-chat-agent-mode-sheet",
+                                            role: "menu",
+                                            for mode in ChatAgentMode::VISIBLE {
+                                                {
+                                                    let is_active = chat_agent_mode() == mode;
+                                                    let label = mode.label();
+                                                    rsx! {
+                                                        button {
+                                                            key: "{label}",
+                                                            r#type: "button",
+                                                            role: "menuitem",
+                                                            class: if is_active {
+                                                                "ac-chat-agent-mode-opt is-active"
+                                                            } else {
+                                                                "ac-chat-agent-mode-opt"
+                                                            },
+                                                            onclick: move |_| {
+                                                                chat_agent_mode.set(mode);
+                                                                chat_agent_mode_sheet_open.set(false);
+                                                            },
+                                                            span { class: "ac-chat-agent-mode-opt-icon",
+                                                                match mode {
+                                                                    ChatAgentMode::Agent => rsx! {
+                                                                        Icon {
+                                                                            icon: LdInfinity,
+                                                                            width: 15,
+                                                                            height: 15,
+                                                                            fill: "currentColor",
+                                                                        }
+                                                                    },
+                                                                    ChatAgentMode::Plan => rsx! {
+                                                                        Icon {
+                                                                            icon: LdListTodo,
+                                                                            width: 15,
+                                                                            height: 15,
+                                                                            fill: "currentColor",
+                                                                        }
+                                                                    },
+                                                                    ChatAgentMode::Debug => rsx! {
+                                                                        Icon {
+                                                                            icon: LdBug,
+                                                                            width: 15,
+                                                                            height: 15,
+                                                                            fill: "currentColor",
+                                                                        }
+                                                                    },
+                                                                    ChatAgentMode::Multitask => rsx! {
+                                                                        Icon {
+                                                                            icon: BsIntersect,
+                                                                            width: 15,
+                                                                            height: 15,
+                                                                            fill: "currentColor",
+                                                                        }
+                                                                    },
+                                                                    ChatAgentMode::Ask => rsx! {
+                                                                        Icon {
+                                                                            icon: LdMessageSquare,
+                                                                            width: 15,
+                                                                            height: 15,
+                                                                            fill: "currentColor",
+                                                                        }
+                                                                    },
+                                                                }
+                                                            }
+                                                            span { class: "ac-chat-agent-mode-opt-label", "{label}" }
+                                                            if let Some(shortcut) = mode.shortcut() {
+                                                                span { class: "ac-chat-agent-mode-opt-shortcut", "{shortcut}" }
+                                                            }
+                                                            if is_active {
+                                                                Icon {
+                                                                    icon: LdCheck,
+                                                                    width: 16,
+                                                                    height: 16,
+                                                                    fill: "currentColor",
+                                                                    class: "ac-chat-agent-mode-opt-check",
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                div { class: "ac-chat-model-wrap",
+                                    button {
+                                        r#type: "button",
+                                        class: if chat_model_sheet_open() {
+                                            "ac-chat-model-trigger ac-chat-toolbar-pill is-open"
+                                        } else {
+                                            "ac-chat-model-trigger ac-chat-toolbar-pill"
+                                        },
+                                        aria_expanded: chat_model_sheet_open(),
+                                        aria_haspopup: "menu",
+                                        onclick: move |_| {
+                                            chat_agent_mode_sheet_open.set(false);
+                                            chat_model_sheet_open.toggle();
+                                        },
+                                        span { class: "ac-chat-mode-trigger-label",
+                                            // 触发器主标题：优先用列表里命中行的 id（大写化展示），
+                                            // 没命中则保留当前 chat_model 原值（已自动回落，理论上
+                                            // 不会到这里）。display_name 不放进 trigger，避免按钮太宽。
+                                            {
+                                                let cur = chat_model();
+                                                let models = chat_models.read();
+                                                let label = models
+                                                    .iter()
+                                                    .find(|m| m.id == cur)
+                                                    .map(|m| m.id.to_uppercase())
+                                                    .unwrap_or_else(|| cur.to_uppercase());
+                                                label
+                                            }
+                                        }
+                                        if chat_model_sheet_open() {
+                                            Icon {
+                                                icon: LdChevronDown,
+                                                width: 14,
+                                                height: 14,
+                                                fill: "currentColor",
+                                                class: "ac-chat-mode-trigger-chevron",
+                                            }
+                                        } else {
+                                            Icon {
+                                                icon: LdChevronUp,
+                                                width: 14,
+                                                height: 14,
+                                                fill: "currentColor",
+                                                class: "ac-chat-mode-trigger-chevron",
+                                            }
+                                        }
+                                    }
+                                    if chat_model_sheet_open() {
+                                        // 全屏透明 backdrop：点击除模型列表以外的任意区域即关闭弹窗。
+                                        // z-index 低于 .ac-chat-mode-sheet（5001），高于普通页面元素，
+                                        // 与顶栏设置菜单 (.ac-web-titlebar-menu-backdrop) 完全同模式。
+                                        div {
+                                            class: "ac-chat-mode-sheet-backdrop",
+                                            onclick: move |_| chat_model_sheet_open.set(false),
+                                        }
+                                        div { class: "ac-chat-mode-sheet", role: "menu",
+                                            // 模型列表。每行展示 id（大写化）+ 可选的 display_name 副标题。
+                                            // .read().clone() 转 owned，避免在 rsx for / closure 里持
+                                            // 有 Signal 的 Ref 借用。
+                                            if let Some(hint) = chat_models_load_hint() {
+                                                span {
+                                                    class: "ac-chat-mode-sheet__sub",
+                                                    style: "padding: 0.35rem 0.72rem 0.15rem;",
+                                                    "{hint}"
+                                                }
+                                            }
+                                            for m in chat_models.read().clone() {
+                                                {
+                                                    let id = m.id.clone();
+                                                    let id_for_click = id.clone();
+                                                    let id_for_class = id.clone();
+                                                    let id_for_check = id.clone();
+                                                    let id_for_delete = id.clone();
+                                                    let is_custom = m.custom;
+                                                    let title = id.to_uppercase();
+                                                    let sub = m.display_name.clone().unwrap_or_default();
+                                                    rsx! {
+                                                        div {
+                                                            key: "{id}",
+                                                            class: if chat_model() == id_for_class {
+                                                                if is_custom {
+                                                                    "ac-chat-mode-sheet__opt-row is-active is-custom"
+                                                                } else {
+                                                                    "ac-chat-mode-sheet__opt-row is-active"
+                                                                }
+                                                            } else if is_custom {
+                                                                "ac-chat-mode-sheet__opt-row is-custom"
+                                                            } else {
+                                                                "ac-chat-mode-sheet__opt-row"
+                                                            },
+                                                            button {
+                                                                r#type: "button",
+                                                                role: "menuitem",
+                                                                class: if chat_model() == id_for_class {
+                                                                    "ac-chat-mode-sheet__opt is-active"
+                                                                } else {
+                                                                    "ac-chat-mode-sheet__opt"
+                                                                },
+                                                                onclick: move |_| {
+                                                                    persist_chat_model(&id_for_click);
+                                                                    chat_model.set(id_for_click.clone());
+                                                                    chat_model_sheet_open.set(false);
+                                                                },
+                                                                span { class: "ac-chat-mode-sheet__title", "{title}" }
+                                                                if !sub.is_empty() {
+                                                                    span { class: "ac-chat-mode-sheet__sub", "{sub}" }
+                                                                }
+                                                                if chat_model() == id_for_check {
+                                                                    Icon {
+                                                                        icon: LdCheck,
+                                                                        width: 18,
+                                                                        height: 18,
+                                                                        fill: "currentColor",
+                                                                        class: "ac-chat-mode-sheet__check",
+                                                                    }
+                                                                }
+                                                            }
+                                                            if is_custom {
+                                                                button {
+                                                                    r#type: "button",
+                                                                    class: "ac-chat-mode-sheet__delete",
+                                                                    title: "删除自定义模型",
+                                                                    aria_label: "删除自定义模型",
+                                                                    onclick: move |e| {
+                                                                        e.stop_propagation();
+                                                                        let remove_id = id_for_delete.clone();
+                                                                        chat_models.with_mut(|list| {
+                                                                            list.retain(|m| m.id != remove_id);
+                                                                        });
+                                                                        let customs = custom_ids_from_models(&chat_models());
+                                                                        persist_custom_chat_model_ids(&customs);
+                                                                        if chat_model() == remove_id {
+                                                                            let next = chat_models()
+                                                                                .first()
+                                                                                .map(|m| m.id.clone())
+                                                                                .unwrap_or_default();
+                                                                            persist_chat_model(&next);
+                                                                            chat_model.set(next);
+                                                                        }
+                                                                    },
+                                                                    Icon {
+                                                                        icon: LdTrash2,
+                                                                        width: 14,
+                                                                        height: 14,
+                                                                        fill: "currentColor",
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            div {
+                                                class: "ac-chat-mode-sheet__custom",
+                                                onclick: move |e| e.stop_propagation(),
+                                                input {
+                                                    r#type: "text",
+                                                    class: "ac-chat-mode-sheet__custom-input",
+                                                    placeholder: "自定义模型 ID",
+                                                    value: "{custom_model_draft}",
+                                                    oninput: move |e| custom_model_draft.set(e.value()),
+                                                    onkeydown: move |e| {
+                                                        if e.key() != Key::Enter {
+                                                            return;
+                                                        }
+                                                        let id = custom_model_draft().trim().to_string();
+                                                        if id.is_empty() {
+                                                            return;
+                                                        }
+                                                        let exists = chat_models().iter().any(|m| m.id == id);
+                                                        if !exists {
+                                                            chat_models.with_mut(|list| {
+                                                                list.push(ChatModelEntry {
+                                                                    id: id.clone(),
+                                                                    display_name: None,
+                                                                    custom: true,
+                                                                });
+                                                            });
+                                                            let customs = custom_ids_from_models(&chat_models());
+                                                            persist_custom_chat_model_ids(&customs);
+                                                        }
+                                                        persist_chat_model(&id);
+                                                        chat_model.set(id);
+                                                        custom_model_draft.set(String::new());
+                                                        chat_model_sheet_open.set(false);
+                                                    },
+                                                }
+                                                button {
+                                                    r#type: "button",
+                                                    class: "ac-chat-mode-sheet__custom-add",
+                                                    title: "添加自定义模型",
+                                                    aria_label: "添加自定义模型",
+                                                    onclick: move |_| {
+                                                        let id = custom_model_draft().trim().to_string();
+                                                        if id.is_empty() {
+                                                            return;
+                                                        }
+                                                        let exists = chat_models().iter().any(|m| m.id == id);
+                                                        if !exists {
+                                                            chat_models.with_mut(|list| {
+                                                                list.push(ChatModelEntry {
+                                                                    id: id.clone(),
+                                                                    display_name: None,
+                                                                    custom: true,
+                                                                });
+                                                            });
+                                                            let customs = custom_ids_from_models(&chat_models());
+                                                            persist_custom_chat_model_ids(&customs);
+                                                        }
+                                                        persist_chat_model(&id);
+                                                        chat_model.set(id);
+                                                        custom_model_draft.set(String::new());
+                                                        chat_model_sheet_open.set(false);
+                                                    },
+                                                    Icon {
+                                                        icon: LdPlus,
+                                                        width: 14,
+                                                        height: 14,
+                                                        fill: "currentColor",
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                label { class: "ac-chat-upload-btn ac-chat-toolbar-pill",
+                                    input {
+                                        r#type: "file",
+                                        class: "ac-chat-file-input",
+                                        accept: "image/*,*/*",
+                                        multiple: true,
+                                        onchange: move |e: FormEvent| {
+                                            let files: Vec<_> = e.data().files().into_iter().collect();
+                                            if files.is_empty() {
+                                                return;
+                                            }
+                                            spawn(async move {
+                                                for file in files {
+                                                    let id = chat_attachment_seq();
+                                                    chat_attachment_seq.set(id + 1);
+                                                    if let Some(att) =
+                                                        attachment_from_file_data(id, file).await
+                                                    {
+                                                        push_composer_attachment(
+                                                            COMPOSER_ROOT_MAIN,
+                                                            chat_pending,
+                                                            chat_can_send,
+                                                            att,
+                                                        );
+                                                    }
+                                                }
+                                            });
+                                        },
+                                    }
+                                    Icon {
+                                        icon: LdPaperclip,
+                                        width: 15,
+                                        height: 15,
+                                        fill: "currentColor",
+                                        class: "ac-chat-upload-icon",
+                                    }
+                                }
+                            }
+                        }
+                        button {
+                            r#type: "button",
+                            class: if chat_busy() {
+                                "ac-chat-send-btn ac-chat-send-btn--pause"
+                            } else if chat_can_send() {
+                                "ac-chat-send-btn ac-chat-send-btn--ready"
+                            } else {
+                                "ac-chat-send-btn"
+                            },
+                            onclick: send_or_pause_chat,
+                            if chat_busy() {
+                                Icon {
+                                    icon: BsStopFill,
+                                    width: 16,
+                                    height: 16,
+                                    fill: "currentColor",
+                                    class: "ac-chat-send-icon",
+                                }
+                            } else {
+                                Icon {
+                                    icon: LdArrowUp,
+                                    width: 16,
+                                    height: 16,
+                                    fill: "currentColor",
+                                    class: "ac-chat-send-icon",
+                                }
+                            }
+                        }
+                    }
+                        }
+                    }
                     div {
                         class: "{chat_history_panel_class}",
                         style: "{chat_history_width_style}",
@@ -4427,29 +6686,29 @@ pub fn Console(
                                 class: "ac-chat-history-create",
                                 title: "开启新对话",
                                 aria_label: "开启新对话",
-                                disabled: chat_busy(),
-                                onclick: move |_| {
-                                    if chat_busy() {
-                                        return;
-                                    }
-                                    spawn(async move {
-                                        match create_conversation().await {
-                                            Ok(conversation) => {
-                                                let id = conversation.id.clone();
-                                                let mut list = conversations();
-                                                list.retain(|item| item.id != id);
-                                                list.insert(0, conversation);
-                                                conversations.set(list);
-                                                active_conversation_id.set(id);
-                                                chat_messages.set(welcome_chat_messages());
-                                                chat_title_editing.set(false);
-                                                chat_title_editing_id.set(None);
-                                                chat_title_draft.set(String::new());
-                                                chat_history_error.set(None);
+                                onclick: {
+                                    let detach_busy_chat = detach_busy_chat.clone();
+                                    move |_| {
+                                        detach_busy_chat.borrow_mut()();
+                                        spawn(async move {
+                                            match create_conversation().await {
+                                                Ok(conversation) => {
+                                                    let id = conversation.id.clone();
+                                                    let mut list = conversations();
+                                                    list.retain(|item| item.id != id);
+                                                    list.insert(0, conversation);
+                                                    conversations.set(list);
+                                                    active_conversation_id.set(id);
+                                                    chat_messages.set(welcome_chat_messages());
+                                                    chat_title_editing.set(false);
+                                                    chat_title_editing_id.set(None);
+                                                    chat_title_draft.set(String::new());
+                                                    chat_history_error.set(None);
+                                                }
+                                                Err(e) => chat_history_error.set(Some(e.to_string())),
                                             }
-                                            Err(e) => chat_history_error.set(Some(e.to_string())),
-                                        }
-                                    });
+                                        });
+                                    }
                                 },
                                 div { class: "ac-chat-history-create-icon",
                                     Icon {
@@ -4595,10 +6854,15 @@ pub fn Console(
                                                     },
                                                     onclick: {
                                                         let conv_id = conv_id.clone();
+                                                        let detach_busy_chat = detach_busy_chat.clone();
                                                         move |_| {
                                                             chat_history_ctx_menu.set(None);
-                                                            if chat_busy() {
-                                                                return;
+                                                            if is_active {
+                                                                if chat_busy() {
+                                                                    return;
+                                                                }
+                                                            } else {
+                                                                detach_busy_chat.borrow_mut()();
                                                             }
                                                             let id = conv_id.clone();
                                                             spawn(async move {
@@ -4686,535 +6950,6 @@ pub fn Console(
                                     }
                                 }
                             }
-                    }
-                    div {
-                        id: AC_CHAT_THREAD_DOM_ID,
-                        class: "ac-chat-thread scrollbar-hide",
-                        // 鼠标滚轮上滑：立刻解除“贴底跟随”，避免流式 token 把视图抢回底部。
-                        onwheel: move |evt| {
-                            if evt.data().delta().strip_units().y < 0.0 {
-                                chat_should_stick_bottom.set(false);
-                            }
-                        },
-                        // 触屏拖动：一律先解除贴底；下次滚到底由 onscroll 恢复。
-                        ontouchmove: move |_| {
-                            chat_should_stick_bottom.set(false);
-                        },
-                        // 仅在“AI 仍在回答”且用户主动滚回底部附近时，重新启用流式跟随；
-                        // AI 没在回答时一律不主动开启吸底，符合「默认不吸底」语义。
-                        onscroll: move |_| {
-                            if chat_busy() && chat_thread_is_near_bottom() {
-                                chat_should_stick_bottom.set(true);
-                            }
-                        },
-                        for (msg_idx, msg) in chat_messages.read().iter().cloned().enumerate() {
-                            match msg {
-                                UiChatMessage::User {
-                                    content,
-                                    attachments,
-                                    ..
-                                } => rsx! {
-                                    div { class: "ac-chat-message ac-chat-message-user",
-                                        div { class: "ac-chat-bubble ac-chat-bubble-user",
-                                            if !attachments.is_empty() {
-                                                div { class: "ac-chat-bubble-attach-row",
-                                                    for att in attachments {
-                                                        if let Some(url) = att.preview_url.clone() {
-                                                            img {
-                                                                key: "{att.id}",
-                                                                class: "ac-chat-bubble-attach-img",
-                                                                src: "{url}",
-                                                                alt: "{att.name}",
-                                                                title: "{att.name}",
-                                                            }
-                                                        } else {
-                                                            span {
-                                                                key: "{att.id}",
-                                                                class: "ac-chat-bubble-attach-file",
-                                                                title: "{att.name}",
-                                                                "📎 {att.name}"
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            if !content.is_empty() {
-                                                span { "{content}" }
-                                            }
-                                        }
-                                    }
-                                },
-                                UiChatMessage::Assistant {
-                                    content,
-                                    agent_run_id,
-                                    thinking,
-                                    ..
-                                } => {
-                                    let answer_ready = !content.trim().is_empty();
-                                    let show_thinking = thinking.has_visible_content()
-                                        || (chat_busy() && !answer_ready);
-                                    let thinking_busy = matches!(
-                                        thinking.status,
-                                        ThinkingStatus::Running
-                                    ) && !answer_ready;
-                                    let show_bubble = answer_ready;
-                                    rsx! {
-                                    div { class: "ac-chat-message ac-chat-message-ai",
-                                        ChatThinkingHydrator {
-                                            msg_index: msg_idx,
-                                            chat_messages,
-                                        }
-                                        div { class: "ac-chat-ai-stack",
-                                            if show_thinking {
-                                                ChatThinkingPanel {
-                                                    msg_index: msg_idx,
-                                                    chat_messages,
-                                                    thinking: thinking.clone(),
-                                                    busy: thinking_busy,
-                                                    on_open_trace_file: move |action: TraceFileOpen| {
-                                                        match action {
-                                                            TraceFileOpen::File { path } => {
-                                                                if !super::files::fs_available() {
-                                                                    toast.error(
-                                                                        "Web 端无法打开本机文件，请使用桌面版。",
-                                                                    );
-                                                                    return;
-                                                                }
-                                                                let resolved =
-                                                                    reveal_and_select_workspace_file(
-                                                                        &path,
-                                                                        show_sidebar,
-                                                                        sidebar_shutting_down,
-                                                                        show_center,
-                                                                        center_shutting_down,
-                                                                        active_tab,
-                                                                        fs_section_open,
-                                                                        fs_root_path,
-                                                                        fs_expanded,
-                                                                        fs_children_cache,
-                                                                        fs_selected_path,
-                                                                        fs_save_notice,
-                                                                    );
-                                                                if resolved.is_empty() {
-                                                                    return;
-                                                                }
-                                                                center_tabs.with_mut(|tabs| {
-                                                                    active_center_id.with_mut(|active| {
-                                                                        center_open_or_focus(
-                                                                            tabs,
-                                                                            active,
-                                                                            CenterTab::file(resolved),
-                                                                        );
-                                                                    });
-                                                                });
-                                                            }
-                                                            TraceFileOpen::Diff {
-                                                                path,
-                                                                tool_id,
-                                                                old_text,
-                                                                new_text,
-                                                            } => {
-                                                                if !super::files::fs_available() {
-                                                                    toast.error(
-                                                                        "Web 端无法打开本机文件，请使用桌面版。",
-                                                                    );
-                                                                    return;
-                                                                }
-                                                                let resolved =
-                                                                    reveal_and_select_workspace_file(
-                                                                        &path,
-                                                                        show_sidebar,
-                                                                        sidebar_shutting_down,
-                                                                        show_center,
-                                                                        center_shutting_down,
-                                                                        active_tab,
-                                                                        fs_section_open,
-                                                                        fs_root_path,
-                                                                        fs_expanded,
-                                                                        fs_children_cache,
-                                                                        fs_selected_path,
-                                                                        fs_save_notice,
-                                                                    );
-                                                                let path = if resolved.is_empty() {
-                                                                    path
-                                                                } else {
-                                                                    resolved
-                                                                };
-                                                                if path.is_empty() {
-                                                                    return;
-                                                                }
-                                                                // 无 old/new 时退化为普通打开（带行号）。
-                                                                if old_text.is_empty() && new_text.is_empty() {
-                                                                    center_tabs.with_mut(|tabs| {
-                                                                        active_center_id.with_mut(|active| {
-                                                                            center_open_or_focus(
-                                                                                tabs,
-                                                                                active,
-                                                                                CenterTab::file(path),
-                                                                            );
-                                                                        });
-                                                                    });
-                                                                    return;
-                                                                }
-                                                                center_tabs.with_mut(|tabs| {
-                                                                    active_center_id.with_mut(|active| {
-                                                                        center_open_or_focus(
-                                                                            tabs,
-                                                                            active,
-                                                                            CenterTab::file_diff(
-                                                                                tool_id,
-                                                                                path,
-                                                                                old_text,
-                                                                                new_text,
-                                                                            ),
-                                                                        );
-                                                                    });
-                                                                });
-                                                            }
-                                                        }
-                                                    },
-                                                }
-                                            }
-                                            if show_bubble {
-                                                div { class: "ac-chat-bubble ac-chat-bubble-ai is-visible",
-                                                    ChatMarkdownBody {
-                                                        content: content.clone(),
-                                                    }
-                                                }
-                                            }
-                                            if show_bubble {
-                                            div { class: "ac-chat-ai-actions",
-                                                button {
-                                                    r#type: "button",
-                                                    class: "ac-chat-ai-action-btn",
-                                                    title: "复制",
-                                                    aria_label: "复制助手回复",
-                                                    onclick: {
-                                                        let content = content.clone();
-                                                        move |_| copy_text_to_clipboard(content.clone())
-                                                    },
-                                                    Icon {
-                                                        icon: LdCopy,
-                                                        width: 14,
-                                                        height: 14,
-                                                        fill: "currentColor",
-                                                        class: "ac-chat-ai-action-icon",
-                                                    }
-                                                }
-                                                if developer_mode() {
-                                                    if let Some(run_id) = agent_run_id {
-                                                        button {
-                                                            r#type: "button",
-                                                            class: "ac-chat-ai-action-btn",
-                                                            title: "查看详情",
-                                                            aria_label: "查看助手回复详情",
-                                                            onclick: move |_| {
-                                                                agent_detail_loading.set(true);
-                                                                agent_detail_error.set(None);
-                                                                selected_agent_run_detail.set(None);
-                                                                spawn(async move {
-                                                                    match load_agent_run_detail(run_id).await {
-                                                                        Ok(detail) => {
-                                                                            selected_agent_run_detail.set(Some(detail));
-                                                                            agent_detail_error.set(None);
-                                                                        }
-                                                                        Err(e) => {
-                                                                            agent_detail_error.set(Some(e.to_string()));
-                                                                        }
-                                                                    }
-                                                                    agent_detail_loading.set(false);
-                                                                });
-                                                            },
-                                                            Icon {
-                                                                icon: LdEye,
-                                                                width: 14,
-                                                                height: 14,
-                                                                fill: "currentColor",
-                                                                class: "ac-chat-ai-action-icon",
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            }
-                                        }
-                                    }
-                                    }
-                                },
-                            }
-                        }
-                    }
-                }
-                div { class: "ac-chat-input-wrap",
-                    div { class: "ac-chat-input-shell",
-                        div { class: "ac-chat-composer-stack",
-                            if !chat_attachments().is_empty() {
-                                div { class: "ac-chat-attach-preview-row",
-                                    for att in chat_attachments() {
-                                        {
-                                            let remove_id = att.id;
-                                            let is_image = att.preview_url.is_some();
-                                            rsx! {
-                                                div {
-                                                    key: "{att.id}",
-                                                    class: if is_image {
-                                                        "ac-chat-attach-thumb"
-                                                    } else {
-                                                        "ac-chat-attach-thumb ac-chat-attach-thumb--file"
-                                                    },
-                                                    title: "{att.name}",
-                                                    if let Some(url) = att.preview_url.clone() {
-                                                        img {
-                                                            class: "ac-chat-attach-thumb-img",
-                                                            src: "{url}",
-                                                            alt: "{att.name}",
-                                                        }
-                                                    } else {
-                                                        span { class: "ac-chat-attach-thumb-name", "{att.name}" }
-                                                    }
-                                                    button {
-                                                        r#type: "button",
-                                                        class: "ac-chat-attach-thumb-remove",
-                                                        title: "移除附件",
-                                                        aria_label: "移除附件",
-                                                        onclick: move |_| {
-                                                            chat_attachments.with_mut(|list| {
-                                                                list.retain(|a| a.id != remove_id);
-                                                            });
-                                                        },
-                                                        Icon {
-                                                            icon: LdX,
-                                                            width: 12,
-                                                            height: 12,
-                                                            fill: "currentColor",
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            ChatComposerField {
-                                chat_draft,
-                                input_epoch: chat_input_epoch(),
-                                disabled: chat_busy(),
-                                on_enter_send: enter_send_chat,
-                                on_paste_images: on_composer_paste,
-                                rows: 4,
-                            }
-                            div { class: "ac-chat-composer-toolbar",
-                                button {
-                                    r#type: "button",
-                                    class: "ac-chat-toolbar-new-conv ac-chat-toolbar-pill",
-                                    title: "新建对话",
-                                    aria_label: "新建对话",
-                                    disabled: chat_busy(),
-                                    onclick: move |_| {
-                                        if chat_busy() {
-                                            return;
-                                        }
-                                        chat_model_sheet_open.set(false);
-                                        spawn(async move {
-                                            match create_conversation().await {
-                                                Ok(conversation) => {
-                                                    let id = conversation.id.clone();
-                                                    let mut list = conversations();
-                                                    list.retain(|item| item.id != id);
-                                                    list.insert(0, conversation);
-                                                    conversations.set(list);
-                                                    active_conversation_id.set(id);
-                                                    chat_messages.set(welcome_chat_messages());
-                                                    chat_title_editing.set(false);
-                                                    chat_title_editing_id.set(None);
-                                                    chat_title_draft.set(String::new());
-                                                    chat_history_error.set(None);
-                                                }
-                                                Err(e) => chat_history_error.set(Some(e.to_string())),
-                                            }
-                                        });
-                                    },
-                                    Icon {
-                                        icon: LdPlus,
-                                        width: 15,
-                                        height: 15,
-                                        fill: "currentColor",
-                                        class: "ac-chat-toolbar-new-conv-icon",
-                                    }
-                                }
-                                div { class: "ac-chat-model-wrap",
-                                    button {
-                                        r#type: "button",
-                                        class: if chat_model_sheet_open() {
-                                            "ac-chat-model-trigger ac-chat-toolbar-pill is-open"
-                                        } else {
-                                            "ac-chat-model-trigger ac-chat-toolbar-pill"
-                                        },
-                                        aria_expanded: chat_model_sheet_open(),
-                                        aria_haspopup: "menu",
-                                        onclick: move |_| {
-                                            chat_model_sheet_open.toggle();
-                                        },
-                                        span { class: "ac-chat-mode-trigger-label",
-                                            // 触发器主标题：优先用列表里命中行的 id（大写化展示），
-                                            // 没命中则保留当前 chat_model 原值（已自动回落，理论上
-                                            // 不会到这里）。display_name 不放进 trigger，避免按钮太宽。
-                                            {
-                                                let cur = chat_model();
-                                                let models = chat_models.read();
-                                                let label = models
-                                                    .iter()
-                                                    .find(|m| m.id == cur)
-                                                    .map(|m| m.id.to_uppercase())
-                                                    .unwrap_or_else(|| cur.to_uppercase());
-                                                label
-                                            }
-                                        }
-                                        if chat_model_sheet_open() {
-                                            Icon {
-                                                icon: LdChevronDown,
-                                                width: 14,
-                                                height: 14,
-                                                fill: "currentColor",
-                                                class: "ac-chat-mode-trigger-chevron",
-                                            }
-                                        } else {
-                                            Icon {
-                                                icon: LdChevronUp,
-                                                width: 14,
-                                                height: 14,
-                                                fill: "currentColor",
-                                                class: "ac-chat-mode-trigger-chevron",
-                                            }
-                                        }
-                                    }
-                                    if chat_model_sheet_open() {
-                                        // 全屏透明 backdrop：点击除模型列表以外的任意区域即关闭弹窗。
-                                        // z-index 低于 .ac-chat-mode-sheet（5001），高于普通页面元素，
-                                        // 与顶栏设置菜单 (.ac-web-titlebar-menu-backdrop) 完全同模式。
-                                        div {
-                                            class: "ac-chat-mode-sheet-backdrop",
-                                            onclick: move |_| chat_model_sheet_open.set(false),
-                                        }
-                                        div { class: "ac-chat-mode-sheet", role: "menu",
-                                            // 模型列表。每行展示 id（大写化）+ 可选的 display_name 副标题。
-                                            // .read().clone() 转 owned，避免在 rsx for / closure 里持
-                                            // 有 Signal 的 Ref 借用。
-                                            if let Some(hint) = chat_models_load_hint() {
-                                                span {
-                                                    class: "ac-chat-mode-sheet__sub",
-                                                    style: "padding: 0.35rem 0.72rem 0.15rem;",
-                                                    "{hint}"
-                                                }
-                                            }
-                                            for m in chat_models.read().clone() {
-                                                {
-                                                    let id = m.id.clone();
-                                                    let id_for_click = id.clone();
-                                                    let id_for_class = id.clone();
-                                                    let id_for_check = id.clone();
-                                                    let title = id.to_uppercase();
-                                                    let sub = m.display_name.clone().unwrap_or_default();
-                                                    rsx! {
-                                                        button {
-                                                            key: "{id}",
-                                                            r#type: "button",
-                                                            role: "menuitem",
-                                                            class: if chat_model() == id_for_class {
-                                                                "ac-chat-mode-sheet__opt is-active"
-                                                            } else {
-                                                                "ac-chat-mode-sheet__opt"
-                                                            },
-                                                            onclick: move |_| {
-                                                                persist_chat_model(&id_for_click);
-                                                                chat_model.set(id_for_click.clone());
-                                                                chat_model_sheet_open.set(false);
-                                                            },
-                                                            span { class: "ac-chat-mode-sheet__title", "{title}" }
-                                                            if !sub.is_empty() {
-                                                                span { class: "ac-chat-mode-sheet__sub", "{sub}" }
-                                                            }
-                                                            if chat_model() == id_for_check {
-                                                                Icon {
-                                                                    icon: LdCheck,
-                                                                    width: 18,
-                                                                    height: 18,
-                                                                    fill: "currentColor",
-                                                                    class: "ac-chat-mode-sheet__check",
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                label { class: "ac-chat-upload-btn ac-chat-toolbar-pill",
-                                    input {
-                                        r#type: "file",
-                                        class: "ac-chat-file-input",
-                                        accept: "image/*,*/*",
-                                        multiple: true,
-                                        onchange: move |e: FormEvent| {
-                                            let files: Vec<_> = e.data().files().into_iter().collect();
-                                            if files.is_empty() {
-                                                return;
-                                            }
-                                            spawn(async move {
-                                                for file in files {
-                                                    let id = chat_attachment_seq();
-                                                    chat_attachment_seq.set(id + 1);
-                                                    if let Some(att) =
-                                                        attachment_from_file_data(id, file).await
-                                                    {
-                                                        chat_attachments.with_mut(|list| list.push(att));
-                                                    }
-                                                }
-                                            });
-                                        },
-                                    }
-                                    Icon {
-                                        icon: LdPaperclip,
-                                        width: 15,
-                                        height: 15,
-                                        fill: "currentColor",
-                                        class: "ac-chat-upload-icon",
-                                    }
-                                }
-                            }
-                        }
-                        button {
-                            r#type: "button",
-                            class: if chat_busy() {
-                                "ac-chat-send-btn ac-chat-send-btn--pause"
-                            } else if !chat_draft().trim().is_empty()
-                                || !chat_attachments().is_empty()
-                            {
-                                "ac-chat-send-btn ac-chat-send-btn--ready"
-                            } else {
-                                "ac-chat-send-btn"
-                            },
-                            disabled: cfg!(not(target_arch = "wasm32")) && chat_busy(),
-                            onclick: send_or_pause_chat,
-                            if chat_busy() {
-                                Icon {
-                                    icon: BsStopFill,
-                                    width: 16,
-                                    height: 16,
-                                    fill: "currentColor",
-                                    class: "ac-chat-send-icon",
-                                }
-                            } else {
-                                Icon {
-                                    icon: LdArrowUp,
-                                    width: 16,
-                                    height: 16,
-                                    fill: "currentColor",
-                                    class: "ac-chat-send-icon",
-                                }
-                            }
-                        }
                     }
                 }
             }
@@ -5349,7 +7084,7 @@ pub fn Console(
                         onclick: move |evt| evt.stop_propagation(),
                         h2 { class: "ac-api-modal-title", "创建插件" }
                         p { class: "ac-api-modal-desc",
-                            "将在工作区 extension/ 下新建插件目录，并写入 README 与 manifest 脚手架。"
+                            "将在工作区 extensions/ 下新建插件目录，并写入 README 与 manifest 脚手架。"
                         }
                         div { class: "ac-api-modal-field",
                             input {
@@ -5441,7 +7176,7 @@ pub fn Console(
                         onclick: move |evt| evt.stop_propagation(),
                         h2 { class: "ac-api-modal-title", "创建应用" }
                         p { class: "ac-api-modal-desc",
-                            "将在工作区 application/ 下新建应用目录，创建后自动打开为当前项目。"
+                            "将在工作区 applications/ 下新建应用目录，创建后自动打开为当前项目。"
                         }
                         div { class: "ac-api-modal-field",
                             input {

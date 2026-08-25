@@ -1,4 +1,4 @@
-# extension/
+# extensions/
 
 存放**内部插件**的安装目录。
 
@@ -15,5 +15,5 @@
 | 目录 | 用途 |
 |------|------|
 | `skills/` | Agent 技能（`SKILL.md`） |
-| `extension/` | 内部插件 |
-| `application/` | 外部应用 |
+| `extensions/` | 内部插件 |
+| `applications/` | 外部应用 |

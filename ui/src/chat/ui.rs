@@ -166,8 +166,10 @@ pub enum UiChatMessage {
     User {
         id: Option<i64>,
         content: String,
-        /// 本轮发送时的附件预览（历史加载为空）。
+        /// 本轮发送时的附件预览（历史加载由正文标记还原）。
         attachments: Vec<crate::chat::ChatPendingAttachment>,
+        /// 与输入框一致的 chip/文字顺序；空则从 `content` 解析。
+        segs: Vec<crate::chat::ChatUserSeg>,
     },
     Assistant {
         id: Option<i64>,

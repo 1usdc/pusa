@@ -1,11 +1,13 @@
-//! 聊天输入区待发送附件（回形针选择与剪贴板粘贴共用）。
+//! 聊天输入区待发送附件（回形针选择、剪贴板粘贴、文件树加入共用）。
+
+use std::path::Path;
 
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
 use dioxus::html::FileData;
 
 /// 输入区中的一条待发送附件。
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct ChatPendingAttachment {
     pub id: u64,
     pub name: String,
@@ -14,6 +16,156 @@ pub struct ChatPendingAttachment {
     pub preview_url: Option<String>,
     /// 发送给视觉模型的 data URL（仅图片）。
     pub image_data_url: Option<String>,
+    /// 文件树 / 工作区引用的绝对或相对路径；回形针二进制附件为 `None`。
+    pub source_path: Option<String>,
+    /// 路径引用是否为目录（chip 配色 / 点击展开侧栏）；二进制附件为 `false`。
+    pub is_dir: bool,
+}
+
+impl PartialEq for ChatPendingAttachment {
+    fn eq(&self, other: &Self) -> bool {
+        // 不比较 preview / image data URL 正文：base64 可达数 MB，组件 props diff 会卡顿。
+        self.id == other.id
+            && self.name == other.name
+            && self.mime == other.mime
+            && self.source_path == other.source_path
+            && self.is_dir == other.is_dir
+            && self.preview_url.is_some() == other.preview_url.is_some()
+            && self.image_data_url.is_some() == other.image_data_url.is_some()
+    }
+}
+
+impl ChatPendingAttachment {
+    /// 发送给模型时的标签：优先完整路径，否则文件名。
+    pub fn send_label(&self) -> &str {
+        self.source_path
+            .as_deref()
+            .filter(|p| !p.trim().is_empty())
+            .unwrap_or(self.name.as_str())
+    }
+}
+
+const ATTACHMENT_MARK: &str = "[附件:";
+
+/// 拆出发送给模型的 `[附件: …]` 后缀：可见正文 + 路径/文件名列表。
+pub fn split_attachment_suffix(content: &str) -> (String, Vec<String>) {
+    let trimmed = content.trim_end();
+    let Some(start) = trimmed.rfind(ATTACHMENT_MARK) else {
+        return (content.to_string(), Vec::new());
+    };
+    let after = trimmed[start + ATTACHMENT_MARK.len()..].trim();
+    let Some(inner) = after.strip_suffix(']') else {
+        return (content.to_string(), Vec::new());
+    };
+    let prefix = &trimmed[..start];
+    if !prefix.is_empty() && !prefix.ends_with('\n') {
+        return (content.to_string(), Vec::new());
+    }
+    let labels: Vec<String> = inner
+        .split(", ")
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if labels.is_empty() {
+        return (content.to_string(), Vec::new());
+    }
+    (prefix.trim_end().to_string(), labels)
+}
+
+/// 气泡 / 编辑器展示用：去掉末尾 `[附件: …]`。
+pub fn strip_attachment_suffix(content: &str) -> String {
+    split_attachment_suffix(content).0
+}
+
+/// 用户气泡片段：与输入框 chip/文字交错顺序一致。
+#[derive(Clone, Debug, PartialEq)]
+pub enum ChatUserSeg {
+    Text(String),
+    Attachment(ChatPendingAttachment),
+}
+
+fn attachment_matches_label(att: &ChatPendingAttachment, label: &str) -> bool {
+    att.send_label() == label
+        || att.name == label
+        || att.source_path.as_deref() == Some(label)
+}
+
+/// 从正文里的 `[附件: …]` 标记还原与输入顺序一致的展示片段。
+pub fn parse_user_message_segments(
+    content: &str,
+    attachments: &[ChatPendingAttachment],
+) -> Vec<ChatUserSeg> {
+    let mut segs = Vec::new();
+    let mut unused: Vec<ChatPendingAttachment> = attachments.to_vec();
+    let mut rest = content;
+
+    while let Some(start) = rest.find(ATTACHMENT_MARK) {
+        let prefix = &rest[..start];
+        if !prefix.is_empty() {
+            segs.push(ChatUserSeg::Text(prefix.to_string()));
+        }
+        let after_mark = &rest[start + ATTACHMENT_MARK.len()..];
+        let Some(end) = after_mark.find(']') else {
+            segs.push(ChatUserSeg::Text(rest[start..].to_string()));
+            rest = "";
+            break;
+        };
+        let inner = after_mark[..end].trim();
+        let labels: Vec<&str> = if inner.contains(", ") {
+            inner
+                .split(", ")
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .collect()
+        } else if inner.is_empty() {
+            Vec::new()
+        } else {
+            vec![inner]
+        };
+        for label in labels {
+            if let Some(idx) = unused.iter().position(|a| attachment_matches_label(a, label)) {
+                segs.push(ChatUserSeg::Attachment(unused.remove(idx)));
+            } else {
+                segs.push(ChatUserSeg::Attachment(attachment_from_path(0, label)));
+            }
+        }
+        rest = &after_mark[end + 1..];
+    }
+    if !rest.is_empty() {
+        segs.push(ChatUserSeg::Text(rest.to_string()));
+    }
+    for att in unused {
+        segs.push(ChatUserSeg::Attachment(att));
+    }
+    segs.retain(|seg| match seg {
+        ChatUserSeg::Text(t) => !t.is_empty(),
+        ChatUserSeg::Attachment(_) => true,
+    });
+    segs
+}
+
+/// 从历史正文里的附件标记还原路径 chip。
+pub fn attachments_from_suffix_labels(labels: &[String], start_id: u64) -> Vec<ChatPendingAttachment> {
+    labels
+        .iter()
+        .enumerate()
+        .map(|(i, label)| attachment_from_path(start_id + i as u64, label.clone()))
+        .collect()
+}
+
+fn path_is_directory(path: &str) -> bool {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        Path::new(trimmed).is_dir()
+    }
+    #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+    {
+        false
+    }
 }
 
 fn guess_mime(name: &str, content_type: Option<&str>) -> String {
@@ -55,6 +207,33 @@ pub fn attachment_from_bytes(id: u64, name: String, mime: String, bytes: Vec<u8>
         mime,
         preview_url: data_url.clone(),
         image_data_url: data_url,
+        source_path: None,
+        is_dir: false,
+    }
+}
+
+/// 文件树「加入 Chat」：路径引用 chip，不读入文件字节、不写入草稿文本。
+pub fn attachment_from_path(id: u64, path: impl Into<String>) -> ChatPendingAttachment {
+    let path = path.into();
+    let is_dir = path_is_directory(&path);
+    let name = Path::new(&path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(path.as_str())
+        .to_string();
+    let mime = if is_dir {
+        "inode/directory".into()
+    } else {
+        guess_mime(&name, None)
+    };
+    ChatPendingAttachment {
+        id,
+        name,
+        mime,
+        preview_url: None,
+        image_data_url: None,
+        source_path: Some(path),
+        is_dir,
     }
 }
 
@@ -114,7 +293,7 @@ pub mod desktop_paste {
 
   const handler = (e) => {
     const t = e.target;
-    if (!t || !t.classList || !t.classList.contains('ac-chat-input-field')) return;
+    if (!t || !t.closest || !t.closest('[data-ac-composer], .ac-chat-composer-ce')) return;
 
     const dt = e.clipboardData;
     if (!dt) return;
@@ -284,5 +463,76 @@ pub mod wasm_paste {
             .ok()?;
         let arr = js_sys::Uint8Array::new(&buffer);
         Some(arr.to_vec())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{attachment_from_path, parse_user_message_segments, split_attachment_suffix, ChatUserSeg};
+
+    #[test]
+    fn strips_trailing_attachment_block() {
+        let (visible, labels) = split_attachment_suffix(
+            "现在要怎么启动\n\n[附件: /Volumes/SSD/codes/English/app]",
+        );
+        assert_eq!(visible, "现在要怎么启动");
+        assert_eq!(labels, vec!["/Volumes/SSD/codes/English/app".to_string()]);
+    }
+
+    #[test]
+    fn strips_attachment_only_message() {
+        let (visible, labels) = split_attachment_suffix("[附件: /tmp/a, /tmp/b]");
+        assert!(visible.is_empty());
+        assert_eq!(labels, vec!["/tmp/a".to_string(), "/tmp/b".to_string()]);
+    }
+
+    #[test]
+    fn keeps_inline_attachment_looking_text() {
+        let src = "请看 [附件: 说明] 这一段";
+        let (visible, labels) = split_attachment_suffix(src);
+        assert_eq!(visible, src);
+        assert!(labels.is_empty());
+    }
+
+    #[test]
+    fn parses_chips_in_composer_order() {
+        let atts = vec![
+            attachment_from_path(1, "/x/desktop"),
+            attachment_from_path(2, "/x/app"),
+        ];
+        let segs = parse_user_message_segments(
+            "[附件: /x/desktop][附件: /x/app]需要参考的内容",
+            &atts,
+        );
+        assert_eq!(segs.len(), 3);
+        match &segs[0] {
+            ChatUserSeg::Attachment(a) => assert_eq!(a.name, "desktop"),
+            _ => panic!("expected first chip"),
+        }
+        match &segs[1] {
+            ChatUserSeg::Attachment(a) => assert_eq!(a.name, "app"),
+            _ => panic!("expected second chip"),
+        }
+        match &segs[2] {
+            ChatUserSeg::Text(t) => assert_eq!(t, "需要参考的内容"),
+            _ => panic!("expected trailing text"),
+        }
+    }
+
+    #[test]
+    fn parses_text_between_chips() {
+        let segs = parse_user_message_segments(
+            "[附件: /x/app]参考[附件: /x/desktop]一下",
+            &[],
+        );
+        match &segs[..] {
+            [ChatUserSeg::Attachment(a), ChatUserSeg::Text(t1), ChatUserSeg::Attachment(b), ChatUserSeg::Text(t2)] => {
+                assert_eq!(a.name, "app");
+                assert_eq!(t1, "参考");
+                assert_eq!(b.name, "desktop");
+                assert_eq!(t2, "一下");
+            }
+            other => panic!("unexpected segs: {other:?}"),
+        }
     }
 }

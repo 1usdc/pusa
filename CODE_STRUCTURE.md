@@ -54,8 +54,8 @@ pusa/
 ├── web/               # Web 入口
 ├── desktop/           # 桌面入口与资源
 ├── server/            # HTTP API 入口
-├── application/       # 外部应用安装目录（git clone / 本地脚手架）
-├── extension/         # 内部插件目录（约定中）
+├── applications/       # 外部应用安装目录（git clone / 本地脚手架）
+├── extensions/         # 内部插件目录（约定中）
 ├── skills/            # Agent 技能包（SKILL.md）
 ├── scripts/           # just 调用的 shell 脚本
 ├── docker/            # 容器与环境变量
@@ -73,8 +73,8 @@ pusa/
 | 目录 | 类型 | 用途 |
 |------|------|------|
 | `skills/` | 内容 | Agent 可加载技能 |
-| `extension/` | 内容 | 产品内部插件 |
-| `application/` | 内容 | 外部/本地应用；含 `.pusa-plugin.json`、`.pusa-smart-ui.json` |
+| `extensions/` | 内容 | 产品内部插件 |
+| `applications/` | 内容 | 外部/本地应用；含 `.pusa-plugin.json`、`.pusa-smart-ui.json` |
 
 ---
 
@@ -197,7 +197,7 @@ UI (chat facade)
 
 ### 4.3 应用市场与智能 UI（Desktop）
 
-- 安装目标：`application/{id}/`
+- 安装目标：`applications/{id}/`
 - 元数据：`.pusa-plugin.json`
 - 智能 UI 缓存：`.pusa-smart-ui.json`（打开「我的应用」或安装后自动扫描生成）
 
@@ -223,6 +223,7 @@ UI (chat facade)
 | `just web` | 启动 Web（`scripts/web.sh`） |
 | `just server` | 启动 API（`scripts/server.sh`） |
 | `just desktop` | 桌面热重载（`scripts/desktop.sh`） |
+| `just desktop-mac` | 本机 macOS 打包 + 签名公证（`scripts/desktop-mac.sh`） |
 | `just desktop-ship` | 打 tag / 触发打包流水线 |
 | `just db-clear` | 清空 `data/` |
 | `just push` | 仅推送远端 |
@@ -252,7 +253,7 @@ CI：`.github/workflows/`（含桌面打包等）。
 | Web 设置 / 鉴权 | `ui/src/web/` |
 | 样式 | `ui/assets/css/main.css`、`colors.css` |
 | 技能包内容 | `skills/` |
-| 已安装外部应用 | `application/` |
+| 已安装外部应用 | `applications/` |
 
 ---
 
@@ -272,8 +273,8 @@ CI：`.github/workflows/`（含桌面打包等）。
 |------|------|
 | `README.md` | 本地启动、桌面发版、签名说明 |
 | `AGENTS.md` | Dioxus 0.7 API 速查 |
-| `application/README.md` | 外部应用目录约定 |
-| `extension/README.md` | 内部插件目录约定 |
+| `applications/README.md` | 外部应用目录约定 |
+| `extensions/README.md` | 内部插件目录约定 |
 
 ---
 

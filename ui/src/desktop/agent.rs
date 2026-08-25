@@ -7,7 +7,9 @@ use protocol::{ChatTurnRequest, SseEvent};
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 use shared::RuntimeContext;
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
-use std::sync::RwLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+use std::sync::{Arc, RwLock};
 
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 struct RuntimeState {
@@ -71,18 +73,70 @@ pub fn runtime_ctx() -> RuntimeContext {
     RUNTIME.read().expect("runtime read").ctx.clone()
 }
 
+/// 桌面端中止当前流式对话（对应 Web 的 `AbortController`）。
+///
+/// 底层 FFI 仍可能跑完本轮 Agent；这里只停止向 UI 推事件，并立刻结束本轮等待。
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+#[derive(Clone)]
+pub struct ChatAbort {
+    flag: Arc<AtomicBool>,
+    notify: Arc<tokio::sync::Notify>,
+}
+
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+impl ChatAbort {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            flag: Arc::new(AtomicBool::new(false)),
+            notify: Arc::new(tokio::sync::Notify::new()),
+        })
+    }
+
+    pub fn abort(&self) {
+        self.flag.store(true, Ordering::SeqCst);
+        self.notify.notify_waiters();
+    }
+
+    pub fn is_aborted(&self) -> bool {
+        self.flag.load(Ordering::SeqCst)
+    }
+
+    async fn wait(&self) {
+        self.notify.notified().await;
+    }
+}
+
 /// 进程内流式对话（不经 HTTP）。
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 pub async fn desktop_chat_stream(
     req: ChatTurnRequest,
+    abort: Arc<ChatAbort>,
     on_event: &mut impl FnMut(SseEvent),
 ) -> anyhow::Result<()> {
     let ctx = runtime_ctx();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<SseEvent>();
     let worker = tokio::spawn(async move { ctx.run_chat_turn(req, tx).await });
 
-    while let Some(ev) = rx.recv().await {
-        on_event(ev);
+    loop {
+        if abort.is_aborted() {
+            worker.abort();
+            return Ok(());
+        }
+        tokio::select! {
+            biased;
+            _ = abort.wait() => {}
+            ev = rx.recv() => {
+                match ev {
+                    Some(ev) => on_event(ev),
+                    None => break,
+                }
+            }
+        }
+    }
+
+    if abort.is_aborted() {
+        worker.abort();
+        return Ok(());
     }
 
     worker

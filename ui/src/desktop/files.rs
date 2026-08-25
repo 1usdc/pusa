@@ -47,6 +47,22 @@ fn center_tabs_path() -> PathBuf {
     app_data_dir().join("center_tabs.json")
 }
 
+fn file_tree_state_path() -> PathBuf {
+    app_data_dir().join("file_tree.json")
+}
+
+fn custom_chat_models_path() -> PathBuf {
+    app_data_dir().join("custom_chat_models.json")
+}
+
+fn chat_model_path() -> PathBuf {
+    app_data_dir().join("chat_model.txt")
+}
+
+fn ui_theme_path() -> PathBuf {
+    app_data_dir().join("ui_theme.txt")
+}
+
 /// 读取中间栏标签页操作缓存 JSON；无文件或读失败返回 `None`。
 pub fn center_tabs_cache_get() -> Option<String> {
     let raw = fs::read_to_string(center_tabs_path()).ok()?;
@@ -62,6 +78,106 @@ pub fn center_tabs_cache_get() -> Option<String> {
 pub fn center_tabs_cache_set(raw_json: &str) {
     let path = center_tabs_path();
     let trimmed = raw_json.trim();
+    if trimmed.is_empty() {
+        let _ = fs::remove_file(path);
+    } else {
+        let _ = fs::write(path, trimmed);
+    }
+}
+
+/// 读取侧栏文件树展开/选中状态 JSON；无文件或读失败返回 `None`。
+pub fn file_tree_state_get() -> Option<String> {
+    let raw = fs::read_to_string(file_tree_state_path()).ok()?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+/// 写入侧栏文件树状态；空字符串删除文件。
+pub fn file_tree_state_set(raw_json: &str) {
+    let path = file_tree_state_path();
+    let trimmed = raw_json.trim();
+    if trimmed.is_empty() {
+        let _ = fs::remove_file(path);
+    } else {
+        let _ = fs::write(path, trimmed);
+    }
+}
+
+/// 读取用户自定义聊天模型 ID 列表。
+pub fn custom_chat_models_get() -> Vec<String> {
+    let Ok(raw) = fs::read_to_string(custom_chat_models_path()) else {
+        return Vec::new();
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    serde_json::from_str::<Vec<String>>(trimmed)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+/// 写入用户自定义聊天模型 ID 列表；空列表删除文件。
+pub fn custom_chat_models_set(ids: &[String]) {
+    let path = custom_chat_models_path();
+    let cleaned: Vec<String> = ids
+        .iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if cleaned.is_empty() {
+        let _ = fs::remove_file(path);
+        return;
+    }
+    if let Ok(json) = serde_json::to_string_pretty(&cleaned) {
+        let _ = fs::write(path, json);
+    }
+}
+
+/// 读取聊天栏上次选中的模型 ID。
+pub fn chat_model_get() -> Option<String> {
+    let raw = fs::read_to_string(chat_model_path()).ok()?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+/// 写入聊天栏当前选中的模型 ID；空字符串删除文件。
+pub fn chat_model_set(model_id: &str) {
+    let path = chat_model_path();
+    let trimmed = model_id.trim();
+    if trimmed.is_empty() {
+        let _ = fs::remove_file(path);
+    } else {
+        let _ = fs::write(path, trimmed);
+    }
+}
+
+/// 读取 UI 主题（`light` / `dark`）。
+pub fn ui_theme_get() -> Option<String> {
+    let raw = fs::read_to_string(ui_theme_path()).ok()?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+/// 写入 UI 主题。
+pub fn ui_theme_set(theme: &str) {
+    let path = ui_theme_path();
+    let trimmed = theme.trim();
     if trimmed.is_empty() {
         let _ = fs::remove_file(path);
     } else {
@@ -378,18 +494,248 @@ pub fn create_folder(parent: &Path, name: &str) -> Result<PathBuf, String> {
     Ok(path.canonicalize().unwrap_or(path))
 }
 
-/// 工作区 `extension/` 绝对路径。
-pub fn extension_root() -> PathBuf {
-    workspace_root().join("extension")
+/// 重命名文件或文件夹（仅改末段名，不跨目录）。
+pub fn rename_entry(path: &Path, new_name: &str) -> Result<PathBuf, String> {
+    let new_name = sanitize_child_name(new_name)?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "无法解析父目录。".to_string())?;
+    let dest = parent.join(new_name);
+    if dest.exists() {
+        return Err("同名文件或文件夹已存在。".into());
+    }
+    fs::rename(path, &dest).map_err(|e| format!("重命名失败：{e}"))?;
+    Ok(dest.canonicalize().unwrap_or(dest))
 }
 
-/// 在工作区 `extension/{name}/` 下脚手架内部插件（目录 + README + manifest stub）。
+/// 删除文件或目录（目录递归删除）。
+pub fn delete_entry(path: &Path) -> Result<(), String> {
+    let meta = fs::metadata(path).map_err(|e| format!("无法读取：{e}"))?;
+    if meta.is_dir() {
+        fs::remove_dir_all(path).map_err(|e| format!("删除文件夹失败：{e}"))
+    } else {
+        fs::remove_file(path).map_err(|e| format!("删除文件失败：{e}"))
+    }
+}
+
+/// 将文件/目录复制到目标目录（保留原名）。
+pub fn copy_entry_into(src: &Path, dest_dir: &Path) -> Result<PathBuf, String> {
+    if !dest_dir.is_dir() {
+        return Err("目标不是目录。".into());
+    }
+    let name = src
+        .file_name()
+        .ok_or_else(|| "无效路径。".to_string())?;
+    let dest = dest_dir.join(name);
+    if dest.exists() {
+        return Err(format!("目标已存在：{}", dest.display()));
+    }
+    if src.is_dir() {
+        copy_dir_recursive(src, &dest)?;
+    } else {
+        if let Some(p) = dest.parent() {
+            fs::create_dir_all(p).map_err(|e| format!("创建目录失败：{e}"))?;
+        }
+        fs::copy(src, &dest).map_err(|e| format!("复制失败：{e}"))?;
+    }
+    Ok(dest.canonicalize().unwrap_or(dest))
+}
+
+fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<(), String> {
+    fs::create_dir_all(dest).map_err(|e| format!("创建目录失败：{e}"))?;
+    for item in fs::read_dir(src).map_err(|e| format!("读取目录失败：{e}"))? {
+        let item = item.map_err(|e| format!("读取目录项失败：{e}"))?;
+        let from = item.path();
+        let to = dest.join(item.file_name());
+        if from.is_dir() {
+            copy_dir_recursive(&from, &to)?;
+        } else {
+            fs::copy(&from, &to).map_err(|e| format!("复制失败：{e}"))?;
+        }
+    }
+    Ok(())
+}
+
+/// 将条目移动到目标目录。
+pub fn move_entry_into(src: &Path, dest_dir: &Path) -> Result<PathBuf, String> {
+    if !dest_dir.is_dir() {
+        return Err("目标不是目录。".into());
+    }
+    let name = src
+        .file_name()
+        .ok_or_else(|| "无效路径。".to_string())?;
+    let dest = dest_dir.join(name);
+    if dest.exists() {
+        return Err(format!("目标已存在：{}", dest.display()));
+    }
+    fs::rename(src, &dest).map_err(|e| format!("移动失败：{e}"))?;
+    Ok(dest.canonicalize().unwrap_or(dest))
+}
+
+/// 在系统文件管理器中显示并选中该路径。
+pub fn reveal_in_os(path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .args(["-R", &path.to_string_lossy()])
+            .spawn()
+            .map_err(|e| format!("无法打开 Finder：{e}"))?;
+        return Ok(());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{}", path.display()))
+            .spawn()
+            .map_err(|e| format!("无法打开资源管理器：{e}"))?;
+        return Ok(());
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let parent = if path.is_dir() {
+            path.to_path_buf()
+        } else {
+            path.parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| path.to_path_buf())
+        };
+        std::process::Command::new("xdg-open")
+            .arg(&parent)
+            .spawn()
+            .map_err(|e| format!("无法打开文件管理器：{e}"))?;
+        Ok(())
+    }
+}
+
+/// 写入系统剪贴板文本。
+pub fn clipboard_set_text(text: &str) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::io::Write;
+        let mut child = std::process::Command::new("pbcopy")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("pbcopy 失败：{e}"))?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(text.as_bytes())
+                .map_err(|e| format!("写入剪贴板失败：{e}"))?;
+        }
+        let status = child.wait().map_err(|e| format!("pbcopy 等待失败：{e}"))?;
+        if !status.success() {
+            return Err("pbcopy 未成功。".into());
+        }
+        return Ok(());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::io::Write;
+        let mut child = std::process::Command::new("clip")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("clip 失败：{e}"))?;
+        if let Some(mut stdin) = child.stdin.take() {
+            let utf16: Vec<u8> = text
+                .encode_utf16()
+                .flat_map(|u| u.to_le_bytes())
+                .collect();
+            stdin
+                .write_all(&utf16)
+                .map_err(|e| format!("写入剪贴板失败：{e}"))?;
+        }
+        let status = child.wait().map_err(|e| format!("clip 等待失败：{e}"))?;
+        if !status.success() {
+            return Err("clip 未成功。".into());
+        }
+        return Ok(());
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        use std::io::Write;
+        let mut child = std::process::Command::new("xclip")
+            .args(["-selection", "clipboard"])
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .or_else(|_| {
+                std::process::Command::new("xsel")
+                    .args(["--clipboard", "--input"])
+                    .stdin(std::process::Stdio::piped())
+                    .spawn()
+            })
+            .map_err(|e| format!("需要 xclip 或 xsel：{e}"))?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(text.as_bytes())
+                .map_err(|e| format!("写入剪贴板失败：{e}"))?;
+        }
+        let status = child.wait().map_err(|e| format!("剪贴板命令失败：{e}"))?;
+        if !status.success() {
+            return Err("写入剪贴板未成功。".into());
+        }
+        Ok(())
+    }
+}
+
+/// 工作区「全部替换」确认；用户取消返回 `false`。
+pub fn confirm_replace_all(file_count: usize, match_count: usize, skipped_dirty: usize) -> bool {
+    let mut desc = format!(
+        "确定在 {file_count} 个文件中替换 {match_count} 处匹配？此操作将直接写入磁盘，不可撤销。"
+    );
+    if skipped_dirty > 0 {
+        desc.push_str(&format!(
+            "\n另有 {skipped_dirty} 个文件因有未保存修改而被跳过。"
+        ));
+    }
+    let result = rfd::MessageDialog::new()
+        .set_title("全部替换")
+        .set_description(desc)
+        .set_buttons(rfd::MessageButtons::OkCancel)
+        .set_level(rfd::MessageLevel::Warning)
+        .show();
+    matches!(result, rfd::MessageDialogResult::Ok)
+}
+
+/// 删除确认对话框；用户取消返回 `false`。
+pub fn confirm_delete(path: &Path) -> bool {
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_else(|| path.to_str().unwrap_or("该项"));
+    let desc = if path.is_dir() {
+        format!("确定删除文件夹「{name}」及其全部内容？此操作不可撤销。")
+    } else {
+        format!("确定删除「{name}」？此操作不可撤销。")
+    };
+    let result = rfd::MessageDialog::new()
+        .set_title("删除")
+        .set_description(desc)
+        .set_buttons(rfd::MessageButtons::OkCancel)
+        .set_level(rfd::MessageLevel::Warning)
+        .show();
+    matches!(result, rfd::MessageDialogResult::Ok)
+}
+
+/// 工作区 `extensions/` 绝对路径（若仅有旧名 `extension/` 则沿用）。
+pub fn extension_root() -> PathBuf {
+    let ws = workspace_root();
+    let modern = ws.join("extensions");
+    if modern.is_dir() {
+        return modern;
+    }
+    let legacy = ws.join("extension");
+    if legacy.is_dir() {
+        return legacy;
+    }
+    modern
+}
+
+/// 在工作区 `extensions/{name}/` 下脚手架内部插件（目录 + README + manifest stub）。
 pub fn scaffold_extension_plugin(display_name: &str) -> Result<PathBuf, String> {
     let label = display_name.trim();
     let label = if label.is_empty() { "my-plugin" } else { label };
     let dir_name = sanitize_child_name(label)?;
     let root = extension_root();
-    fs::create_dir_all(&root).map_err(|e| format!("无法创建 extension 目录：{e}"))?;
+    fs::create_dir_all(&root).map_err(|e| format!("无法创建 extensions 目录：{e}"))?;
     let target = root.join(dir_name);
     if target.exists() {
         return Err(format!("已存在：{}", target.display()));
@@ -397,7 +743,7 @@ pub fn scaffold_extension_plugin(display_name: &str) -> Result<PathBuf, String> 
     fs::create_dir_all(&target).map_err(|e| format!("创建插件目录失败：{e}"))?;
 
     let readme = format!(
-        "# {label}\n\n内部插件脚手架（`extension/{dir_name}`）。\n\n包格式与加载流程见仓库 `extension/README.md`。\n"
+        "# {label}\n\n内部插件脚手架（`extensions/{dir_name}`）。\n\n包格式与加载流程见仓库 `extensions/README.md`。\n"
     );
     fs::write(target.join("README.md"), readme).map_err(|e| format!("写入 README 失败：{e}"))?;
 

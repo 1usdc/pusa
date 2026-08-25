@@ -10,7 +10,7 @@ use dioxus_free_icons::icons::ld_icons::{LdChevronDown, LdChevronRight};
 use dioxus_free_icons::Icon;
 use serde_json::Value;
 
-/// 轨迹行点击后打开文件 / 本次编辑前后对比。
+/// 轨迹行点击后打开文件 / 本次编辑前后对比 / 跳转子任务会话。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TraceFileOpen {
     /// 仅打开文件（读取等）。
@@ -22,6 +22,8 @@ pub enum TraceFileOpen {
         old_text: String,
         new_text: String,
     },
+    /// 打开 Multitask 子任务对应的独立会话。
+    Conversation { id: String },
 }
 
 #[derive(Clone, PartialEq)]
@@ -44,6 +46,14 @@ enum TimelineKind {
         secondary: String,
         running: bool,
         open: Option<TraceFileOpen>,
+    },
+    Subagent {
+        title: String,
+        prompt: String,
+        summary: String,
+        conversation_id: Option<String>,
+        worktree: String,
+        running: bool,
     },
 }
 
@@ -89,6 +99,47 @@ fn truncate_chars(s: &str, max: usize) -> String {
     let mut out: String = s.chars().take(max).collect();
     out.push('…');
     out
+}
+
+fn strip_subagent_meta(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if let Some(rest) = trimmed.split_once("\n---\n") {
+        return rest.1.trim().to_string();
+    }
+    trimmed
+        .lines()
+        .filter(|line| {
+            let t = line.trim();
+            !t.starts_with("【")
+                && !t.starts_with("conversation_id:")
+                && !t.starts_with("worktree:")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+fn summary_meta_field(raw: Option<&str>, prefix: &str) -> Option<String> {
+    let raw = raw?;
+    for line in raw.lines() {
+        let t = line.trim();
+        if let Some(rest) = t.strip_prefix(prefix) {
+            let v = rest.trim();
+            if !v.is_empty() {
+                return Some(v.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn shorten_worktree_path(path: &str) -> String {
+    let normalized = path.replace('\\', "/");
+    if let Some(idx) = normalized.find(".pusa/worktrees/") {
+        return normalized[idx..].to_string();
+    }
+    path.to_string()
 }
 
 fn format_tool_row(tool: &UiThinkingTool) -> TimelineKind {
@@ -225,6 +276,30 @@ fn format_tool_row(tool: &UiThinkingTool) -> TimelineKind {
                 open: None,
             }
         }
+        "spawn_subagent" => {
+            let title = json_str_field(&tool.args, &["title"]).unwrap_or_else(|| "子任务".into());
+            let prompt = json_str_field(&tool.args, &["prompt"]).unwrap_or_default();
+            let conversation_id = json_str_field(&tool.args, &["conversation_id"])
+                .or_else(|| summary_meta_field(tool.summary.as_deref(), "conversation_id:"));
+            let worktree = json_str_field(&tool.args, &["worktree"])
+                .or_else(|| summary_meta_field(tool.summary.as_deref(), "worktree:"))
+                .map(|p| shorten_worktree_path(&p))
+                .unwrap_or_default();
+            let summary = tool
+                .summary
+                .as_ref()
+                .map(|s| strip_subagent_meta(s))
+                .filter(|s| !s.is_empty())
+                .unwrap_or_default();
+            TimelineKind::Subagent {
+                title,
+                prompt: truncate_chars(&prompt, 120),
+                summary: truncate_chars(&summary, 220),
+                conversation_id,
+                worktree,
+                running,
+            }
+        }
         _ => {
             let detail = tool
                 .summary
@@ -332,6 +407,7 @@ fn activity_summary(steps: &[UiThinkingStep]) -> Option<String> {
     let mut edits = 0usize;
     let mut searches = 0usize;
     let mut execs = 0usize;
+    let mut subagents = 0usize;
     let mut other = 0usize;
     for step in steps {
         for tool in &step.tools {
@@ -341,11 +417,15 @@ fn activity_summary(steps: &[UiThinkingStep]) -> Option<String> {
                 "edit" => edits += 1,
                 "search_skills" | "search_market_skills" => searches += 1,
                 "exec_bash" => execs += 1,
+                "spawn_subagent" => subagents += 1,
                 _ => other += 1,
             }
         }
     }
     let mut parts = Vec::new();
+    if subagents > 0 {
+        parts.push(format!("派发 {subagents} 个子任务"));
+    }
     if reads > 0 {
         parts.push(format!("读取 {reads} 个文件"));
     }
@@ -383,7 +463,8 @@ pub fn ChatThinkingPanel(
     on_open_trace_file: EventHandler<TraceFileOpen>,
 ) -> Element {
     let rows = build_timeline(&thinking.steps);
-    let running = busy || matches!(thinking.status, ThinkingStatus::Running);
+    let running = matches!(thinking.status, ThinkingStatus::Running)
+        || (busy && !matches!(thinking.status, ThinkingStatus::Error));
     let has_rows = !rows.is_empty();
     if !has_rows && !running {
         return rsx! {};
@@ -532,6 +613,9 @@ pub fn ChatThinkingPanel(
                                                 Some(TraceFileOpen::Diff { .. }) => {
                                                     "在文件树中定位并查看行内 diff"
                                                 }
+                                                Some(TraceFileOpen::Conversation { .. }) => {
+                                                    "打开独立会话"
+                                                }
                                                 Some(TraceFileOpen::File { .. }) | None => {
                                                     "在文件树中定位并打开"
                                                 }
@@ -566,6 +650,64 @@ pub fn ChatThinkingPanel(
                                                     }
                                                     if running {
                                                         span { class: "ac-chat-trace-pulse", aria_hidden: "true" }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        TimelineKind::Subagent {
+                                            title,
+                                            prompt,
+                                            summary,
+                                            conversation_id,
+                                            worktree,
+                                            running,
+                                        } => {
+                                            let title = title.clone();
+                                            let prompt = prompt.clone();
+                                            let summary = summary.clone();
+                                            let conversation_id = conversation_id.clone();
+                                            let worktree = worktree.clone();
+                                            let running = *running;
+                                            rsx! {
+                                                div {
+                                                    key: "{key}",
+                                                    class: if running {
+                                                        "ac-chat-subtask-card is-running"
+                                                    } else {
+                                                        "ac-chat-subtask-card"
+                                                    },
+                                                    role: "listitem",
+                                                    div { class: "ac-chat-subtask-card-head",
+                                                        span { class: "ac-chat-subtask-card-badge", "子任务" }
+                                                        span { class: "ac-chat-subtask-card-title", "{title}" }
+                                                        span { class: "ac-chat-subtask-card-status",
+                                                            if running { "运行中" } else { "已完成" }
+                                                        }
+                                                        if running {
+                                                            span { class: "ac-chat-trace-pulse", aria_hidden: "true" }
+                                                        }
+                                                    }
+                                                    if !prompt.is_empty() {
+                                                        div { class: "ac-chat-subtask-card-prompt", "{prompt}" }
+                                                    }
+                                                    if !worktree.is_empty() {
+                                                        div { class: "ac-chat-subtask-card-meta", "worktree · {worktree}" }
+                                                    }
+                                                    if let Some(cid) = conversation_id.clone() {
+                                                        button {
+                                                            r#type: "button",
+                                                            class: "ac-chat-subtask-card-open",
+                                                            title: "打开独立会话 {cid}",
+                                                            onclick: move |_| {
+                                                                on_open_trace_file.call(TraceFileOpen::Conversation {
+                                                                    id: cid.clone(),
+                                                                });
+                                                            },
+                                                            "打开会话"
+                                                        }
+                                                    }
+                                                    if !summary.is_empty() {
+                                                        div { class: "ac-chat-subtask-card-summary", "{summary}" }
                                                     }
                                                 }
                                             }

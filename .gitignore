@@ -7,6 +7,7 @@
 
 # —— 运行时数据（含 SQLite / 日志，勿开源）——
 /data/
+.pusa/
 
 # —— 构建产物 ——
 /target/
@@ -21,15 +22,18 @@ desktop/dist/
 /vendor/pusa-core/**
 !/vendor/pusa-core/README.md
 
-# —— 应用市场本地下载（只保留 README）——
+# —— 应用市场本地下载 / 内部插件（只保留 README）——
 /applications/*
 !/applications/README.md
+/extensions/*
+!/extensions/README.md
 
 # —— 编辑器 / 系统杂项 ——
 .DS_Store
 **/.DS_Store
 .idea/
 .vscode/
+.cursor/
 *.swp
 *~
 

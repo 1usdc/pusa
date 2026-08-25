@@ -19,6 +19,11 @@ just desktop
 
 # 桌面端打包
 ```bash
+# 本机 macOS（签名公证，产物在 desktop/dist/）
+just desktop-mac
+# NOTARIZE=0 just desktop-mac   # 只签名，不公证
+
+# CI 双平台（推 tag，不在本机打包）
 TAG=desktop-v0.2.7 just desktop-ship
 # 网页端左上角可以重跑失败工作流
 # https://github.com/Another-Me-Labs/Another-Claw-Rs/actions

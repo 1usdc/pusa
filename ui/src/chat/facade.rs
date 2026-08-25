@@ -345,11 +345,15 @@ pub async fn delete_role(id: i64) -> anyhow::Result<()> {
 }
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
-pub async fn run_chat_turn<F>(req: ChatTurnRequest, mut on_event: F) -> anyhow::Result<()>
+pub async fn run_chat_turn<F>(
+    req: ChatTurnRequest,
+    abort: std::sync::Arc<crate::desktop::agent::ChatAbort>,
+    mut on_event: F,
+) -> anyhow::Result<()>
 where
     F: FnMut(SseEvent),
 {
-    crate::desktop::agent::desktop_chat_stream(req, &mut on_event).await
+    crate::desktop::agent::desktop_chat_stream(req, abort, &mut on_event).await
 }
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "native"))]

@@ -3,10 +3,21 @@
 use std::path::Path;
 
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::ld_icons::LdCopy;
+use dioxus_free_icons::icons::ld_icons::{LdCircleX, LdCopy};
 use dioxus_free_icons::Icon;
 use pulldown_cmark::html;
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
+
+/// 剥离正文开头的错误标记（历史消息里的 ❌），改由 SVG 图标渲染。
+fn split_leading_error_mark(content: &str) -> (bool, String) {
+    let trimmed = content.trim_start();
+    for prefix in ["❌ ", "❌", "⨯ ", "⨯"] {
+        if let Some(rest) = trimmed.strip_prefix(prefix) {
+            return (true, rest.to_string());
+        }
+    }
+    (false, content.to_string())
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum ChatMdPart {
@@ -306,7 +317,16 @@ fn copy_code_to_clipboard(text: String) {
             let _ = clipboard.write_text(&text);
         }
     }
-    #[cfg(not(all(target_arch = "wasm32", feature = "web")))]
+
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        let _ = crate::desktop::files::clipboard_set_text(&text);
+    }
+
+    #[cfg(all(
+        not(all(target_arch = "wasm32", feature = "web")),
+        not(all(feature = "native", not(target_arch = "wasm32")))
+    ))]
     {
         let _ = text;
     }
@@ -315,28 +335,44 @@ fn copy_code_to_clipboard(text: String) {
 /// 助手/用户气泡正文：Markdown + 可复制代码块。
 #[component]
 pub fn ChatMarkdownBody(content: String) -> Element {
-    let parts = parse_chat_md_parts(&content);
+    let (is_error, body) = split_leading_error_mark(&content);
+    let parts = parse_chat_md_parts(&body);
 
     rsx! {
         div {
-            class: "ac-chat-md",
-            for (idx, part) in parts.into_iter().enumerate() {
-                match part {
-                    ChatMdPart::Html(html) => rsx! {
-                        div {
-                            key: "{idx}-html",
-                            class: "ac-chat-md-chunk",
-                            dangerous_inner_html: html,
-                        }
-                    },
-                    ChatMdPart::Code { lang, path_hint, code } => rsx! {
-                        ChatCodeBlock {
-                            key: "{idx}-code",
-                            lang,
-                            path_hint,
-                            code,
-                        }
-                    },
+            class: if is_error { "ac-chat-md ac-chat-md--error" } else { "ac-chat-md" },
+            if is_error {
+                span {
+                    class: "ac-chat-error-icon",
+                    aria_hidden: "true",
+                    title: "错误",
+                    Icon {
+                        icon: LdCircleX,
+                        width: 16,
+                        height: 16,
+                        fill: "currentColor",
+                    }
+                }
+            }
+            div { class: "ac-chat-md-body",
+                for (idx, part) in parts.into_iter().enumerate() {
+                    match part {
+                        ChatMdPart::Html(html) => rsx! {
+                            div {
+                                key: "{idx}-html",
+                                class: "ac-chat-md-chunk",
+                                dangerous_inner_html: html,
+                            }
+                        },
+                        ChatMdPart::Code { lang, path_hint, code } => rsx! {
+                            ChatCodeBlock {
+                                key: "{idx}-code",
+                                lang,
+                                path_hint,
+                                code,
+                            }
+                        },
+                    }
                 }
             }
         }
@@ -382,7 +418,10 @@ fn ChatCodeBlock(
                         aria_label: "复制代码",
                         onclick: {
                             let code = code.clone();
-                            move |_| copy_code_to_clipboard(code.clone())
+                            move |evt: MouseEvent| {
+                                evt.stop_propagation();
+                                copy_code_to_clipboard(code.clone());
+                            }
                         },
                         Icon { icon: LdCopy, width: 14, height: 14, fill: "currentColor" }
                         span { "复制" }

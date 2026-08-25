@@ -12,7 +12,7 @@ use protocol::{
     AboutInfoDto, AgentRunDetailDto, ChatTurnRequest,
     ConversationSummaryDto, ConversationTitleBody, CredentialStatusDto, CredentialUpsertRequest,
     EquippedSkillsDto, InstalledSkillsResponse, LiveAssetTradeHistoryDto, LiveAssetsDashboardDto, LlmConfigDto,
-    LlmConfigUpsertBody, LlmStatusBody, PersonaBody, PersonaPolishRequest, PersonaPolishResponse,
+    LlmConfigUpsertBody, LlmCredentialUpsertBody, LlmStatusBody, PersonaBody, PersonaPolishRequest, PersonaPolishResponse,
     PluginAiSearchRequest, PluginAiSearchResponse, RoleCreateRequest, RoleDto, RoleUpdateRequest,
     ServerIpDto, SkillEquipToggleRequest, SkillInstallRequest, SkillInstallResponse,
     SkillMarketQuery, SkillMarketResponse, SseEvent,
@@ -84,6 +84,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/v1/about", get(about_info))
         .route("/v1/llm/status", get(llm_status))
         .route("/v1/llm/config", get(llm_config_get).put(llm_config_put))
+        .route("/v1/llm/credentials", post(llm_credential_upsert))
+        .route("/v1/llm/credentials/:id", delete(llm_credential_delete))
+        .route("/v1/llm/credentials/:id/activate", post(llm_credential_activate))
         .route("/v1/persona", get(persona_get).put(persona_put))
         .route("/v1/persona/polish", post(persona_polish))
         .route("/v1/plugins/ai-search", post(plugins_ai_search))
@@ -235,6 +238,45 @@ async fn llm_config_put(
     let cfg = state
         .ctx
         .llm_config_upsert(body)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(cfg))
+}
+
+#[instrument(skip(state))]
+async fn llm_credential_upsert(
+    State(state): State<AppState>,
+    Json(body): Json<LlmCredentialUpsertBody>,
+) -> Result<Json<LlmConfigDto>, StatusCode> {
+    let cfg = state
+        .ctx
+        .llm_credential_upsert(body)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(cfg))
+}
+
+#[instrument(skip(state))]
+async fn llm_credential_delete(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<LlmConfigDto>, StatusCode> {
+    let cfg = state
+        .ctx
+        .llm_credential_delete(&id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(cfg))
+}
+
+#[instrument(skip(state))]
+async fn llm_credential_activate(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<LlmConfigDto>, StatusCode> {
+    let cfg = state
+        .ctx
+        .llm_credential_activate(&id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(cfg))

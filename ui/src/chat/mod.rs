@@ -1,5 +1,6 @@
 //! 对话：流式传输、门面与本地气泡模型。
 mod attachments;
+mod composer_ce;
 mod error_text;
 mod facade;
 mod markdown;
@@ -8,7 +9,17 @@ mod thinking;
 pub(crate) mod transport_wasm;
 mod ui;
 
-pub use attachments::{attachment_from_file_data, ChatPendingAttachment};
+pub use attachments::{
+    attachment_from_file_data, attachment_from_path, attachments_from_suffix_labels,
+    parse_user_message_segments, split_attachment_suffix, strip_attachment_suffix, ChatPendingAttachment,
+    ChatUserSeg,
+};
+pub use composer_ce::{
+    ce_clear, ce_focus_end, ce_insert_chip, ce_insert_text, ce_serialize, ce_set_html, chip_html,
+    compose_user_payload, composer_seed_html, composer_seed_html_from_segs, pending_has_path,
+    pending_remove_ids, pending_resolve, ComposerBridgeEvent, COMPOSER_ROOT_EDIT, COMPOSER_ROOT_MAIN,
+    INSTALL_BRIDGE_JS,
+};
 #[cfg(target_arch = "wasm32")]
 pub use attachments::attachment_from_bytes;
 #[cfg(not(target_arch = "wasm32"))]

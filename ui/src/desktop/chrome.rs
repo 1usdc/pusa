@@ -16,6 +16,7 @@ use crate::desktop::window;
 use crate::icons::{
     VscLayoutPanel, VscLayoutPanelOff, VscLayoutSidebarLeftDock, VscLayoutSidebarRightDock,
 };
+use crate::shell::theme::{self, TitlebarThemeToggle};
 
 #[component]
 fn NativeResizeHandle(class: String) -> Element {
@@ -106,6 +107,7 @@ pub fn NativeTitleBar(
     } else {
         "显示右边聊天栏"
     };
+    let mut ui_theme = use_signal(theme::load);
 
     rsx! {
         NativeResizeHandle {
@@ -243,8 +245,12 @@ pub fn NativeTitleBar(
                                     show_titlebar_settings_menu.set(false);
                                     show_settings_modal.set(true);
                                 },
-                                "设置 API Key"
+                                "API Key"
                             }
+                            TitlebarThemeToggle {
+                                    ui_theme,
+                                    show_titlebar_settings_menu,
+                                }
                             button {
                                 r#type: "button",
                                 role: "menuitem",

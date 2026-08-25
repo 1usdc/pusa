@@ -12,6 +12,31 @@ pub struct ChatMessageDto {
     pub images: Vec<String>,
 }
 
+/// 普通聊天 Agent 工具循环缺省最大步数。
+pub const DEFAULT_CHAT_MAX_AGENT_STEPS: u32 = 200;
+
+/// 聊天栏 Agent 工作模式（与 UI 工具条 Agent / Plan / Debug / Multitask / Ask 对齐）。
+///
+/// - [`ChatTurnMode::Agent`]：单通道工具循环（默认）。
+/// - [`ChatTurnMode::Multitask`]：父 Agent 可 `spawn_subagent` 并行拆任务；后续发送不排队。
+/// - 其余变体先占位，执行层暂与 Agent 相同。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ChatTurnMode {
+    #[default]
+    Agent,
+    Plan,
+    Debug,
+    Multitask,
+    Ask,
+}
+
+impl ChatTurnMode {
+    pub const fn is_multitask(self) -> bool {
+        matches!(self, Self::Multitask)
+    }
+}
+
 /// 客户端发起一轮补全（可附带历史与系统提示）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatTurnRequest {
@@ -23,9 +48,12 @@ pub struct ChatTurnRequest {
     pub system: Option<String>,
     /// LLM 模型 ID（必填，由前端选择后传入）。
     pub model: String,
-    /// Agent 工具循环最大步数；缺省为 12（普通聊天）。自动化策略等可传更大值。
+    /// Agent 工具循环最大步数；缺省为 [`DEFAULT_CHAT_MAX_AGENT_STEPS`]（普通聊天）。自动化策略等可传更大值。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_agent_steps: Option<u32>,
+    /// 工作模式；缺省 [`ChatTurnMode::Agent`]。旧客户端不传此字段。
+    #[serde(default)]
+    pub mode: ChatTurnMode,
 }
 
 /// 会话列表中的摘要。
@@ -351,6 +379,59 @@ pub struct ChatModelsResponse {
     pub data: Vec<ChatModelDto>,
 }
 
+/// LLM 密钥格式 / 厂商偏好。
+///
+/// - [`LlmApiProvider::Openai`]：`POST {base}/chat/completions`，`Authorization: Bearer`
+/// - [`LlmApiProvider::Anthropic`]：经内置兼容网关转成 Anthropic Messages
+///   （`POST {base}/messages`，`x-api-key` + `anthropic-version`）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LlmApiProvider {
+    #[default]
+    Openai,
+    Anthropic,
+}
+
+impl LlmApiProvider {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Openai => "openai",
+            Self::Anthropic => "anthropic",
+        }
+    }
+
+    pub fn parse(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "anthropic" => Self::Anthropic,
+            _ => Self::Openai,
+        }
+    }
+
+    /// OpenAI：`sk-…`；Anthropic：`sk-ant-…`。
+    pub fn key_placeholder(self) -> &'static str {
+        match self {
+            Self::Openai => "sk-…",
+            Self::Anthropic => "sk-ant-…",
+        }
+    }
+
+    pub fn default_v1_base(self) -> &'static str {
+        match self {
+            Self::Openai => "https://api.openai.com/v1",
+            Self::Anthropic => "https://api.anthropic.com/v1",
+        }
+    }
+}
+
+/// 根据密钥前缀推断厂商；无法识别时回落 OpenAI。
+pub fn infer_llm_provider_from_key(api_key: &str) -> LlmApiProvider {
+    if api_key.trim().starts_with("sk-ant-") {
+        LlmApiProvider::Anthropic
+    } else {
+        LlmApiProvider::Openai
+    }
+}
+
 /// GET `/v1/llm/config`：当前 LLM 配置（来自服务端数据库；已登录用户可读回已存密钥）。
 ///
 /// `prefer_custom_key` 用来持久化「设置弹窗 → 自定义 API Key」switch 的开关状态。
@@ -367,6 +448,38 @@ pub struct LlmConfigDto {
     /// 旧后端不返回此字段时按 `false`（默认自动模式）反序列化。
     #[serde(default)]
     pub prefer_custom_key: bool,
+    /// 密钥格式偏好（OpenAI / Anthropic）。旧后端不返回时默认 OpenAI。
+    #[serde(default)]
+    pub provider: LlmApiProvider,
+    /// 已保存的全部密钥组。旧后端不返回时为空；对话使用 `active_credential_id` 对应项。
+    #[serde(default)]
+    pub credentials: Vec<LlmCredentialDto>,
+    /// 当前启用的密钥组 id；空表示尚未配置。
+    #[serde(default)]
+    pub active_credential_id: String,
+}
+
+/// 一组 LLM 凭证（厂商 + API Key + Base URL）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LlmCredentialDto {
+    pub id: String,
+    pub provider: LlmApiProvider,
+    pub api_key: String,
+    pub openai_v1_base: String,
+    #[serde(default)]
+    pub label: String,
+}
+
+/// 新增或更新一组凭证。`id` 为空则新建。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmCredentialUpsertBody {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    pub provider: LlmApiProvider,
+    pub api_key: String,
+    pub openai_v1_base: String,
+    #[serde(default)]
+    pub label: String,
 }
 
 /// PUT `/v1/llm/config`：更新服务端数据库中的 LLM 配置。
@@ -374,6 +487,8 @@ pub struct LlmConfigDto {
 /// `prefer_custom_key` 为 `None` 时表示「不触动 switch 偏好」，仅写入 `api_key` /
 /// `openai_v1_base`。前端在 toggle 切换时显式传 `Some(true/false)`，常规保存（点
 /// 「保存」按钮）传 `None` 以免误覆盖。
+///
+/// `provider` 为 `None` 时不改厂商偏好；`Some` 时写入。
 ///
 /// `clear_api_key` / `clear_openai_v1_base`：显式声明「我要清空这个字段」。后端的
 /// 写入规则是：
@@ -391,6 +506,8 @@ pub struct LlmConfigUpsertBody {
     pub openai_v1_base: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prefer_custom_key: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<LlmApiProvider>,
     #[serde(default, skip_serializing_if = "is_false_default")]
     pub clear_api_key: bool,
     #[serde(default, skip_serializing_if = "is_false_default")]

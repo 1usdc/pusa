@@ -1,8 +1,8 @@
-# application/
+# applications/
 
 存放**外部应用**的安装目录。
 
-与 `skills/`（Agent 技能）和 `extension/`（内部插件）不同：本目录用于第三方或独立可安装的应用包。桌面端「应用市场」会将选中的项目以 `git clone --depth 1` 下载到此目录的子文件夹，并写入 `.pusa-plugin.json` 元数据。
+与 `skills/`（Agent 技能）和 `extensions/`（内部插件）不同：本目录用于第三方或独立可安装的应用包。桌面端「应用市场」会将选中的项目以 `git clone --depth 1` 下载到此目录的子文件夹，并写入 `.pusa-plugin.json` 元数据。
 
 ## 约定（暂定）
 
@@ -16,8 +16,8 @@
 | 目录 | 用途 |
 |------|------|
 | `skills/` | Agent 技能（`SKILL.md`） |
-| `extension/` | 内部插件 |
-| `application/` | 外部应用 |
+| `extensions/` | 内部插件 |
+| `applications/` | 外部应用 |
 
 | 文件 | 用途 |
 |------|------|

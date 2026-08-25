@@ -10,6 +10,8 @@
 const CHAT_MODEL_KEY: &str = "anotherclaw_chat_model";
 /// 中间栏已打开标签页缓存（JSON：`{ tabs, active_id }`）。
 const CENTER_TABS_KEY: &str = "anotherclaw_center_tabs";
+/// 侧栏文件树展开/选中状态（JSON：`{ root, expanded, selected_path }`）。
+const FILE_TREE_KEY: &str = "anotherclaw_file_tree";
 
 fn storage() -> Option<web_sys::Storage> {
     web_sys::window()?.local_storage().ok().flatten()
@@ -39,6 +41,52 @@ pub fn chat_model_set(model_id: &str) {
     }
 }
 
+/// 用户自定义聊天模型 ID 列表（JSON 字符串数组）。
+const CUSTOM_CHAT_MODELS_KEY: &str = "anotherclaw_custom_chat_models";
+
+/// 读取自定义模型 ID 列表；无缓存或解析失败返回空 Vec。
+pub fn custom_chat_models_get() -> Vec<String> {
+    let Some(st) = storage() else {
+        return Vec::new();
+    };
+    let Some(raw) = st.get_item(CUSTOM_CHAT_MODELS_KEY).ok().flatten() else {
+        return Vec::new();
+    };
+    parse_custom_chat_models_json(&raw)
+}
+
+/// 写入自定义模型 ID 列表。
+pub fn custom_chat_models_set(ids: &[String]) {
+    let Some(st) = storage() else {
+        return;
+    };
+    let cleaned: Vec<String> = ids
+        .iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if cleaned.is_empty() {
+        let _ = st.remove_item(CUSTOM_CHAT_MODELS_KEY);
+        return;
+    }
+    if let Ok(json) = serde_json::to_string(&cleaned) {
+        let _ = st.set_item(CUSTOM_CHAT_MODELS_KEY, &json);
+    }
+}
+
+fn parse_custom_chat_models_json(raw: &str) -> Vec<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    serde_json::from_str::<Vec<String>>(trimmed)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
 /// 读取中间栏标签页操作缓存 JSON；无缓存或空白返回 `None`。
 pub fn center_tabs_get() -> Option<String> {
     let raw = storage()?.get_item(CENTER_TABS_KEY).ok().flatten()?;
@@ -60,5 +108,56 @@ pub fn center_tabs_set(raw_json: &str) {
         let _ = st.remove_item(CENTER_TABS_KEY);
     } else {
         let _ = st.set_item(CENTER_TABS_KEY, trimmed);
+    }
+}
+
+/// 读取侧栏文件树状态 JSON；无缓存或空白返回 `None`。
+pub fn file_tree_get() -> Option<String> {
+    let raw = storage()?.get_item(FILE_TREE_KEY).ok().flatten()?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+/// 写入侧栏文件树状态；空字符串清除。
+pub fn file_tree_set(raw_json: &str) {
+    let Some(st) = storage() else {
+        return;
+    };
+    let trimmed = raw_json.trim();
+    if trimmed.is_empty() {
+        let _ = st.remove_item(FILE_TREE_KEY);
+    } else {
+        let _ = st.set_item(FILE_TREE_KEY, trimmed);
+    }
+}
+
+/// UI 主题：`light` / `dark`。
+const UI_THEME_KEY: &str = "anotherclaw_ui_theme";
+
+/// 读取 UI 主题；未设置返回 `None`。
+pub fn ui_theme_get() -> Option<String> {
+    let raw = storage()?.get_item(UI_THEME_KEY).ok().flatten()?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+/// 写入 UI 主题。
+pub fn ui_theme_set(theme: &str) {
+    let Some(st) = storage() else {
+        return;
+    };
+    let trimmed = theme.trim();
+    if trimmed.is_empty() {
+        let _ = st.remove_item(UI_THEME_KEY);
+    } else {
+        let _ = st.set_item(UI_THEME_KEY, trimmed);
     }
 }

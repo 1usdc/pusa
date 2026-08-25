@@ -1,8 +1,9 @@
-//! 侧栏应用市场：我的应用 / 应用市场（官方搜索含 GitHub、AI 搜索），下载到工作区 `application/`。
+//! 侧栏应用市场：我的应用 / 应用市场（官方搜索含 GitHub、AI 搜索），下载到工作区 `applications/`。
 
 use dioxus::prelude::*;
 use dioxus_free_icons::icons::ld_icons::{
-    LdDownload, LdExternalLink, LdFolderOpen, LdPlay, LdRefreshCw, LdSearch, LdSparkles, LdTrash2,
+    LdCopy, LdDownload, LdExternalLink, LdFolderOpen, LdPlay, LdRefreshCw, LdSearch, LdSparkles,
+    LdTrash2,
 };
 use dioxus_free_icons::Icon;
 use keyboard_types::Key;
@@ -68,6 +69,15 @@ fn resolve_ai_model() -> String {
     #[cfg(all(target_arch = "wasm32", feature = "web"))]
     {
         if let Some(saved) = crate::web::prefs::chat_model_get() {
+            let t = saved.trim();
+            if !t.is_empty() {
+                return t.to_string();
+            }
+        }
+    }
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        if let Some(saved) = crate::desktop::files::chat_model_get() {
             let t = saved.trim();
             if !t.is_empty() {
                 return t.to_string();
@@ -420,6 +430,25 @@ fn open_installed_card(_card: &PluginCard) -> Result<(), String> {
     Err("Web 端无法打开本机目录，请使用桌面版。".into())
 }
 
+/// 已安装应用的绝对路径（桌面）；Web 返回相对展示路径。
+fn installed_absolute_path(card: &PluginCard) -> Result<String, String> {
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        crate::desktop::plugins::plugin_dir(&card.id)
+            .map(|p| p.to_string_lossy().into_owned())
+    }
+    #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+    {
+        Ok(detail_install_path(card))
+    }
+}
+
+fn copy_installed_path(card: &PluginCard) -> Result<String, String> {
+    let path = installed_absolute_path(card)?;
+    super::files::fs_clipboard_set_text(&path)?;
+    Ok(path)
+}
+
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 fn uninstall_installed_card(card: &PluginCard) -> Result<(), String> {
     crate::desktop::plugins::uninstall_plugin(&card.id)
@@ -510,7 +539,7 @@ async fn ensure_smart_ui_for(
     Err("智能 UI 仅桌面版可用。".into())
 }
 
-/// 后台为缺少缓存的已安装应用扫描并写入 `application/{id}/.pusa-smart-ui.json`。
+/// 后台为缺少缓存的已安装应用扫描并写入 `applications/{id}/.pusa-smart-ui.json`。
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 fn spawn_auto_scan_missing_smart_ui(toast: super::toast::ToastCtx) {
     let model = resolve_ai_model();
@@ -570,28 +599,6 @@ fn spawn_ensure_smart_ui_after_install(id: String, toast: super::toast::ToastCtx
 #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
 fn spawn_ensure_smart_ui_after_install(_id: String, _toast: super::toast::ToastCtx) {}
 
-#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
-async fn run_smart_ui_action(
-    id: String,
-    command: String,
-    detached: bool,
-) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || {
-        crate::desktop::plugins::run_smart_ui_command(&id, &command, detached)
-    })
-    .await
-    .unwrap_or_else(|e| Err(format!("执行失败：{e}")))
-}
-
-#[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
-async fn run_smart_ui_action(
-    _id: String,
-    _command: String,
-    _detached: bool,
-) -> Result<String, String> {
-    Err("智能 UI 仅桌面版可用。".into())
-}
-
 fn format_meta(card: &PluginCard) -> String {
     let mut parts = vec![card.source_label.clone()];
     if let Some(lang) = &card.language {
@@ -623,7 +630,7 @@ fn format_detail_meta(card: &PluginCard) -> String {
 
 /// 工作区相对安装路径，展示在详情标题下方。
 fn detail_install_path(card: &PluginCard) -> String {
-    format!("application/{}/", card.id)
+    format!("applications/{}/", card.id)
 }
 
 /// 去掉「已安装到」前缀；若描述仅是安装路径则返回空（路径改由标题区展示）。
@@ -682,6 +689,8 @@ pub fn PluginDetailPane(
     catalog: Signal<Vec<PluginCard>>,
     mut refresh_tick: Signal<u64>,
     on_uninstalled: EventHandler<String>,
+    /// `(plugin_id, command)`：在 pusa 专用终端中执行。
+    on_run_in_terminal: EventHandler<(String, String)>,
 ) -> Element {
     let toast = super::toast::use_toast();
     let mut installing = use_signal(|| None::<String>);
@@ -740,6 +749,7 @@ pub fn PluginDetailPane(
                     let key_uninstall = key.clone();
                     let card_install = card.clone();
                     let card_open = card.clone();
+                    let card_copy = card.clone();
                     let card_uninstall = card.clone();
                     let card_smart = card.clone();
                     let homepage = card.homepage.clone();
@@ -831,7 +841,7 @@ pub fn PluginDetailPane(
                                                     let action_label = action.label.clone();
                                                     let action_cmd = action.command.clone();
                                                     let action_desc = action.description.clone().unwrap_or_default();
-                                                    let action_detached = action.detached;
+                                                    let _action_detached = action.detached;
                                                     let plugin_id = card_smart.id.clone();
                                                     let title = if action_desc.is_empty() {
                                                         action_cmd.clone()
@@ -848,14 +858,9 @@ pub fn PluginDetailPane(
                                                                 let id = plugin_id.clone();
                                                                 let cmd = action_cmd.clone();
                                                                 let aid = action_id.clone();
-                                                                smart_ui_running.set(Some(aid.clone()));
-                                                                spawn(async move {
-                                                                    match run_smart_ui_action(id, cmd, action_detached).await {
-                                                                        Ok(msg) => toast.success(msg),
-                                                                        Err(e) => toast.error(e),
-                                                                    }
-                                                                    smart_ui_running.set(None);
-                                                                });
+                                                                smart_ui_running.set(Some(aid));
+                                                                on_run_in_terminal.call((id, cmd));
+                                                                smart_ui_running.set(None);
                                                             },
                                                             Icon {
                                                                 icon: LdPlay,
@@ -905,6 +910,28 @@ pub fn PluginDetailPane(
                                                 class: "ac-skill-action-icon",
                                             }
                                             "打开目录"
+                                        }
+                                        button {
+                                            r#type: "button",
+                                            class: "ac-installed-equip",
+                                            title: "复制安装目录绝对路径",
+                                            onclick: move |_| {
+                                                let card = card_copy.clone();
+                                                match copy_installed_path(&card) {
+                                                    Ok(path) => {
+                                                        toast.success(format!("已复制路径：{path}"));
+                                                    }
+                                                    Err(e) => toast.error(e),
+                                                }
+                                            },
+                                            Icon {
+                                                icon: LdCopy,
+                                                width: 15,
+                                                height: 15,
+                                                fill: "currentColor",
+                                                class: "ac-skill-action-icon",
+                                            }
+                                            "复制路径"
                                         }
                                         button {
                                             r#type: "button",
@@ -1454,7 +1481,7 @@ pub fn SidebarPluginMarket(
             }
             if !plugin_available() {
                 div { class: "ac-sidebar-skills-banner is-warn",
-                    "桌面端可将项目克隆到工作区 application/；Web 可浏览官方预览、GitHub 与 AI 搜索。"
+                    "桌面端可将项目克隆到工作区 applications/；Web 可浏览官方预览、GitHub 与 AI 搜索。"
                 }
             }
             if list_loading {

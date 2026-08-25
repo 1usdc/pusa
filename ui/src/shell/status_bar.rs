@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 use dioxus_free_icons::icons::ld_icons::LdGitBranch;
 use dioxus_free_icons::Icon;
 
-use crate::icons::GoFileDirectory;
+use crate::icons::{GoFileDirectory, RiBearSmileLine};
 
 /// 仓库根目录 `.version`（编译期嵌入，显示与更新比对共用）。
 const APP_VERSION_FILE: &str = include_str!("../../../.version");
@@ -149,6 +149,7 @@ mod desktop_update {
 pub fn StatusBar(
     mut show_terminal: Signal<bool>,
     active_file_path: Signal<Option<String>>,
+    active_role_name: Signal<String>,
 ) -> Element {
     // native / wasm 路径会 `set`；host 上仅 default feature 检查时可能无写入。
     #[allow(unused_mut)]
@@ -261,10 +262,28 @@ pub fn StatusBar(
         format!("{workspace_title} · {terminal_title}")
     };
     let file_path = active_file_path();
+    let role_name = active_role_name();
 
     rsx! {
         footer { class: "ac-status-bar", role: "contentinfo",
             div { class: "ac-status-bar-left",
+                if !role_name.is_empty() {
+                    span {
+                        class: "ac-status-bar-role",
+                        title: "当前角色：{role_name}",
+                        span {
+                            class: "ac-status-bar-role-icon",
+                            aria_hidden: "true",
+                            Icon {
+                                icon: RiBearSmileLine,
+                                width: 12,
+                                height: 12,
+                                fill: "currentColor",
+                            }
+                        }
+                        span { class: "ac-status-bar-role-name", "{role_name}" }
+                    }
+                }
                 if !dir_name.is_empty() {
                     button {
                         r#type: "button",

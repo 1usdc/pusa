@@ -91,6 +91,7 @@ fn WebAppShell() -> Element {
     let show_chat = use_signal(|| true);
     let chat_history_open = use_signal(|| false);
     let active_file_path = use_signal(|| None::<String>);
+    let active_role_name = use_signal(String::new);
     let mut show_settings_modal = use_signal(|| false);
     let show_about_modal = use_signal(|| false);
     let show_titlebar_settings_menu = use_signal(|| false);
@@ -100,6 +101,10 @@ fn WebAppShell() -> Element {
 
     use_effect(move || {
         crate::web::dev_mode::sync_body_to(developer_mode());
+    });
+
+    use_effect(move || {
+        crate::shell::theme::restore_on_launch();
     });
 
     use_context_provider(|| crate::web::ShellChromeCtx {
@@ -148,8 +153,9 @@ fn WebAppShell() -> Element {
                 show_chat,
                 chat_history_open,
                 active_file_path,
+                active_role_name,
             }
-            StatusBar { show_terminal, active_file_path }
+            StatusBar { show_terminal, active_file_path, active_role_name }
             if show_settings_modal() {
                 div { class: "ac-settings-modal-root",
                     div {

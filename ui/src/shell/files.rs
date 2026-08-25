@@ -5,12 +5,13 @@ use std::path::Path;
 
 use dioxus::html::point_interaction::ModifiersInteraction;
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::ld_icons::{
-    LdChevronDown, LdChevronRight, LdFile, LdFilePlus, LdFolder, LdFolderPlus, LdFoldVertical,
-    LdRefreshCw,
-};
 use dioxus_free_icons::Icon;
+use dioxus_free_icons::icons::ld_icons::{
+    LdChevronDown, LdChevronRight, LdFile, LdFilePlus, LdFolder, LdFolderPlus, LdRefreshCw,
+};
 use keyboard_types::{Key, Modifiers};
+
+use crate::icons::AiOutlineVerticalAlignBottom;
 
 /// 目录项（跨平台 DTO）。
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -61,8 +62,7 @@ pub fn fs_root_display_name(_root: &str) -> String {
 /// 工作区 git 分支与 dirty 状态；非 git / 不可用时返回 `None`。
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 pub fn fs_git_head_status(root: &str) -> Option<(String, bool)> {
-    crate::desktop::files::git_head_status(Path::new(root))
-        .map(|s| (s.branch, s.dirty))
+    crate::desktop::files::git_head_status(Path::new(root)).map(|s| (s.branch, s.dirty))
 }
 
 #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
@@ -131,6 +131,135 @@ pub fn fs_create_folder(_parent: &str, _name: &str) -> Result<String, String> {
     Err("Web 端无法创建文件夹。".into())
 }
 
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+pub fn fs_rename(path: &str, new_name: &str) -> Result<String, String> {
+    crate::desktop::files::rename_entry(Path::new(path), new_name)
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
+#[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+pub fn fs_rename(_path: &str, _new_name: &str) -> Result<String, String> {
+    Err("Web 端无法重命名。".into())
+}
+
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+pub fn fs_delete(path: &str) -> Result<(), String> {
+    crate::desktop::files::delete_entry(Path::new(path))
+}
+
+#[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+pub fn fs_delete(_path: &str) -> Result<(), String> {
+    Err("Web 端无法删除。".into())
+}
+
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+pub fn fs_confirm_replace_all(file_count: usize, match_count: usize, skipped_dirty: usize) -> bool {
+    crate::desktop::files::confirm_replace_all(file_count, match_count, skipped_dirty)
+}
+
+#[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+pub fn fs_confirm_replace_all(
+    _file_count: usize,
+    _match_count: usize,
+    _skipped_dirty: usize,
+) -> bool {
+    false
+}
+
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+pub fn fs_confirm_delete(path: &str) -> bool {
+    crate::desktop::files::confirm_delete(Path::new(path))
+}
+
+#[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+pub fn fs_confirm_delete(_path: &str) -> bool {
+    false
+}
+
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+pub fn fs_reveal_in_os(path: &str) -> Result<(), String> {
+    crate::desktop::files::reveal_in_os(Path::new(path))
+}
+
+#[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+pub fn fs_reveal_in_os(_path: &str) -> Result<(), String> {
+    Err("Web 端无法在系统中显示。".into())
+}
+
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+pub fn fs_copy_into(src: &str, dest_dir: &str) -> Result<String, String> {
+    crate::desktop::files::copy_entry_into(Path::new(src), Path::new(dest_dir))
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
+#[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+pub fn fs_copy_into(_src: &str, _dest_dir: &str) -> Result<String, String> {
+    Err("Web 端无法复制。".into())
+}
+
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+pub fn fs_move_into(src: &str, dest_dir: &str) -> Result<String, String> {
+    crate::desktop::files::move_entry_into(Path::new(src), Path::new(dest_dir))
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
+#[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+pub fn fs_move_into(_src: &str, _dest_dir: &str) -> Result<String, String> {
+    Err("Web 端无法移动。".into())
+}
+
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+pub fn fs_clipboard_set_text(text: &str) -> Result<(), String> {
+    crate::desktop::files::clipboard_set_text(text)
+}
+
+#[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+pub fn fs_clipboard_set_text(text: &str) -> Result<(), String> {
+    let _ = text;
+    Err("当前环境无法写入剪贴板。".into())
+}
+
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+pub fn fs_open_in_browser(path: &str) -> Result<(), String> {
+    let p = Path::new(path);
+    let url = if path.starts_with("http://") || path.starts_with("https://") {
+        path.to_string()
+    } else {
+        format!("file://{}", p.display())
+    };
+    webbrowser::open(&url).map_err(|e| format!("无法在浏览器打开：{e}"))
+}
+
+#[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+pub fn fs_open_in_browser(_path: &str) -> Result<(), String> {
+    Err("Web 端请直接使用浏览器打开。".into())
+}
+
+/// 系统文件管理器显示文案。
+pub fn fs_reveal_label() -> &'static str {
+    #[cfg(target_os = "macos")]
+    {
+        "在 Finder 中显示"
+    }
+    #[cfg(target_os = "windows")]
+    {
+        "在文件资源管理器中显示"
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        "在文件管理器中显示"
+    }
+}
+
+/// 相对工作区根的路径；不在根下则返回绝对路径。
+pub fn fs_relative_to_root(root: &str, path: &str) -> String {
+    let Ok(rel) = Path::new(path).strip_prefix(Path::new(root)) else {
+        return path.to_string();
+    };
+    let s = rel.to_string_lossy().into_owned();
+    if s.is_empty() { ".".into() } else { s }
+}
+
 /// 最近打开的项目目录（最多 5 条，仅目录）。
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 pub fn fs_recent_project_dirs() -> Vec<String> {
@@ -166,11 +295,10 @@ pub fn fs_open_project_directory_dialog() -> Result<Option<String>, String> {
     Err("Web 端无法打开本机项目目录。".into())
 }
 
-/// 在工作区 `extension/` 下脚手架内部插件；成功返回插件目录绝对路径。
+/// 在工作区 `extensions/` 下脚手架内部插件；成功返回插件目录绝对路径。
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 pub fn fs_scaffold_extension_plugin(name: &str) -> Result<String, String> {
-    crate::desktop::files::scaffold_extension_plugin(name)
-        .map(|p| p.to_string_lossy().into_owned())
+    crate::desktop::files::scaffold_extension_plugin(name).map(|p| p.to_string_lossy().into_owned())
 }
 
 #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
@@ -178,7 +306,7 @@ pub fn fs_scaffold_extension_plugin(_name: &str) -> Result<String, String> {
     Err("Web 端无法创建本机插件，请使用桌面版。".into())
 }
 
-/// 在工作区 `application/` 下脚手架本地应用；成功返回应用目录绝对路径。
+/// 在工作区 `applications/` 下脚手架本地应用；成功返回应用目录绝对路径。
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 pub fn fs_scaffold_local_application(name: &str) -> Result<String, String> {
     crate::desktop::plugins::scaffold_local_application(name)
@@ -270,10 +398,7 @@ pub fn fs_name_is_muted(name: &str) -> bool {
 }
 
 /// 刷新某一目录缓存；若 `dir` 为根则只写根。
-pub fn fs_cache_reload(
-    cache: &mut HashMap<String, Result<Vec<FsEntryDto>, String>>,
-    dir: &str,
-) {
+pub fn fs_cache_reload(cache: &mut HashMap<String, Result<Vec<FsEntryDto>, String>>, dir: &str) {
     cache.insert(dir.to_string(), fs_list_dir(dir));
 }
 
@@ -365,10 +490,7 @@ pub fn fs_visible_rows(
     out
 }
 
-fn ensure_dir_cached(
-    cache: &mut HashMap<String, Result<Vec<FsEntryDto>, String>>,
-    dir: &str,
-) {
+fn ensure_dir_cached(cache: &mut HashMap<String, Result<Vec<FsEntryDto>, String>>, dir: &str) {
     match cache.get(dir) {
         Some(Ok(_)) => {}
         _ => fs_cache_reload(cache, dir),
@@ -376,10 +498,7 @@ fn ensure_dir_cached(
 }
 
 /// 展开目录时强制重新列举，避免折叠期间外部门改导致缓存过期。
-fn reload_dir_on_expand(
-    cache: &mut HashMap<String, Result<Vec<FsEntryDto>, String>>,
-    dir: &str,
-) {
+fn reload_dir_on_expand(cache: &mut HashMap<String, Result<Vec<FsEntryDto>, String>>, dir: &str) {
     fs_cache_reload(cache, dir);
 }
 
@@ -429,6 +548,22 @@ fn entry_is_dir(
     }
 }
 
+/// 文件树右键菜单锚点。
+#[derive(Clone, Debug, PartialEq)]
+struct FsCtxMenu {
+    path: String,
+    is_dir: bool,
+    x: f64,
+    y: f64,
+}
+
+/// 文件剪切/复制板（资源管理器内粘贴用）。
+#[derive(Clone, Debug, PartialEq)]
+struct FsFileClipboard {
+    paths: Vec<String>,
+    cut: bool,
+}
+
 /// 侧栏「文件」面板。
 #[component]
 pub fn SidebarFileExplorer(
@@ -444,6 +579,12 @@ pub fn SidebarFileExplorer(
     /// 最近写入成功的路径，短暂高亮。
     highlighted_paths: Signal<HashSet<String>>,
     on_open_file: EventHandler<String>,
+    /// 打开终端并 cd 到目录（文件则父目录）。
+    on_open_in_terminal: EventHandler<String>,
+    /// 将路径加入当前 pusa 聊天草稿（支持多选）。
+    on_add_to_chat: EventHandler<Vec<String>>,
+    /// 新建 pusa 对话并加入路径（支持多选）。
+    on_add_to_new_chat: EventHandler<Vec<String>>,
 ) -> Element {
     let root_name = fs_root_display_name(&root_path);
     let root_new_file = root_path.clone();
@@ -451,6 +592,27 @@ pub fn SidebarFileExplorer(
     let root_refresh = root_path.clone();
     let root_create = root_path.clone();
     let root_tree = root_path.clone();
+    let root_for_menu = root_path.clone();
+
+    let mut ctx_menu = use_signal(|| None::<FsCtxMenu>);
+    let mut file_clipboard = use_signal(|| None::<FsFileClipboard>);
+    let mut renaming_path = use_signal(|| None::<String>);
+    let mut rename_draft = use_signal(String::new);
+    /// Shift 范围多选；`selected_path` 为主选中 / 锚点。
+    let mut selected_paths = use_signal(HashSet::<String>::new);
+
+    // 外部改主选中（打开文件、chip 激活等）时，若新路径不在多选集合内则收敛为单选。
+    use_effect(move || match selected_path() {
+        Some(p) => {
+            selected_paths.with_mut(|set| {
+                if !set.contains(&p) {
+                    set.clear();
+                    set.insert(p);
+                }
+            });
+        }
+        None => selected_paths.set(HashSet::new()),
+    });
 
     use_effect({
         let root = root_path.clone();
@@ -511,9 +673,15 @@ pub fn SidebarFileExplorer(
 
     let rows = fs_visible_rows(&root_path, &expanded(), &children_cache());
     let creating = create_mode();
+    let selected_paths_now = selected_paths();
 
     rsx! {
-        div { class: "ac-sidebar-files",
+        div {
+            class: if ctx_menu().is_some() {
+                "ac-sidebar-files ac-fs-ctx-open"
+            } else {
+                "ac-sidebar-files"
+            },
             div { class: "ac-sidebar-files-header",
                 button {
                     r#type: "button",
@@ -536,25 +704,6 @@ pub fn SidebarFileExplorer(
                     button {
                         r#type: "button",
                         class: "ac-sidebar-files-action",
-                        title: "新建文件",
-                        aria_label: "新建文件",
-                        onclick: move |_| {
-                            let parent = resolve_create_parent(
-                                selected_path(),
-                                &root_new_file,
-                                &children_cache(),
-                            );
-                            create_parent.set(Some(parent));
-                            create_name.set(String::new());
-                            create_mode.set(Some(FsCreateKind::File));
-                            notice.set(None);
-                            section_open.set(true);
-                        },
-                        Icon { icon: LdFilePlus, width: 14, height: 14, fill: "currentColor" }
-                    }
-                    button {
-                        r#type: "button",
-                        class: "ac-sidebar-files-action",
                         title: "新建文件夹",
                         aria_label: "新建文件夹",
                         onclick: move |_| {
@@ -570,6 +719,25 @@ pub fn SidebarFileExplorer(
                             section_open.set(true);
                         },
                         Icon { icon: LdFolderPlus, width: 14, height: 14, fill: "currentColor" }
+                    }
+                    button {
+                        r#type: "button",
+                        class: "ac-sidebar-files-action",
+                        title: "新建文件",
+                        aria_label: "新建文件",
+                        onclick: move |_| {
+                            let parent = resolve_create_parent(
+                                selected_path(),
+                                &root_new_file,
+                                &children_cache(),
+                            );
+                            create_parent.set(Some(parent));
+                            create_name.set(String::new());
+                            create_mode.set(Some(FsCreateKind::File));
+                            notice.set(None);
+                            section_open.set(true);
+                        },
+                        Icon { icon: LdFilePlus, width: 14, height: 14, fill: "currentColor" }
                     }
                     button {
                         r#type: "button",
@@ -595,7 +763,7 @@ pub fn SidebarFileExplorer(
                         onclick: move |_| {
                             expanded.set(HashSet::new());
                         },
-                        Icon { icon: LdFoldVertical, width: 14, height: 14, fill: "currentColor" }
+                        Icon { icon: AiOutlineVerticalAlignBottom, width: 14, height: 14, fill: "currentColor" }
                     }
                 }
             }
@@ -690,11 +858,17 @@ pub fn SidebarFileExplorer(
                                         let path = entry.path.clone();
                                         let path_sel = entry.path.clone();
                                         let path_toggle = entry.path.clone();
+                                        let path_ctx = entry.path.clone();
+                                        let path_rename = entry.path.clone();
+                                        let root_fallback = root_for_menu.clone();
+                                        let root_shift = root_for_menu.clone();
                                         let is_dir = entry.is_dir;
                                         let is_open = expanded().contains(&entry.path);
-                                        let is_selected = selected_path().as_deref() == Some(entry.path.as_str());
+                                        let is_selected = selected_paths_now.contains(&entry.path)
+                                            || selected_path().as_deref() == Some(entry.path.as_str());
                                         let is_muted = fs_name_is_muted(&entry.name);
                                         let is_written = highlighted_paths().contains(&entry.path);
+                                        let is_renaming = renaming_path().as_deref() == Some(entry.path.as_str());
                                         let row_class = match (is_selected, is_muted, is_written) {
                                             (true, true, true) => {
                                                 "ac-sidebar-files-row is-selected is-muted is-just-written"
@@ -720,50 +894,184 @@ pub fn SidebarFileExplorer(
                                         let pad_style = format!("padding-left: {pad}rem");
                                         let name = entry.name.clone();
                                         rsx! {
-                                            button {
-                                                key: "{path}",
-                                                r#type: "button",
-                                                class: "{row_class}",
-                                                style: "{pad_style}",
-                                                role: "treeitem",
-                                                title: "{path}",
-                                                onclick: move |_| {
-                                                    selected_path.set(Some(path_sel.clone()));
-                                                    if is_dir {
-                                                        let opening = !expanded().contains(&path_toggle);
-                                                        expanded.with_mut(|set| {
-                                                            if opening {
-                                                                set.insert(path_toggle.clone());
-                                                            } else {
-                                                                set.remove(&path_toggle);
-                                                            }
-                                                        });
-                                                        if opening {
-                                                            children_cache.with_mut(|cache| {
-                                                                reload_dir_on_expand(cache, &path_toggle);
-                                                            });
-                                                        }
-                                                    } else {
-                                                        on_open_file.call(path_sel.clone());
-                                                    }
-                                                },
-                                                span { class: "ac-sidebar-files-row-chevron",
-                                                    if is_dir {
-                                                        if is_open {
-                                                            Icon { icon: LdChevronDown, width: 12, height: 12, fill: "currentColor" }
-                                                        } else {
+                                            if is_renaming {
+                                                div {
+                                                    key: "rename-{path}",
+                                                    class: "ac-sidebar-files-row is-renaming",
+                                                    style: "{pad_style}",
+                                                    span { class: "ac-sidebar-files-row-chevron",
+                                                        if is_dir {
                                                             Icon { icon: LdChevronRight, width: 12, height: 12, fill: "currentColor" }
                                                         }
                                                     }
-                                                }
-                                                span { class: "ac-sidebar-files-row-icon",
-                                                    if is_dir {
-                                                        Icon { icon: LdFolder, width: 13, height: 13, fill: "currentColor" }
-                                                    } else {
-                                                        Icon { icon: LdFile, width: 13, height: 13, fill: "currentColor" }
+                                                    span { class: "ac-sidebar-files-row-icon",
+                                                        if is_dir {
+                                                            Icon { icon: LdFolder, width: 13, height: 13, fill: "currentColor" }
+                                                        } else {
+                                                            Icon { icon: LdFile, width: 13, height: 13, fill: "currentColor" }
+                                                        }
+                                                    }
+                                                    input {
+                                                        r#type: "text",
+                                                        class: "ac-sidebar-files-rename-input",
+                                                        value: "{rename_draft()}",
+                                                        autofocus: true,
+                                                        oninput: move |e| rename_draft.set(e.value()),
+                                                        onkeydown: move |e: KeyboardEvent| {
+                                                            if e.key() == Key::Escape {
+                                                                e.prevent_default();
+                                                                renaming_path.set(None);
+                                                                rename_draft.set(String::new());
+                                                                return;
+                                                            }
+                                                            if e.key() != Key::Enter {
+                                                                return;
+                                                            }
+                                                            e.prevent_default();
+                                                            let old = path_rename.clone();
+                                                            let new_name = rename_draft();
+                                                            match fs_rename(&old, &new_name) {
+                                                                Ok(new_path) => {
+                                                                    let parent = Path::new(&old)
+                                                                        .parent()
+                                                                        .map(|p| p.to_string_lossy().into_owned())
+                                                                        .unwrap_or_else(|| root_fallback.clone());
+                                                                    children_cache.with_mut(|cache| {
+                                                                        fs_cache_reload(cache, &parent);
+                                                                    });
+                                                                    if is_dir {
+                                                                        expanded.with_mut(|set| {
+                                                                            set.remove(&old);
+                                                                            set.insert(new_path.clone());
+                                                                        });
+                                                                    }
+                                                                    selected_path.set(Some(new_path.clone()));
+                                                                    selected_paths.set(HashSet::from([new_path]));
+                                                                    renaming_path.set(None);
+                                                                    rename_draft.set(String::new());
+                                                                    notice.set(None);
+                                                                }
+                                                                Err(err) => notice.set(Some(err)),
+                                                            }
+                                                        },
+                                                        onblur: move |_| {
+                                                            renaming_path.set(None);
+                                                            rename_draft.set(String::new());
+                                                        },
                                                     }
                                                 }
-                                                span { class: "ac-sidebar-files-row-name", "{name}" }
+                                            } else {
+                                                button {
+                                                    key: "{path}",
+                                                    r#type: "button",
+                                                    class: "{row_class}",
+                                                    style: "{pad_style}",
+                                                    role: "treeitem",
+                                                    title: "{path}",
+                                                    onclick: move |evt| {
+                                                        let shift = evt.modifiers().contains(Modifiers::SHIFT);
+                                                        if shift {
+                                                            // Shift：按可见行范围多选，不展开目录、不打开文件。
+                                                            let visible = fs_visible_rows(
+                                                                &root_shift,
+                                                                &expanded(),
+                                                                &children_cache(),
+                                                            );
+                                                            let paths: Vec<String> = visible
+                                                                .iter()
+                                                                .map(|(e, _)| e.path.clone())
+                                                                .collect();
+                                                            let click_idx = paths
+                                                                .iter()
+                                                                .position(|p| p == &path_sel);
+                                                            let Some(click_idx) = click_idx else {
+                                                                selected_path.set(Some(path_sel.clone()));
+                                                                selected_paths
+                                                                    .set(HashSet::from([path_sel.clone()]));
+                                                                return;
+                                                            };
+                                                            let anchor_idx = selected_path()
+                                                                .as_ref()
+                                                                .and_then(|a| {
+                                                                    paths.iter().position(|p| p == a)
+                                                                })
+                                                                .or_else(|| {
+                                                                    selected_paths().iter().find_map(|p| {
+                                                                        paths.iter().position(|x| x == p)
+                                                                    })
+                                                                })
+                                                                .unwrap_or(click_idx);
+                                                            let (lo, hi) = if anchor_idx <= click_idx {
+                                                                (anchor_idx, click_idx)
+                                                            } else {
+                                                                (click_idx, anchor_idx)
+                                                            };
+                                                            let mut set = HashSet::new();
+                                                            for p in &paths[lo..=hi] {
+                                                                set.insert(p.clone());
+                                                            }
+                                                            selected_paths.set(set);
+                                                            selected_path.set(Some(path_sel.clone()));
+                                                            return;
+                                                        }
+                                                        selected_path.set(Some(path_sel.clone()));
+                                                        selected_paths
+                                                            .set(HashSet::from([path_sel.clone()]));
+                                                        if is_dir {
+                                                            let opening = !expanded().contains(&path_toggle);
+                                                            expanded.with_mut(|set| {
+                                                                if opening {
+                                                                    set.insert(path_toggle.clone());
+                                                                } else {
+                                                                    set.remove(&path_toggle);
+                                                                }
+                                                            });
+                                                            if opening {
+                                                                children_cache.with_mut(|cache| {
+                                                                    reload_dir_on_expand(cache, &path_toggle);
+                                                                });
+                                                            }
+                                                        } else {
+                                                            on_open_file.call(path_sel.clone());
+                                                        }
+                                                    },
+                                                    oncontextmenu: move |evt| {
+                                                        evt.prevent_default();
+                                                        evt.stop_propagation();
+                                                        let in_multi = selected_paths().contains(&path_ctx);
+                                                        if !in_multi {
+                                                            selected_path.set(Some(path_ctx.clone()));
+                                                            selected_paths
+                                                                .set(HashSet::from([path_ctx.clone()]));
+                                                        } else {
+                                                            selected_path.set(Some(path_ctx.clone()));
+                                                        }
+                                                        let coords = evt.data.client_coordinates();
+                                                        ctx_menu.set(Some(FsCtxMenu {
+                                                            path: path_ctx.clone(),
+                                                            is_dir,
+                                                            x: coords.x,
+                                                            y: coords.y,
+                                                        }));
+                                                    },
+                                                    span { class: "ac-sidebar-files-row-chevron",
+                                                        if is_dir {
+                                                            if is_open {
+                                                                Icon { icon: LdChevronDown, width: 12, height: 12, fill: "currentColor" }
+                                                            } else {
+                                                                Icon { icon: LdChevronRight, width: 12, height: 12, fill: "currentColor" }
+                                                            }
+                                                        }
+                                                    }
+                                                    span { class: "ac-sidebar-files-row-icon",
+                                                        if is_dir {
+                                                            Icon { icon: LdFolder, width: 13, height: 13, fill: "currentColor" }
+                                                        } else {
+                                                            Icon { icon: LdFile, width: 13, height: 13, fill: "currentColor" }
+                                                        }
+                                                    }
+                                                    span { class: "ac-sidebar-files-row-name", "{name}" }
+                                                }
                                             }
                                         }
                                     }
@@ -773,11 +1081,351 @@ pub fn SidebarFileExplorer(
                     }
                 }
             }
+
+            if let Some(ctx) = ctx_menu() {
+                {
+                    let path = ctx.path.clone();
+                    let is_dir = ctx.is_dir;
+                    let root = root_for_menu.clone();
+                    let reveal_label = fs_reveal_label();
+                    let has_clipboard = file_clipboard().is_some();
+                    let multi = selected_paths();
+                    let add_targets: Vec<String> = if multi.contains(&path) && multi.len() > 1 {
+                        // 按可见树顺序输出多选路径
+                        fs_visible_rows(&root, &expanded(), &children_cache())
+                            .iter()
+                            .map(|(e, _)| e.path.clone())
+                            .filter(|p| multi.contains(p))
+                            .collect()
+                    } else {
+                        vec![path.clone()]
+                    };
+                    let clip_targets = add_targets.clone();
+                    let add_label = if add_targets.len() > 1 {
+                        format!("将 {} 个文件加入 Chat", add_targets.len())
+                    } else {
+                        "加入 Chat".into()
+                    };
+                    let add_new_label = if add_targets.len() > 1 {
+                        format!("将 {} 个文件加入新的 Chat", add_targets.len())
+                    } else {
+                        "加入新的 Chat".into()
+                    };
+                    let paste_target = if is_dir {
+                        path.clone()
+                    } else {
+                        Path::new(&path)
+                            .parent()
+                            .map(|p| p.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| root.clone())
+                    };
+                    let menu_style = format!(
+                        "left: {:.0}px; top: {:.0}px; right: auto;",
+                        ctx.x, ctx.y
+                    );
+                    rsx! {
+                        div {
+                            class: "ac-chat-history-ctx-backdrop",
+                            onclick: move |_| ctx_menu.set(None),
+                            oncontextmenu: move |evt| {
+                                evt.prevent_default();
+                                ctx_menu.set(None);
+                            },
+                        }
+                        div {
+                            class: "ac-chat-history-ctx-menu ac-fs-ctx-menu",
+                            role: "menu",
+                            style: "{menu_style}",
+                            onclick: move |evt| evt.stop_propagation(),
+
+                            if !is_dir {
+                                button {
+                                    r#type: "button",
+                                    class: "ac-chat-history-ctx-menu__item",
+                                    role: "menuitem",
+                                    onclick: {
+                                        let path = path.clone();
+                                        move |_| {
+                                            ctx_menu.set(None);
+                                            on_open_file.call(path.clone());
+                                        }
+                                    },
+                                    "打开预览"
+                                }
+                                button {
+                                    r#type: "button",
+                                    class: "ac-chat-history-ctx-menu__item",
+                                    role: "menuitem",
+                                    onclick: {
+                                        let path = path.clone();
+                                        move |_| {
+                                            ctx_menu.set(None);
+                                            match fs_open_in_browser(&path) {
+                                                Ok(()) => notice.set(None),
+                                                Err(e) => notice.set(Some(e)),
+                                            }
+                                        }
+                                    },
+                                    "在浏览器中打开"
+                                }
+                            }
+                            button {
+                                r#type: "button",
+                                class: "ac-chat-history-ctx-menu__item",
+                                role: "menuitem",
+                                onclick: {
+                                    let path = path.clone();
+                                    move |_| {
+                                        ctx_menu.set(None);
+                                        match fs_reveal_in_os(&path) {
+                                            Ok(()) => notice.set(None),
+                                            Err(e) => notice.set(Some(e)),
+                                        }
+                                    }
+                                },
+                                "{reveal_label}"
+                            }
+                            button {
+                                r#type: "button",
+                                class: "ac-chat-history-ctx-menu__item",
+                                role: "menuitem",
+                                onclick: {
+                                    let path = path.clone();
+                                    move |_| {
+                                        ctx_menu.set(None);
+                                        let cd = if is_dir {
+                                            path.clone()
+                                        } else {
+                                            Path::new(&path)
+                                                .parent()
+                                                .map(|p| p.to_string_lossy().into_owned())
+                                                .unwrap_or(path.clone())
+                                        };
+                                        on_open_in_terminal.call(cd);
+                                    }
+                                },
+                                "在终端中打开"
+                            }
+
+                            div { class: "ac-fs-ctx-sep", role: "separator" }
+
+                            button {
+                                r#type: "button",
+                                class: "ac-chat-history-ctx-menu__item",
+                                role: "menuitem",
+                                onclick: {
+                                    let targets = add_targets.clone();
+                                    move |_| {
+                                        ctx_menu.set(None);
+                                        on_add_to_chat.call(targets.clone());
+                                    }
+                                },
+                                "{add_label}"
+                            }
+                            button {
+                                r#type: "button",
+                                class: "ac-chat-history-ctx-menu__item",
+                                role: "menuitem",
+                                onclick: {
+                                    let targets = add_targets.clone();
+                                    move |_| {
+                                        ctx_menu.set(None);
+                                        on_add_to_new_chat.call(targets.clone());
+                                    }
+                                },
+                                "{add_new_label}"
+                            }
+
+                            div { class: "ac-fs-ctx-sep", role: "separator" }
+
+                            button {
+                                r#type: "button",
+                                class: "ac-chat-history-ctx-menu__item",
+                                role: "menuitem",
+                                onclick: {
+                                    let paths = clip_targets.clone();
+                                    move |_| {
+                                        ctx_menu.set(None);
+                                        file_clipboard.set(Some(FsFileClipboard {
+                                            paths: paths.clone(),
+                                            cut: true,
+                                        }));
+                                        notice.set(Some(if paths.len() > 1 {
+                                            format!("已剪切 {} 项。", paths.len())
+                                        } else {
+                                            "已剪切。".into()
+                                        }));
+                                    }
+                                },
+                                "剪切"
+                            }
+                            button {
+                                r#type: "button",
+                                class: "ac-chat-history-ctx-menu__item",
+                                role: "menuitem",
+                                onclick: {
+                                    let paths = clip_targets.clone();
+                                    move |_| {
+                                        ctx_menu.set(None);
+                                        file_clipboard.set(Some(FsFileClipboard {
+                                            paths: paths.clone(),
+                                            cut: false,
+                                        }));
+                                        notice.set(Some(if paths.len() > 1 {
+                                            format!("已复制 {} 项。", paths.len())
+                                        } else {
+                                            "已复制。".into()
+                                        }));
+                                    }
+                                },
+                                "复制"
+                            }
+                            if has_clipboard {
+                                button {
+                                    r#type: "button",
+                                    class: "ac-chat-history-ctx-menu__item",
+                                    role: "menuitem",
+                                    onclick: {
+                                        let dest = paste_target.clone();
+                                        move |_| {
+                                            ctx_menu.set(None);
+                                            let Some(clip) = file_clipboard() else {
+                                                return;
+                                            };
+                                            let mut err = None;
+                                            for src in &clip.paths {
+                                                let result = if clip.cut {
+                                                    fs_move_into(src, &dest)
+                                                } else {
+                                                    fs_copy_into(src, &dest)
+                                                };
+                                                if let Err(e) = result {
+                                                    err = Some(e);
+                                                    break;
+                                                }
+                                            }
+                                            children_cache.with_mut(|cache| {
+                                                fs_cache_reload(cache, &dest);
+                                                if clip.cut {
+                                                    for src in &clip.paths {
+                                                        if let Some(parent) = Path::new(src).parent() {
+                                                            fs_cache_reload(
+                                                                cache,
+                                                                &parent.to_string_lossy(),
+                                                            );
+                                                        }
+                                                    }
+                                                }
+                                            });
+                                            if clip.cut {
+                                                file_clipboard.set(None);
+                                            }
+                                            notice.set(err.or_else(|| Some("已粘贴。".into())));
+                                        }
+                                    },
+                                    "粘贴"
+                                }
+                            }
+
+                            div { class: "ac-fs-ctx-sep", role: "separator" }
+
+                            button {
+                                r#type: "button",
+                                class: "ac-chat-history-ctx-menu__item",
+                                role: "menuitem",
+                                onclick: {
+                                    let path = path.clone();
+                                    move |_| {
+                                        ctx_menu.set(None);
+                                        match fs_clipboard_set_text(&path) {
+                                            Ok(()) => notice.set(Some("已复制路径。".into())),
+                                            Err(e) => notice.set(Some(e)),
+                                        }
+                                    }
+                                },
+                                "复制路径"
+                            }
+                            button {
+                                r#type: "button",
+                                class: "ac-chat-history-ctx-menu__item",
+                                role: "menuitem",
+                                onclick: {
+                                    let path = path.clone();
+                                    let root = root.clone();
+                                    move |_| {
+                                        ctx_menu.set(None);
+                                        let rel = fs_relative_to_root(&root, &path);
+                                        match fs_clipboard_set_text(&rel) {
+                                            Ok(()) => notice.set(Some("已复制相对路径。".into())),
+                                            Err(e) => notice.set(Some(e)),
+                                        }
+                                    }
+                                },
+                                "复制相对路径"
+                            }
+
+                            div { class: "ac-fs-ctx-sep", role: "separator" }
+
+                            button {
+                                r#type: "button",
+                                class: "ac-chat-history-ctx-menu__item",
+                                role: "menuitem",
+                                onclick: {
+                                    let path = path.clone();
+                                    move |_| {
+                                        ctx_menu.set(None);
+                                        let name = fs_file_title(&path);
+                                        rename_draft.set(name);
+                                        renaming_path.set(Some(path.clone()));
+                                    }
+                                },
+                                "重命名…"
+                            }
+                            button {
+                                r#type: "button",
+                                class: "ac-chat-history-ctx-menu__item is-danger",
+                                role: "menuitem",
+                                onclick: {
+                                    let path = path.clone();
+                                    let root = root.clone();
+                                    move |_| {
+                                        ctx_menu.set(None);
+                                        if !fs_confirm_delete(&path) {
+                                            return;
+                                        }
+                                        match fs_delete(&path) {
+                                            Ok(()) => {
+                                                let parent = Path::new(&path)
+                                                    .parent()
+                                                    .map(|p| p.to_string_lossy().into_owned())
+                                                    .unwrap_or_else(|| root.clone());
+                                                children_cache.with_mut(|cache| {
+                                                    fs_cache_reload(cache, &parent);
+                                                });
+                                                expanded.with_mut(|set| {
+                                                    set.remove(&path);
+                                                });
+                                                if selected_path().as_deref() == Some(path.as_str()) {
+                                                    selected_path.set(None);
+                                                }
+                                                selected_paths.with_mut(|set| {
+                                                    set.remove(&path);
+                                                });
+                                                notice.set(None);
+                                            }
+                                            Err(e) => notice.set(Some(e)),
+                                        }
+                                    }
+                                },
+                                "删除"
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
-
-/// 将当前草稿写入磁盘；成功后更新 baseline 并清除 dirty。
 fn file_editor_try_save(
     path: &str,
     drafts: Signal<HashMap<String, String>>,
@@ -1226,6 +1874,43 @@ pub fn FileEditDiffPane(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/// 中间栏 Markdown 预览：优先用编辑草稿，否则读盘。
+#[component]
+pub fn FileMdPreviewPane(
+    path: String,
+    drafts: Signal<HashMap<String, String>>,
+    load_errors: Signal<HashMap<String, String>>,
+) -> Element {
+    let path_key = path.clone();
+    let content = use_memo(move || {
+        if let Some(draft) = drafts().get(&path_key).cloned() {
+            return Ok(draft);
+        }
+        if let Some(err) = load_errors().get(&path_key).cloned() {
+            return Err(err);
+        }
+        fs_read_text(&path_key)
+    });
+
+    rsx! {
+        section { class: "ac-md-preview-pane",
+            match content() {
+                Ok(text) if text.is_empty() => rsx! {
+                    div { class: "ac-file-editor-empty", "暂无内容" }
+                },
+                Ok(text) => rsx! {
+                    div { class: "ac-md-preview-scroll scrollbar-hide",
+                        crate::chat::ChatMarkdownBody { content: text }
+                    }
+                },
+                Err(err) => rsx! {
+                    div { class: "ac-file-editor-error", "{err}" }
+                },
             }
         }
     }
