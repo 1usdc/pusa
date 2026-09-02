@@ -28,8 +28,7 @@ pusa-core:
 
 [windows]
 pusa-core:
-    if (-not (Test-Path pusa-core)) { throw '缺少 pusa-core/ 源码目录，无法打包' }
-    just --justfile pusa-core/justfile --working-directory pusa-core pack
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\pusa-core-pack.ps1
 
 # 无 vendor 产物，或源码比产物新 → 自动 just pusa-core
 [unix]

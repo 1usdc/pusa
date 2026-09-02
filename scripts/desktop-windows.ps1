@@ -1,4 +1,6 @@
-﻿# 本机 Windows 打包：dx bundle --release → desktop/dist/*-setup.exe（默认不签名）
+﻿# 本机 Windows 打包：嵌入 pusa_core.dll → dx bundle --release → desktop/dist/*-setup.exe（默认不签名）
+#
+# 安装后 DLL 与 exe 同目录（shared/src/ffi.rs 从 current_exe 父目录加载）。
 #
 # 用法：
 #   just desktop-windows
@@ -23,7 +25,11 @@ Write-Host '== 1) 清空 desktop/dist =='
 if (Test-Path $Dist) { Remove-Item -Recurse -Force $Dist }
 New-Item -ItemType Directory -Force -Path $Dist | Out-Null
 
-Write-Host '== 2) dx bundle --release（desktop/）=='
+Write-Host '== 2) 嵌入 pusa_core.dll（供 NSIS 装到程序目录）=='
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root 'scripts\embed-pusa-core-windows.ps1')
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+Write-Host '== 3) dx bundle --release（desktop/）=='
 Push-Location $Desktop
 try {
     dx bundle --release
@@ -31,7 +37,7 @@ try {
     Pop-Location
 }
 
-Write-Host '== 3) 收集 NSIS 安装器到 desktop/dist =='
+Write-Host '== 4) 收集 NSIS 安装器到 desktop/dist =='
 $inDist = @(Get-ChildItem -Path $Dist -Filter '*-setup.exe' -ErrorAction SilentlyContinue)
 if ($inDist.Count -eq 0) {
     $targetDx = Join-Path $Root 'target\dx'
@@ -54,11 +60,20 @@ Get-ChildItem -Path $Dist, (Join-Path $Root 'target\dx') -Recurse -ErrorAction S
     Where-Object { $_.Name -match '\.(exe|msi)$' -and $_.Name -match ' ' } |
     ForEach-Object { Write-Host "remove raw artifact: $($_.FullName)"; Remove-Item -Force $_.FullName }
 
+if ($env:SKIP_CORE_CHECK -ne '1') {
+    $stagedDll = @(Get-ChildItem -Path (Join-Path $Root 'target\dx') -Recurse -Filter 'pusa_core.dll' -ErrorAction SilentlyContinue |
+        Where-Object { $_.DirectoryName -match '\\nsis\\_staging$' })
+    if ($stagedDll.Count -eq 0) {
+        throw 'NSIS _staging 里没有 pusa_core.dll：安装器不会带上核心库。检查 Dioxus.toml [bundle].resources 与 embed-pusa-core-windows.ps1'
+    }
+    Write-Host "已打进安装器: $($stagedDll[0].FullName)"
+}
+
 if ($DoSign) {
-    Write-Host '== 4) Azure Artifact Signing（SIGN=1）=='
+    Write-Host '== 5) Azure Artifact Signing（SIGN=1）=='
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root 'scripts\windows-sign.ps1')
 } else {
-    Write-Host '== 4) 未签名（需要时 SIGN=1 just desktop-windows）=='
+    Write-Host '== 5) 未签名（需要时 SIGN=1 just desktop-windows）=='
 }
 
 Write-Host "✓ 本机 Windows 包已就绪：$Dist"

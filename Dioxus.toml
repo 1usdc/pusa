@@ -8,6 +8,10 @@ identifier = "ai.pusa.console"
 short_description = "Pusa"
 long_description = "Pusa desktop application"
 publisher = "Pusa"
+# Windows：scripts/embed-pusa-core-windows.ps1 在 dx bundle 前把 vendor DLL 拷到
+# desktop/bundle-resources/pusa_core.dll；dx 只取文件名，装到 $INSTDIR 与 exe 同级。
+# 文件不存在时 dx 只 warn 跳过（macOS 走 embed-pusa-core-macos.sh，不需要这条）。
+resources = ["bundle-resources/pusa_core.dll"]
 # bundle icon 三件套（路径相对 default_platform = "desktop" 的 crate root，即 desktop/）：
 #   - macOS .app Dock / Finder 用 .icns
 #   - Windows .msi/.exe 用 .ico（多尺寸打包）

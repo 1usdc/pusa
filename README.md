@@ -18,6 +18,13 @@ just desktop
 ```
 
 # 桌面端打包
+
+Windows 前置：Rust 用 `x86_64-pc-windows-msvc`，需要 MSVC C++ 生成工具（`link.exe`）：
+
+```powershell
+winget install --id Microsoft.VisualStudio.2022.BuildTools --override "--quiet --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+```
+
 ```bash
 # 版本号：just desktop-mac 默认把 desktop/Cargo.toml patch +1；BUMP=0 则不改
 # 发版 tag = desktop-v{version}（也可用 TAG= 覆盖）
@@ -32,6 +39,7 @@ BUMP=0 just desktop-mac
 just desktop-mac-release
 
 # 本机 Windows（未签名 NSIS 安装器 → desktop/dist/*-setup.exe）
+# 安装器会把 vendor 里的 pusa_core.dll 装到程序目录（与 exe 同级）
 just desktop-windows
 # SIGN=1 just desktop-windows   # 可选：打包后 Azure Artifact Signing
 

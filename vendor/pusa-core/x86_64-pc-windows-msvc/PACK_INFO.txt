@@ -1,0 +1,10 @@
+triple=x86_64-pc-windows-msvc
+lib=pusa_core.dll
+packed_at=20260902T102656Z
+rustc 1.98.0 (88d9e12ae 2026-08-18)
+binary: rustc
+commit-hash: 88d9e12ae178fab0fb5cc050a94da85685d449ea
+commit-date: 2026-08-18
+host: x86_64-pc-windows-msvc
+release: 1.98.0
+LLVM version: 22.1.8
