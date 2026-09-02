@@ -24,7 +24,8 @@ icon = [
 [bundle.macos]
 # dx bundle 默认用 binary 名 Desktop；显式指定 .app 显示名与 DMG 卷名。
 bundle_name = "Pusa AI Console"
-# 未做 Apple 开发者签名的 CI 产物可 ad-hoc 签名；Developer ID + 公证见 scripts/macos-sign-notarize.sh
+# 未做 Apple 开发者签名的本机产物可 ad-hoc 签名；Developer ID + 公证见 scripts/macos-sign-notarize.sh
+# Windows 默认不签名；可选 SIGN=1 + scripts/windows-sign.ps1（Azure Artifact Signing，凭证 .env.signing）
 hardened_runtime = true
 entitlements = "entitlements.plist"
 

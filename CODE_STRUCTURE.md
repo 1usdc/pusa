@@ -224,7 +224,9 @@ UI (chat facade)
 | `just server` | 启动 API（`scripts/server.sh`） |
 | `just desktop` | 桌面热重载（`scripts/desktop.sh`） |
 | `just desktop-mac` | 本机 macOS 打包 + 签名公证（`scripts/desktop-mac.sh`） |
-| `just desktop-ship` | 打 tag / 触发打包流水线 |
+| `just desktop-windows` | 本机 Windows 打包（默认不签名；`SIGN=1` → Azure Artifact Signing） |
+| `just release-mac` | macOS 发版（`scripts/release-mac.sh`，可选 `BUILD=1`） |
+| `just release-windows` | Windows 发版（`scripts/release-windows.sh`，可选 `BUILD=1`） |
 | `just db-clear` | 清空 `data/` |
 | `just push` | 仅推送远端 |
 
@@ -234,7 +236,9 @@ UI (chat facade)
 - `OPENAI_API_KEY` — LLM
 - `ANOTHERME_BASE_URL` — 联调外部认证基址
 
-CI：`.github/workflows/`（含桌面打包等）。
+桌面打包签名凭证见 `.env.signing.example`（复制为 `.env.signing`，已 gitignore）。
+
+CI：`.github/workflows/`（桌面打包已改为本机流程，不再走 Actions）。
 
 ---
 

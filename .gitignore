@@ -4,6 +4,8 @@
 !.env.example
 !docker/.env.example
 .env.signing
+!.env.signing.example
+.azure-signing/
 
 # —— 运行时数据（含 SQLite / 日志，勿开源）——
 /data/

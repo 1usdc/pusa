@@ -82,17 +82,17 @@ desktop: ensure-pusa-core
 desktop-mac: ensure-pusa-core
     bash scripts/desktop-mac.sh
 
-# 双平台发版：TAG=desktop-vX.Y.Z just desktop-ship；WATCH=1 等 CI；VERBOSE=1 详细日志
-desktop-ship:
-    bash scripts/desktop-ship.sh
+# 本机 Windows 打包（默认不签名）；SIGN=1 可选 Azure Artifact Signing
+desktop-windows: ensure-pusa-core
+    pwsh -NoProfile -File scripts/desktop-windows.ps1
 
-# 仅发版 macOS（DMG + 签名公证）：TAG=desktop-vX.Y.Z just release-mac
+# macOS 发版：TAG=desktop-vX.Y.Z BUILD=1 just release-mac
 release-mac:
-    PLATFORM=mac bash scripts/desktop-ship.sh
+    bash scripts/release-mac.sh
 
-# 仅发版 Windows（NSIS + Azure 签名）：TAG=desktop-vX.Y.Z just release-windows
+# Windows 发版：TAG=desktop-vX.Y.Z BUILD=1 just release-windows
 release-windows:
-    PLATFORM=windows bash scripts/desktop-ship.sh
+    bash scripts/release-windows.sh
 
 # 只推仓库到 origin，不打 tag / 不发版
 push:
