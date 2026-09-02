@@ -163,24 +163,49 @@ async fn health() -> &'static str {
 }
 
 fn read_deploy_version() -> String {
-    let candidates: Vec<PathBuf> = std::env::var("VERSION_FILE")
-        .ok()
-        .map(|p| vec![PathBuf::from(p)])
-        .unwrap_or_else(|| {
-            vec![
-                PathBuf::from("/work/.version"),
-                PathBuf::from(".version"),
-            ]
-        });
-    for path in candidates {
+    if let Ok(path) = std::env::var("VERSION_FILE") {
         if let Ok(raw) = std::fs::read_to_string(&path) {
             let v = raw.trim();
             if !v.is_empty() {
-                return v.to_string();
+                // 纯版本字符串（历史兼容）或 Cargo.toml
+                if v.contains("[package]") {
+                    if let Some(parsed) = parse_cargo_package_version(v) {
+                        return parsed;
+                    }
+                } else {
+                    return v.to_string();
+                }
             }
         }
     }
-    "unknown".to_string()
+    parse_cargo_package_version(include_str!("../../desktop/Cargo.toml"))
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn parse_cargo_package_version(toml: &str) -> Option<String> {
+    let mut in_package = false;
+    for line in toml.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            in_package = line == "[package]";
+            continue;
+        }
+        if !in_package {
+            continue;
+        }
+        let Some(rest) = line.strip_prefix("version") else {
+            continue;
+        };
+        let rest = rest.trim_start();
+        let Some(rest) = rest.strip_prefix('=') else {
+            continue;
+        };
+        let v = rest.trim().trim_matches('"').trim();
+        if !v.is_empty() {
+            return Some(v.to_string());
+        }
+    }
+    None
 }
 
 async fn about_info() -> Json<AboutInfoDto> {

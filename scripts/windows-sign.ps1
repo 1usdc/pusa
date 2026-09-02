@@ -1,4 +1,4 @@
-# Windows：用 Azure Artifact Signing 给 NSIS 安装器盖 Authenticode 签名。
+﻿# Windows：用 Azure Artifact Signing 给 NSIS 安装器盖 Authenticode 签名。
 #
 # 前置（本机一次性）：
 #   winget install -e --id Microsoft.Azure.ArtifactSigningClientTools

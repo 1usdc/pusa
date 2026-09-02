@@ -1,4 +1,4 @@
-# 本机 Windows 打包：dx bundle --release → desktop/dist/*-setup.exe（默认不签名）
+﻿# 本机 Windows 打包：dx bundle --release → desktop/dist/*-setup.exe（默认不签名）
 #
 # 用法：
 #   just desktop-windows
@@ -56,7 +56,7 @@ Get-ChildItem -Path $Dist, (Join-Path $Root 'target\dx') -Recurse -ErrorAction S
 
 if ($DoSign) {
     Write-Host '== 4) Azure Artifact Signing（SIGN=1）=='
-    & (Join-Path $Root 'scripts\windows-sign.ps1')
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root 'scripts\windows-sign.ps1')
 } else {
     Write-Host '== 4) 未签名（需要时 SIGN=1 just desktop-windows）=='
 }

@@ -402,7 +402,6 @@ fn has_text_extension(path: &Path) -> bool {
                 | ".env"
                 | ".editorconfig"
                 | ".dockerignore"
-                | ".version"
         ) || name.starts_with('.');
     };
     TEXT_EXT.iter().any(|e| e.eq_ignore_ascii_case(ext))

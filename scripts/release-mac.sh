@@ -1,31 +1,31 @@
 #!/usr/bin/env bash
 # macOS 发版：本机打包（可选）→ 打 tag → 上传 GitHub Release。
+# 版本默认取自 desktop/Cargo.toml → desktop-vX.Y.Z（可用 TAG= 覆盖）。
 #
 # 用法：
-#   TAG=desktop-vX.Y.Z just release-mac
-#   TAG=desktop-vX.Y.Z BUILD=1 just release-mac   # 先 just desktop-mac 再上传
-#
-# 环境变量：
-#   TAG         必填，desktop-vX.Y.Z
-#   BUILD       1 时先跑 scripts/desktop-mac.sh
-#   RELEASE_DIR 产物目录（默认 desktop/dist）
-#   VERBOSE     1 详细日志
+#   just release-mac
+#   BUILD=1 just release-mac
+#   TAG=desktop-v0.2.8 just release-mac
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT}"
+# shellcheck source=desktop-version.sh
+source "${ROOT}/scripts/desktop-version.sh"
 
-: "${TAG:?用法: TAG=desktop-vX.Y.Z just release-mac}"
+TAG="$(desktop_release_tag "${ROOT}")"
 BUILD="${BUILD:-0}"
 RELEASE_DIR="${RELEASE_DIR:-${ROOT}/desktop/dist}"
 verbose="${VERBOSE:-0}"
 say() { [[ "${verbose}" == "1" ]] && echo "$@" || true; }
 git_q() { if [[ "${verbose}" == "1" ]]; then git "$@"; else git "$@" --quiet; fi; }
 
-if [[ ! "${TAG}" =~ ^desktop-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+if [[ ! "${TAG}" =~ ^desktop-v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
 	echo "❌ TAG 格式不对：${TAG}（应为 desktop-vX.Y.Z）" >&2
 	exit 1
 fi
+
+echo "→ Release tag: ${TAG}（来自 desktop/Cargo.toml，可用 TAG= 覆盖）"
 
 if ! command -v gh >/dev/null 2>&1; then
 	echo "❌ 未找到 gh CLI，请先安装并 gh auth login" >&2

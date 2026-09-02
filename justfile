@@ -2,6 +2,8 @@
 
 set dotenv-path := "docker/.env"
 set shell := ["bash", "-euo", "pipefail", "-c"]
+# Windows：避免 shebang 配方依赖 cygpath；Bypass 绕过本机 ExecutionPolicy
+set windows-shell := ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
 
 default:
     @just --list
@@ -19,60 +21,24 @@ db-clear:
     bash scripts/db-clear.sh
 
 # 打包闭源核心 → vendor/pusa-core/<host-triple>/libpusa_core.*
+[unix]
 pusa-core:
-    #!/usr/bin/env bash
-    if [[ ! -d pusa-core ]]; then
-      echo "error: 缺少 pusa-core/ 源码目录，无法打包" >&2
-      exit 1
-    fi
+    if [[ ! -d pusa-core ]]; then echo "error: 缺少 pusa-core/ 源码目录，无法打包" >&2; exit 1; fi
     just --justfile pusa-core/justfile --working-directory pusa-core pack
 
-# 无 vendor 产物，或 pusa-core/protocol 源码比产物新 → 自动 just pusa-core
-# 注意：产物不存在时 find -newer / -nt 不会当成「过期」，必须显式判断 ! -f
+[windows]
+pusa-core:
+    if (-not (Test-Path pusa-core)) { throw '缺少 pusa-core/ 源码目录，无法打包' }
+    just --justfile pusa-core/justfile --working-directory pusa-core pack
+
+# 无 vendor 产物，或源码比产物新 → 自动 just pusa-core
+[unix]
 ensure-pusa-core:
-    #!/usr/bin/env bash
-    HOST="$(rustc -vV | awk '/^host:/{print $2}')"
-    case "$HOST" in
-      *windows*) LIB="pusa_core.dll" ;;
-      *apple*) LIB="libpusa_core.dylib" ;;
-      *) LIB="libpusa_core.so" ;;
-    esac
-    DEST="vendor/pusa-core/${HOST}/${LIB}"
+    bash scripts/ensure-pusa-core.sh
 
-    if [[ ! -d pusa-core ]]; then
-      if [[ -f "$DEST" ]]; then
-        echo "pusa-core: 无源码目录，沿用已有产物 ($DEST)"
-        exit 0
-      fi
-      echo "error: 缺少 pusa-core/ 源码，且无 vendor 产物 ($DEST)" >&2
-      exit 1
-    fi
-
-    stale=""
-    if [[ -f "$DEST" ]]; then
-      stale="$(
-        {
-          find pusa-core/src protocol/src -type f \( -name '*.rs' -o -name '*.inc.rs' \) -newer "$DEST" 2>/dev/null || true
-          for f in pusa-core/Cargo.toml pusa-core/Cargo.lock protocol/Cargo.toml protocol/Cargo.lock; do
-            if [[ -f "$f" && "$f" -nt "$DEST" ]]; then
-              printf '%s\n' "$f"
-            fi
-          done
-        } | head -1
-      )"
-    fi
-
-    if [[ -f "$DEST" && -z "$stale" ]]; then
-      echo "pusa-core: 已是最新 ($DEST)"
-      exit 0
-    fi
-
-    if [[ ! -f "$DEST" ]]; then
-      echo "pusa-core: 未找到产物，开始打包… ($DEST)"
-    else
-      echo "pusa-core: 源码新于产物，开始打包… (newer: $stale)"
-    fi
-    just pusa-core
+[windows]
+ensure-pusa-core:
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\ensure-pusa-core.ps1
 
 # 本机桌面（dx serve 热重载）；联调：ANOTHERME_BASE_URL=http://127.0.0.1:8881 just desktop
 desktop: ensure-pusa-core
@@ -84,13 +50,13 @@ desktop-mac: ensure-pusa-core
 
 # 本机 Windows 打包（默认不签名）；SIGN=1 可选 Azure Artifact Signing
 desktop-windows: ensure-pusa-core
-    pwsh -NoProfile -File scripts/desktop-windows.ps1
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\desktop-windows.ps1
 
-# macOS 发版：TAG=desktop-vX.Y.Z BUILD=1 just release-mac
+# macOS 发版（tag 默认 desktop-v + desktop/Cargo.toml version）；BUILD=1 先打包
 release-mac:
     bash scripts/release-mac.sh
 
-# Windows 发版：TAG=desktop-vX.Y.Z BUILD=1 just release-windows
+# Windows 发版（同上）；BUILD=1 先打包
 release-windows:
     bash scripts/release-windows.sh
 

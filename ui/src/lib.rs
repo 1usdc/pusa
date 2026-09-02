@@ -6,6 +6,7 @@ use dioxus::prelude::*;
 pub mod shell;
 pub use shell::{Console, StatusBar};
 
+mod version;
 mod icons;
 mod chat;
 #[cfg(all(target_arch = "wasm32", feature = "web"))]

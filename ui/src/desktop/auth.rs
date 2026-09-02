@@ -95,7 +95,7 @@ fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
 #[component]
 fn DesktopAboutModal(mut show_about_modal: Signal<bool>) -> Element {
     let dto = AboutInfoDto {
-        version: env!("CARGO_PKG_VERSION").to_string(),
+        version: crate::version::app_version(),
         runtime_os: std::env::consts::OS.to_string(),
         runtime_arch: std::env::consts::ARCH.to_string(),
     };

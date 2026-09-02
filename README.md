@@ -19,7 +19,8 @@ just desktop
 
 # 桌面端打包
 ```bash
-# 凭证：cp .env.signing.example .env.signing（勿提交）
+# 版本号：改 desktop/Cargo.toml 的 version（发版 tag = desktop-v{version}）
+# 可选签名凭证：cp .env.signing.example .env.signing（勿提交）
 
 # 本机 macOS（Developer ID 签名 + 公证 → desktop/dist/*.dmg）
 just desktop-mac
@@ -29,26 +30,21 @@ just desktop-mac
 just desktop-windows
 # SIGN=1 just desktop-windows   # 可选：打包后 Azure Artifact Signing
 
-# 上传到 GitHub Release（各平台独立发版）
-TAG=desktop-v0.2.7 BUILD=1 just release-mac      # macOS 机器
-TAG=desktop-v0.2.7 BUILD=1 just release-windows  # Windows 机器
-# 或已打包好：TAG=desktop-v0.2.7 just release-windows
+# 上传到 GitHub Release（tag 自动取自 desktop/Cargo.toml）
+BUILD=1 just release-mac       # macOS
+BUILD=1 just release-windows   # Windows
+# 或已打包好：just release-windows
 ```
 
 ### 发版流程示例（Windows）
 
 ```bash
-# 1. 提交代码
+# 1. 改版本并提交
+#    desktop/Cargo.toml → version = "0.2.7"
 git push
 
-# 2. Windows 本机（需 dx CLI）
-just desktop-windows
-
-# 3. 上传 GitHub Release
-TAG=desktop-v0.2.7 just release-windows
-# 或一步：TAG=desktop-v0.2.7 BUILD=1 just release-windows
-
-# macOS 同理：just desktop-mac → TAG=... just release-mac
+# 2. 打包并上传（生成 tag desktop-v0.2.7）
+BUILD=1 just release-windows
 ```
 
 ### Windows 可选签名（Azure Artifact Signing）

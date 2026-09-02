@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Windows 发版：本机打包（可选）→ 打 tag → 上传 GitHub Release。
+# 版本默认取自 desktop/Cargo.toml → desktop-vX.Y.Z（可用 TAG= 覆盖）。
 #
 # 用法：
-#   TAG=desktop-vX.Y.Z just release-windows
-#   TAG=desktop-vX.Y.Z BUILD=1 just release-windows   # 先 just desktop-windows 再上传
+#   just release-windows
+#   BUILD=1 just release-windows   # 先打包再上传
+#   TAG=desktop-v0.2.8 just release-windows   # 覆盖 tag
 #
 # 环境变量：
-#   TAG         必填，desktop-vX.Y.Z
+#   TAG         可选，默认 desktop-v$(desktop/Cargo.toml version)
 #   BUILD       1 时先跑 scripts/desktop-windows.ps1
 #   RELEASE_DIR 产物目录（默认 desktop/dist）
 #   VERBOSE     1 详细日志
@@ -14,18 +16,22 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT}"
+# shellcheck source=desktop-version.sh
+source "${ROOT}/scripts/desktop-version.sh"
 
-: "${TAG:?用法: TAG=desktop-vX.Y.Z just release-windows}"
+TAG="$(desktop_release_tag "${ROOT}")"
 BUILD="${BUILD:-0}"
 RELEASE_DIR="${RELEASE_DIR:-${ROOT}/desktop/dist}"
 verbose="${VERBOSE:-0}"
 say() { [[ "${verbose}" == "1" ]] && echo "$@" || true; }
 git_q() { if [[ "${verbose}" == "1" ]]; then git "$@"; else git "$@" --quiet; fi; }
 
-if [[ ! "${TAG}" =~ ^desktop-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+if [[ ! "${TAG}" =~ ^desktop-v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
 	echo "❌ TAG 格式不对：${TAG}（应为 desktop-vX.Y.Z）" >&2
 	exit 1
 fi
+
+echo "→ Release tag: ${TAG}（来自 desktop/Cargo.toml，可用 TAG= 覆盖）"
 
 if ! command -v gh >/dev/null 2>&1; then
 	echo "❌ 未找到 gh CLI，请先安装并 gh auth login" >&2
@@ -49,7 +55,7 @@ if [[ "${BUILD}" == "1" ]]; then
 			;;
 	esac
 	say "== 0) 本机打包 =="
-	pwsh -NoProfile -File "${ROOT}/scripts/desktop-windows.ps1"
+	powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${ROOT}/scripts/desktop-windows.ps1"
 	RELEASE_DIR="${ROOT}/desktop/dist"
 fi
 

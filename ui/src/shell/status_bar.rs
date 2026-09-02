@@ -5,17 +5,11 @@ use dioxus_free_icons::icons::ld_icons::LdGitBranch;
 use dioxus_free_icons::Icon;
 
 use crate::icons::{GoFileDirectory, RiBearSmileLine};
-
-/// 仓库根目录 `.version`（编译期嵌入，显示与更新比对共用）。
-const APP_VERSION_FILE: &str = include_str!("../../../.version");
+use crate::version::app_version;
 
 /// 状态栏轮询工作区根 / git 的间隔。
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 const WORKSPACE_POLL_MS: u64 = 1500;
-
-fn app_version() -> &'static str {
-    APP_VERSION_FILE.trim()
-}
 
 const GH_REPO: &str = "Another-Me-Labs/Another-Claw-Rs";
 const GH_RELEASES_LATEST_PAGE: &str =
@@ -153,7 +147,7 @@ pub fn StatusBar(
 ) -> Element {
     // native / wasm 路径会 `set`；host 上仅 default feature 检查时可能无写入。
     #[allow(unused_mut)]
-    let mut version = use_signal(|| app_version().to_string());
+    let mut version = use_signal(app_version);
     #[allow(unused_mut)]
     let mut update = use_signal(|| UpdateState::Checking);
     // 工作区目录 basename；空字符串表示无可显示项目。
@@ -167,7 +161,7 @@ pub fn StatusBar(
 
     use_hook(|| {
         spawn(async move {
-            let local = app_version().to_string();
+            let local = app_version();
             version.set(local.clone());
             #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
             {
@@ -175,7 +169,7 @@ pub fn StatusBar(
             }
             #[cfg(all(target_arch = "wasm32", feature = "web"))]
             {
-                // Web 与桌面共用编译期 `.version`；无独立 web Release 频道。
+                // Web 与桌面共用 desktop/Cargo.toml 版本；无独立 web Release 频道。
                 let _ = local;
                 update.set(UpdateState::UpToDate);
             }

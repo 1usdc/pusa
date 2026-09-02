@@ -337,7 +337,7 @@ pub struct AuthMeDto {
     pub user: Option<serde_json::Value>,
 }
 
-/// GET `/v1/about`：本机/部署信息（版本来自根目录 `.version` 或 `VERSION_FILE`）。
+/// GET `/v1/about`：本机/部署信息（版本默认取自 `desktop/Cargo.toml`，可用 `VERSION_FILE` 覆盖）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AboutInfoDto {
     pub version: String,

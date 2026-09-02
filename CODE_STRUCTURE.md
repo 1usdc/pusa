@@ -225,8 +225,8 @@ UI (chat facade)
 | `just desktop` | 桌面热重载（`scripts/desktop.sh`） |
 | `just desktop-mac` | 本机 macOS 打包 + 签名公证（`scripts/desktop-mac.sh`） |
 | `just desktop-windows` | 本机 Windows 打包（默认不签名；`SIGN=1` → Azure Artifact Signing） |
-| `just release-mac` | macOS 发版（`scripts/release-mac.sh`，可选 `BUILD=1`） |
-| `just release-windows` | Windows 发版（`scripts/release-windows.sh`，可选 `BUILD=1`） |
+| `just release-mac` | macOS 发版（tag 取自 `desktop/Cargo.toml`；可选 `BUILD=1`） |
+| `just release-windows` | Windows 发版（同上；可选 `BUILD=1`） |
 | `just db-clear` | 清空 `data/` |
 | `just push` | 仅推送远端 |
 
