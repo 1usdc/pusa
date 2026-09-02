@@ -20,9 +20,7 @@ desktop/dist/
 # —— 闭源核心源码（仅本机保留；对外用 vendor 预编译库）——
 /pusa-core/
 
-# —— vendor：忽略二进制，保留说明（预编译库用 Release / 私有渠道分发）——
-/vendor/pusa-core/**
-!/vendor/pusa-core/README.md
+# —— vendor/pusa-core：预编译 cdylib 入库开源（按 target triple）——
 
 # —— 应用市场本地下载 / 内部插件（只保留 README）——
 /applications/*
