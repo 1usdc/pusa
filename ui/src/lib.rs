@@ -116,7 +116,7 @@ fn WebAppShell() -> Element {
     });
 
     rsx! {
-        document::Title { "Pusa AI Console" }
+        document::Title { "Pusa" }
         {native_host_shell_style()}
         document::Link {
             rel: "stylesheet",

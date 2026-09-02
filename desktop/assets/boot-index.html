@@ -1,15 +1,15 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Pusa AI Console</title>
+    <title>Pusa</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <!-- 冷启动骨架：内联样式，不依赖 asset CSS，窗口出现即可绘出 -->
+    <!-- 冷启动：居中加载动画，遮住 WebView/Dioxus 首帧错版闪屏 -->
     <style>
         html, body {
             margin: 0;
             height: 100%;
             overflow: hidden;
-            background: transparent;
+            background: #f8fafc;
         }
         #main {
             box-sizing: border-box;
@@ -23,160 +23,57 @@
             inset: 0;
             z-index: 2147483000;
             display: flex;
-            flex-direction: column;
+            align-items: center;
+            justify-content: center;
             box-sizing: border-box;
-            border-radius: 12px;
-            overflow: hidden;
-            background:
-                radial-gradient(circle at 12% 10%, rgba(66, 133, 244, 0.18), transparent 30%),
-                radial-gradient(circle at 88% 18%, rgba(20, 184, 166, 0.08), transparent 28%),
-                linear-gradient(135deg, #f8fafc, #eff6ff 48%, #f8fafc);
+            background: #f8fafc;
             opacity: 1;
-            transition: opacity 0.22s ease;
+            transition: opacity 0.28s ease;
             pointer-events: none;
         }
         #ac-desktop-boot-skel.is-done {
             opacity: 0;
         }
-        .ac-boot-titlebar {
-            flex: 0 0 28px;
-            border-bottom: 1px solid rgba(226, 232, 240, 0.6);
-            background: rgba(248, 250, 252, 0.8);
-        }
-        .ac-boot-body {
-            flex: 1 1 auto;
-            min-height: 0;
-            display: flex;
-        }
-        .ac-boot-sidebar {
-            flex: 0 0 280px;
-            width: 280px;
-            box-sizing: border-box;
-            padding: 1rem 0.85rem;
-            border-right: 1px solid #e2e8f0;
+        .ac-boot-stage {
             display: flex;
             flex-direction: column;
-            gap: 0.65rem;
+            align-items: center;
+            gap: 1.15rem;
         }
-        .ac-boot-brand {
-            width: 2.2rem;
-            height: 2.2rem;
+        .ac-boot-spinner {
+            width: 2.75rem;
+            height: 2.75rem;
             border-radius: 50%;
-            background: #e2e8f0;
-            opacity: 0.9;
-            margin-bottom: 0.35rem;
-            flex-shrink: 0;
+            border: 2.5px solid #e2e8f0;
+            border-top-color: #181c23;
+            animation: ac-boot-spin 0.75s linear infinite;
         }
-        .ac-boot-nav {
-            display: flex;
-            flex-direction: column;
-            gap: 0.45rem;
+        .ac-boot-name {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-size: 1.05rem;
+            font-weight: 650;
+            letter-spacing: 0.04em;
+            color: #181c23;
         }
-        .ac-boot-center {
-            flex: 1 1 auto;
-            min-width: 0;
-            padding: 1.1rem 1.25rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.85rem;
-        }
-        .ac-boot-chat {
-            flex: 0 0 380px;
-            width: 380px;
-            box-sizing: border-box;
-            border-left: 1px solid #e2e8f0;
-            padding: 1rem 0.9rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.75rem;
-        }
-        .ac-boot-status {
-            flex: 0 0 1.625rem;
-            border-top: 1px solid #e2e8f0;
-            background: #f8fafc;
-        }
-        .ac-boot-bar {
-            border-radius: 0.4rem;
-            height: 0.72rem;
-        }
-        .ac-boot-bar--lg { height: 1rem; }
-        .ac-boot-bar--sm { height: 0.55rem; }
-        .ac-boot-pill {
-            height: 2rem;
-            border-radius: 0.55rem;
-        }
-        .ac-boot-block {
-            flex: 1 1 auto;
-            min-height: 4rem;
-            border-radius: 0.75rem;
-        }
-        .ac-boot-chat-composer {
-            margin-top: auto;
-            height: 3.2rem;
-            border-radius: 0.85rem;
-        }
-        .ac-boot-shimmer {
-            background: linear-gradient(
-                110deg,
-                #e2e8f0 0%,
-                #e2e8f0 38%,
-                #f8fafc 50%,
-                #e2e8f0 62%,
-                #e2e8f0 100%
-            );
-            background-size: 200% 100%;
-            animation: ac-boot-shimmer 1.35s ease-in-out infinite;
-        }
-        @keyframes ac-boot-shimmer {
-            0% { background-position: 100% 0; }
-            100% { background-position: -100% 0; }
+        @keyframes ac-boot-spin {
+            to { transform: rotate(360deg); }
         }
         @media (prefers-reduced-motion: reduce) {
-            .ac-boot-shimmer {
-                animation: none;
-                background: #e2e8f0;
-            }
+            .ac-boot-spinner { animation: none; border-top-color: #181c23; }
             #ac-desktop-boot-skel { transition: none; }
         }
     </style>
 </head>
 <body>
-    <div id="ac-desktop-boot-skel" aria-hidden="true">
-        <div class="ac-boot-titlebar"></div>
-        <div class="ac-boot-body">
-            <aside class="ac-boot-sidebar">
-                <div class="ac-boot-brand"></div>
-                <div class="ac-boot-nav">
-                    <div class="ac-boot-pill ac-boot-shimmer" style="width: 72%"></div>
-                    <div class="ac-boot-pill ac-boot-shimmer" style="width: 64%"></div>
-                    <div class="ac-boot-pill ac-boot-shimmer" style="width: 68%"></div>
-                </div>
-                <div class="ac-boot-bar ac-boot-shimmer" style="width: 48%; margin-top: 0.4rem"></div>
-                <div class="ac-boot-bar ac-boot-bar--sm ac-boot-shimmer" style="width: 88%"></div>
-                <div class="ac-boot-bar ac-boot-bar--sm ac-boot-shimmer" style="width: 76%"></div>
-                <div class="ac-boot-bar ac-boot-bar--sm ac-boot-shimmer" style="width: 82%"></div>
-                <div class="ac-boot-block ac-boot-shimmer" style="margin-top: 0.5rem"></div>
-            </aside>
-            <section class="ac-boot-center">
-                <div class="ac-boot-bar ac-boot-bar--lg ac-boot-shimmer" style="width: 36%"></div>
-                <div class="ac-boot-bar ac-boot-shimmer" style="width: 58%"></div>
-                <div class="ac-boot-block ac-boot-shimmer"></div>
-                <div class="ac-boot-bar ac-boot-shimmer" style="width: 42%"></div>
-                <div class="ac-boot-bar ac-boot-bar--sm ac-boot-shimmer" style="width: 70%"></div>
-            </section>
-            <aside class="ac-boot-chat">
-                <div class="ac-boot-bar ac-boot-bar--lg ac-boot-shimmer" style="width: 44%"></div>
-                <div class="ac-boot-bar ac-boot-shimmer" style="width: 78%"></div>
-                <div class="ac-boot-bar ac-boot-bar--sm ac-boot-shimmer" style="width: 62%"></div>
-                <div class="ac-boot-block ac-boot-shimmer"></div>
-                <div class="ac-boot-chat-composer ac-boot-shimmer"></div>
-            </aside>
+    <div id="ac-desktop-boot-skel" aria-busy="true" aria-label="正在启动">
+        <div class="ac-boot-stage">
+            <div class="ac-boot-spinner"></div>
+            <div class="ac-boot-name">Pusa</div>
         </div>
-        <div class="ac-boot-status"></div>
     </div>
     <div id="main"></div>
     <script>
-        // 兜底：避免异常时骨架永久遮挡（正常路径由 DesktopAppShell 主动移除）
+        window.__pusaBootAt = Date.now();
         setTimeout(function () {
             var el = document.getElementById("ac-desktop-boot-skel");
             if (el) el.remove();

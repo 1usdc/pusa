@@ -1,11 +1,11 @@
 [application]
-name = "Pusa AI Console"
+name = "Pusa"
 default_platform = "desktop"
 out_dir = "dist"
 
 [bundle]
 identifier = "ai.pusa.console"
-short_description = "Pusa AI Console"
+short_description = "Pusa"
 long_description = "Pusa desktop application"
 publisher = "Pusa"
 # bundle icon 三件套（路径相对 default_platform = "desktop" 的 crate root，即 desktop/）：
@@ -23,8 +23,8 @@ icon = [
 
 [bundle.macos]
 # dx bundle 默认用 binary 名 Desktop；显式指定 .app 显示名与 DMG 卷名。
-bundle_name = "Pusa AI Console"
-# 未做 Apple 开发者签名的本机产物可 ad-hoc 签名；Developer ID + 公证见 scripts/macos-sign-notarize.sh
+bundle_name = "Pusa"
+# Developer ID + 公证见 scripts/macos-sign-notarize.sh
 # Windows 默认不签名；可选 SIGN=1 + scripts/windows-sign.ps1（Azure Artifact Signing，凭证 .env.signing）
 hardened_runtime = true
 entitlements = "entitlements.plist"
@@ -46,7 +46,7 @@ silent = true
 [desktop]
 
 [web.app]
-title = "Pusa AI Console"
+title = "Pusa"
 
 [web.resource]
 style = []

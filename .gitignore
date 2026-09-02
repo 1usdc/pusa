@@ -16,6 +16,7 @@
 **/target/
 /dist/
 desktop/dist/
+/docs/
 
 # —— 闭源核心源码（仅本机保留；对外用 vendor 预编译库）——
 /pusa-core/

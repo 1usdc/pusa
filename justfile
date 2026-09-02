@@ -44,9 +44,13 @@ ensure-pusa-core:
 desktop: ensure-pusa-core
     bash scripts/desktop.sh
 
-# 本机 macOS 打包发版（dx bundle + 签名公证 → desktop/dist/*.dmg）；NOTARIZE=0 跳过公证
+# 本机 macOS 打包发版（patch 版号 +1 后 dx bundle + 签名公证）；BUMP=0 不改版号；NOTARIZE=0 跳过公证
 desktop-mac: ensure-pusa-core
     bash scripts/desktop-mac.sh
+
+# 把本机 desktop/dist/*.dmg 挂到 GitHub Release；TAG 可省略（默认 desktop-v + DMG 版本）
+desktop-mac-release:
+    bash scripts/desktop-mac-release.sh
 
 # 本机 Windows 打包（默认不签名）；SIGN=1 可选 Azure Artifact Signing
 desktop-windows: ensure-pusa-core

@@ -10,14 +10,13 @@ pub(crate) mod transport_wasm;
 mod ui;
 
 pub use attachments::{
-    attachment_from_file_data, attachment_from_path, attachments_from_suffix_labels,
-    parse_user_message_segments, split_attachment_suffix, strip_attachment_suffix, ChatPendingAttachment,
+    attachment_from_file_data, attachment_from_path, parse_user_message_segments, ChatPendingAttachment,
     ChatUserSeg,
 };
 pub use composer_ce::{
     ce_clear, ce_focus_end, ce_insert_chip, ce_insert_text, ce_serialize, ce_set_html, chip_html,
     compose_user_payload, composer_seed_html, composer_seed_html_from_segs, pending_has_path,
-    pending_remove_ids, pending_resolve, ComposerBridgeEvent, COMPOSER_ROOT_EDIT, COMPOSER_ROOT_MAIN,
+    pending_remove_ids, ComposerBridgeEvent, COMPOSER_ROOT_EDIT, COMPOSER_ROOT_MAIN,
     INSTALL_BRIDGE_JS,
 };
 #[cfg(target_arch = "wasm32")]

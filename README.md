@@ -19,12 +19,17 @@ just desktop
 
 # 桌面端打包
 ```bash
-# 版本号：改 desktop/Cargo.toml 的 version（发版 tag = desktop-v{version}）
+# 版本号：just desktop-mac 默认把 desktop/Cargo.toml patch +1；BUMP=0 则不改
+# 发版 tag = desktop-v{version}（也可用 TAG= 覆盖）
 # 可选签名凭证：cp .env.signing.example .env.signing（勿提交）
 
 # 本机 macOS（Developer ID 签名 + 公证 → desktop/dist/*.dmg）
 just desktop-mac
+# 覆盖旧版本（不升版号）
+BUMP=0 just desktop-mac
 # NOTARIZE=0 just desktop-mac   # 只签名，不公证
+# 把本机已打好的 DMG 挂到 GitHub Release
+just desktop-mac-release
 
 # 本机 Windows（未签名 NSIS 安装器 → desktop/dist/*-setup.exe）
 just desktop-windows

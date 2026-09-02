@@ -192,6 +192,7 @@ main() {
 	[[ -n "${identity}" ]] || die "未找到 Developer ID Application 证书；请设置 MACOS_SIGNING_IDENTITY 或在钥匙串安装证书"
 
 	app="$(find_app_bundle)"
+	bash "${ROOT}/scripts/embed-pusa-core-macos.sh"
 	sign_app "${app}" "${identity}"
 	dmg="$(build_dmg "${app}")"
 	log "已生成 DMG: ${dmg}"

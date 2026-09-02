@@ -1161,6 +1161,7 @@ const AC_SIDEBAR_DEFAULT_WIDTH_PX: f64 = 280.0;
 const AC_SIDEBAR_MIN_WIDTH_PX: f64 = AC_SIDEBAR_DEFAULT_WIDTH_PX * 2.0 / 3.0;
 const AC_SIDEBAR_MAX_WIDTH_PX: f64 = AC_SIDEBAR_DEFAULT_WIDTH_PX;
 /// 拖曳越过阈值后，侧栏宽度收至 0 的过渡时长（与 `.ac-sidebar-shutting` 的 CSS 一致）。
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
 const AC_SIDEBAR_AUTO_COLLAPSE_ANIM_MS: u32 = 500;
 /// 中间栏收起过渡时长（与 `.ac-center` / `.ac-chat` 的 CSS 一致）。
 const AC_CENTER_AUTO_COLLAPSE_ANIM_MS: u32 = 220;
@@ -1378,6 +1379,7 @@ fn persist_chat_model(model_id: &str) {
     }
 }
 
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
 const AC_SIDEBAR_AUTO_COLLAPSE_YIELD_MS: u32 = 20;
 
 /// 实盘资产「资产明细」每页条数（OKX 估值分项 + 持仓较多时分页展示）。
@@ -2507,7 +2509,7 @@ pub fn Console(
     let mut chat_history_drag_width = use_signal(|| None::<f64>);
     let mut sidebar_width = use_signal(|| AC_SIDEBAR_DEFAULT_WIDTH_PX);
     // 拖曳触发阈值后先播宽度收起动画，再 `show_sidebar = false`。
-    let mut sidebar_shutting_down = use_signal(|| false);
+    let sidebar_shutting_down = use_signal(|| false);
     // 中间栏关闭时先播回缩动画，再隐藏。
     let mut center_shutting_down = use_signal(|| false);
     let mut terminal_height = use_signal(|| AC_TERMINAL_DEFAULT_HEIGHT_PX);
@@ -2684,10 +2686,10 @@ pub fn Console(
     let mut chat_edit_can_send = use_signal(|| false);
     let mut chat_edit_epoch = use_signal(|| 0_u64);
     let mut chat_edit_seed = use_signal(String::new);
-    let mut chat_enter_tick = use_signal(|| 0_u64);
-    let mut chat_paste_tick = use_signal(|| 0_u64);
-    let mut chat_edit_enter_tick = use_signal(|| 0_u64);
-    let mut chat_edit_paste_tick = use_signal(|| 0_u64);
+    let chat_enter_tick = use_signal(|| 0_u64);
+    let chat_paste_tick = use_signal(|| 0_u64);
+    let chat_edit_enter_tick = use_signal(|| 0_u64);
+    let chat_edit_paste_tick = use_signal(|| 0_u64);
     let mut chat_edit_truncate_at = use_signal(|| 0_usize);
 
     use_effect(move || {
@@ -6894,7 +6896,7 @@ pub fn Console(
                                                             }));
                                                         }
                                                     },
-                                                    ondblclick: {
+                                                    ondoubleclick: {
                                                         let conv_id = conv_id.clone();
                                                         let display_title = display_title.clone();
                                                         move |evt| {

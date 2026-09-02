@@ -145,6 +145,7 @@ pub fn parse_user_message_segments(
 }
 
 /// 从历史正文里的附件标记还原路径 chip。
+#[allow(dead_code)]
 pub fn attachments_from_suffix_labels(labels: &[String], start_id: u64) -> Vec<ChatPendingAttachment> {
     labels
         .iter()
@@ -468,7 +469,17 @@ pub mod wasm_paste {
 
 #[cfg(test)]
 mod tests {
-    use super::{attachment_from_path, parse_user_message_segments, split_attachment_suffix, ChatUserSeg};
+    use super::{
+        attachment_from_path, attachments_from_suffix_labels, parse_user_message_segments,
+        split_attachment_suffix, ChatUserSeg,
+    };
+
+    #[test]
+    fn restores_pending_from_suffix_labels() {
+        let atts = attachments_from_suffix_labels(&["/tmp/a".to_string()], 10);
+        assert_eq!(atts.len(), 1);
+        assert_eq!(atts[0].id, 10);
+    }
 
     #[test]
     fn strips_trailing_attachment_block() {

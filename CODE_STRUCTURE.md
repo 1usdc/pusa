@@ -224,6 +224,7 @@ UI (chat facade)
 | `just server` | 启动 API（`scripts/server.sh`） |
 | `just desktop` | 桌面热重载（`scripts/desktop.sh`） |
 | `just desktop-mac` | 本机 macOS 打包 + 签名公证（`scripts/desktop-mac.sh`） |
+| `just desktop-mac-release` | 本机 DMG 上传 GitHub Release（`scripts/desktop-mac-release.sh`） |
 | `just desktop-windows` | 本机 Windows 打包（默认不签名；`SIGN=1` → Azure Artifact Signing） |
 | `just release-mac` | macOS 发版（tag 取自 `desktop/Cargo.toml`；可选 `BUILD=1`） |
 | `just release-windows` | Windows 发版（同上；可选 `BUILD=1`） |

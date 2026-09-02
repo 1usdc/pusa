@@ -107,7 +107,7 @@ pub fn NativeTitleBar(
     } else {
         "显示右边聊天栏"
     };
-    let mut ui_theme = use_signal(theme::load);
+    let ui_theme = use_signal(theme::load);
 
     rsx! {
         NativeResizeHandle {

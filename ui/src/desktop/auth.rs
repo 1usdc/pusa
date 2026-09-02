@@ -207,7 +207,7 @@ pub fn DesktopAppShell() -> Element {
     });
 
     rsx! {
-        document::Title { "Pusa AI Console" }
+        document::Title { "Pusa" }
         document::Link {
             rel: "stylesheet",
             href: "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap",
@@ -241,10 +241,32 @@ pub fn DesktopAppShell() -> Element {
                     r#"(() => {
   const el = document.getElementById('ac-desktop-boot-skel');
   if (!el) return;
-  el.classList.add('is-done');
-  const remove = () => el.remove();
-  el.addEventListener('transitionend', remove, { once: true });
-  setTimeout(remove, 320);
+  const started = window.__pusaBootAt || Date.now();
+  const finish = () => {
+    el.classList.add('is-done');
+    const remove = () => { if (el.parentNode) el.remove(); };
+    el.addEventListener('transitionend', remove, { once: true });
+    setTimeout(remove, 400);
+  };
+  const waitCss = () => new Promise((resolve) => {
+    const ready = () => [...document.styleSheets].some((s) => {
+      try { return !!(s.href && /main|colors|tailwind/i.test(s.href)); }
+      catch (_) { return false; }
+    });
+    if (ready()) { resolve(); return; }
+    const t0 = Date.now();
+    const tick = () => {
+      if (ready() || Date.now() - t0 > 1600) resolve();
+      else setTimeout(tick, 40);
+    };
+    tick();
+  });
+  (async () => {
+    await waitCss();
+    const left = Math.max(0, 420 - (Date.now() - started));
+    if (left) await new Promise((r) => setTimeout(r, left));
+    requestAnimationFrame(() => requestAnimationFrame(finish));
+  })();
 })();"#,
                 );
             },

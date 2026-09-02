@@ -71,7 +71,7 @@ impl TerminalWriter {
             }
             *last = (rows, cols);
         }
-        if let Ok(mut master) = self.master.lock() {
+        if let Ok(master) = self.master.lock() {
             let _ = master.resize(PtySize {
                 rows,
                 cols,

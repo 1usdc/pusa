@@ -598,7 +598,7 @@ pub fn SidebarFileExplorer(
     let mut file_clipboard = use_signal(|| None::<FsFileClipboard>);
     let mut renaming_path = use_signal(|| None::<String>);
     let mut rename_draft = use_signal(String::new);
-    /// Shift 范围多选；`selected_path` 为主选中 / 锚点。
+    // Shift 范围多选；`selected_path` 为主选中 / 锚点。
     let mut selected_paths = use_signal(HashSet::<String>::new);
 
     // 外部改主选中（打开文件、chip 激活等）时，若新路径不在多选集合内则收敛为单选。

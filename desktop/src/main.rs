@@ -106,7 +106,7 @@ fn set_macos_dock_icon() {
 fn build_window(icon_path: &Path) -> WindowBuilder {
     // tao::Icon 走 image crate 解码 RGBA，必须 PNG / JPG 等 raster 格式（.ico 不行）。
     let mut wb = WindowBuilder::new()
-        .with_title("Pusa AI Console".to_string())
+        .with_title("Pusa".to_string())
         .with_inner_size(LogicalSize::new(
             DEFAULT_WINDOW_WIDTH as f64,
             DEFAULT_WINDOW_HEIGHT as f64,
