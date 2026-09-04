@@ -159,6 +159,9 @@
 html[data-theme="dark"] {
     color-scheme: dark;
 
+    /* 无边框透明窗外轮廓（贴合磨砂黑表面，比 --border-color 略亮一点） */
+    --ac-native-window-border: #3f3f46;
+
     --brand: #cccccc;
     --brand-light: #9d9d9d;
     --line: #ffffff14;

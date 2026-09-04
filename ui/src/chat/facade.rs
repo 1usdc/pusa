@@ -118,6 +118,99 @@ fn normalize_chat_models(mut models: Vec<ChatModelDto>) -> Vec<ChatModelDto> {
     models
 }
 
+fn models_url(base: &str) -> String {
+    let b = base.trim().trim_end_matches('/');
+    format!("{b}/models")
+}
+
+/// 从 OpenAI 兼容 `{base}/models` 拉取模型（已开启的密钥端点）。
+#[cfg(target_arch = "wasm32")]
+pub async fn list_chat_models_from_v1_base(
+    base: &str,
+    api_key: &str,
+) -> anyhow::Result<Vec<ChatModelDto>> {
+    use protocol::ChatModelsResponse;
+    let url = models_url(base);
+    let mut req = gloo_net::http::Request::get(&url);
+    let key = api_key.trim();
+    if !key.is_empty() {
+        req = req.header("Authorization", &format!("Bearer {key}"));
+        if key.starts_with("sk-ant-") {
+            req = req.header("x-api-key", key).header("anthropic-version", "2023-06-01");
+        }
+    }
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("models network: {e}"))?;
+    if !resp.ok() {
+        anyhow::bail!("models http {}", resp.status());
+    }
+    let body: ChatModelsResponse = resp
+        .json()
+        .await
+        .map_err(|e| anyhow::anyhow!("models decode: {e}"))?;
+    Ok(normalize_chat_models(body.data))
+}
+
+/// 从 OpenAI 兼容 `{base}/models` 拉取模型（已开启的密钥端点）。
+#[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
+pub async fn list_chat_models_from_v1_base(
+    base: &str,
+    api_key: &str,
+) -> anyhow::Result<Vec<ChatModelDto>> {
+    use protocol::ChatModelsResponse;
+    let url = models_url(base);
+    let mut builder = reqwest::Client::new().get(&url);
+    let key = api_key.trim();
+    if !key.is_empty() {
+        builder = builder.header("Authorization", format!("Bearer {key}"));
+        if key.starts_with("sk-ant-") {
+            builder = builder
+                .header("x-api-key", key)
+                .header("anthropic-version", "2023-06-01");
+        }
+    }
+    let resp = builder
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("models network: {e}"))?;
+    if !resp.status().is_success() {
+        anyhow::bail!("models http {}", resp.status());
+    }
+    let body: ChatModelsResponse = resp
+        .json()
+        .await
+        .map_err(|e| anyhow::anyhow!("models decode: {e}"))?;
+    Ok(normalize_chat_models(body.data))
+}
+
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "native")))]
+pub async fn list_chat_models_from_v1_base(
+    _base: &str,
+    _api_key: &str,
+) -> anyhow::Result<Vec<ChatModelDto>> {
+    anyhow::bail!("当前构建未启用 `native` feature，无法拉取模型列表")
+}
+
+/// `(credential_id, models)`，失败的端点跳过。
+pub async fn list_chat_models_from_credentials(
+    creds: Vec<(String, String, String)>,
+) -> Vec<(String, ChatModelDto)> {
+    let mut out = Vec::new();
+    for (id, base, key) in creds {
+        if base.trim().is_empty() {
+            continue;
+        }
+        if let Ok(models) = list_chat_models_from_v1_base(&base, &key).await {
+            for m in models {
+                out.push((id.clone(), m));
+            }
+        }
+    }
+    out
+}
+
 /// Web WASM 下 API 根地址。
 ///
 /// 优先级：`localStorage.anotherclaw_api_base_url` →（启用 `same-origin-api` 时）**空字符串**（请求走同源 `/v1/*`，由 Nginx 反代）→

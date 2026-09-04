@@ -11,17 +11,55 @@ use crate::version::app_version;
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 const WORKSPACE_POLL_MS: u64 = 1500;
 
-const GH_REPO: &str = "Another-Me-Labs/Another-Claw-Rs";
-const GH_RELEASES_LATEST_PAGE: &str =
-    "https://github.com/Another-Me-Labs/Another-Claw-Rs/releases/latest";
+const GH_REPO: &str = "1usdc/pusa";
+const GH_RELEASES_LATEST_PAGE: &str = "https://github.com/1usdc/pusa/releases/latest";
+
+/// 更新检查的重试 / 周期间隔（Velopack 与 GitHub API 回退共用）。
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+const UPDATE_RECHECK_SECS: u64 = 60 * 60;
 
 #[derive(Clone, PartialEq)]
-#[allow(dead_code)] // UpToDate / Available 在 native / wasm 路径构造
+#[allow(dead_code)] // 各变体在 native / wasm 不同路径构造
 enum UpdateState {
     Checking,
     UpToDate,
+    /// 非 Velopack 安装（`dx serve`、旧 DMG）：只能跳到发布页手动下载。
     Available { latest: String, url: String },
+    /// Velopack：后台静默下载增量包中，`pct` 为 0..=100。
+    Downloading { latest: String, pct: i16 },
+    /// Velopack：更新包已就位，点击即退出→应用→重启。
+    RestartReady { latest: String },
+    /// Velopack 下载/应用失败：退化为跳发布页。
+    Failed { latest: String, msg: String },
     Unknown,
+}
+
+/// 点击版本号时要做的事。
+#[derive(Clone, PartialEq)]
+enum UpdateAction {
+    None,
+    OpenUrl(String),
+    Restart,
+}
+
+/// 退出并应用已下载的 Velopack 更新；失败则回退为「打开发布页」。
+fn restart_to_apply_update(mut update: Signal<UpdateState>) {
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        spawn(async move {
+            if let Err(msg) = velopack_update::apply_and_restart().await {
+                let latest = match update() {
+                    UpdateState::RestartReady { latest } => latest,
+                    _ => String::new(),
+                };
+                update.set(UpdateState::Failed { latest, msg });
+            }
+        });
+    }
+    #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+    {
+        let _ = &mut update;
+    }
 }
 
 fn open_external_url(url: &str) {
@@ -50,10 +88,11 @@ mod desktop_update {
 
     use serde::Deserialize;
 
-    use super::{app_version, UpdateState};
+    use super::{app_version, UpdateState, GH_REPO};
 
-    const GH_RELEASES_API: &str =
-        "https://api.github.com/repos/Another-Me-Labs/Another-Claw-Rs/releases?per_page=20";
+    fn releases_api_url() -> String {
+        format!("https://api.github.com/repos/{GH_REPO}/releases?per_page=20")
+    }
 
     #[derive(Clone, Deserialize)]
     struct GhRelease {
@@ -117,7 +156,7 @@ mod desktop_update {
             Ok(c) => c,
             Err(_) => return UpdateState::Unknown,
         };
-        let resp = match client.get(GH_RELEASES_API).send().await {
+        let resp = match client.get(releases_api_url()).send().await {
             Ok(r) => r,
             Err(_) => return UpdateState::Unknown,
         };
@@ -135,6 +174,89 @@ mod desktop_update {
             Some(_) => UpdateState::UpToDate,
             None => UpdateState::Unknown,
         }
+    }
+}
+
+/// Velopack 路径：检查 → 后台静默下载（增量优先）→ 等用户点击重启。
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+mod velopack_update {
+    use dioxus::prelude::*;
+
+    use super::UpdateState;
+    use crate::desktop::updater::{self, Check, UpdateInfo, UpdateManager};
+
+    /// 应用是否通过 Velopack 安装（决定走一键更新还是 GitHub API 回退）。
+    pub async fn is_installed() -> bool {
+        tokio::task::spawn_blocking(|| updater::manager().is_some())
+            .await
+            .unwrap_or(false)
+    }
+
+    /// 完整跑一轮：检查并下载。返回终态（`UpToDate` / `RestartReady` / `Failed` / `Unknown`）。
+    pub async fn run_once(mut update: Signal<UpdateState>) -> UpdateState {
+        let checked = tokio::task::spawn_blocking(|| {
+            let um = updater::manager()?;
+            let result = updater::check(&um);
+            Some((um, result))
+        })
+        .await;
+
+        let (um, info) = match checked {
+            Ok(Some((_, Check::UpToDate))) => return UpdateState::UpToDate,
+            Ok(Some((um, Check::Available(info)))) => (um, info),
+            // 网络错误等：不打扰用户，下个周期再试。
+            Ok(Some((_, Check::Failed(msg)))) => {
+                eprintln!("[pusa] 检查更新失败：{msg}");
+                return UpdateState::Unknown;
+            }
+            Ok(None) | Err(_) => return UpdateState::Unknown,
+        };
+
+        let latest = info.TargetFullRelease.Version.clone();
+        update.set(UpdateState::Downloading {
+            latest: latest.clone(),
+            pct: 0,
+        });
+        match download(um, info, update, &latest).await {
+            Ok(()) => UpdateState::RestartReady { latest },
+            Err(msg) => UpdateState::Failed { latest, msg },
+        }
+    }
+
+    async fn download(
+        um: UpdateManager,
+        info: Box<UpdateInfo>,
+        mut update: Signal<UpdateState>,
+        latest: &str,
+    ) -> Result<(), String> {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<i16>();
+        let task = tokio::task::spawn_blocking(move || {
+            updater::download(&um, &info, move |pct| {
+                let _ = tx.send(pct);
+            })
+        });
+        // 进度只能在 Dioxus 运行时线程写 Signal，所以经 channel 转发到这里。
+        while let Some(pct) = rx.recv().await {
+            update.set(UpdateState::Downloading {
+                latest: latest.to_string(),
+                pct: pct.clamp(0, 100),
+            });
+        }
+        match task.await {
+            Ok(r) => r,
+            Err(e) => Err(format!("下载任务异常退出：{e}")),
+        }
+    }
+
+    /// 应用已下载的更新并重启；成功时进程直接退出，不会返回。
+    pub async fn apply_and_restart() -> Result<(), String> {
+        tokio::task::spawn_blocking(|| {
+            let um = updater::manager().ok_or("应用未通过 Velopack 安装")?;
+            let asset = updater::pending_restart(&um).ok_or("没有已下载的更新包")?;
+            updater::apply_and_restart(&um, &asset)
+        })
+        .await
+        .map_err(|e| format!("重启任务异常退出：{e}"))?
     }
 }
 
@@ -165,7 +287,23 @@ pub fn StatusBar(
             version.set(local.clone());
             #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
             {
-                update.set(desktop_update::fetch(&local).await);
+                let via_velopack = velopack_update::is_installed().await;
+                loop {
+                    let state = if via_velopack {
+                        velopack_update::run_once(update).await
+                    } else {
+                        desktop_update::fetch(&local).await
+                    };
+                    let done = matches!(state, UpdateState::RestartReady { .. });
+                    update.set(state);
+                    if done {
+                        break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(UPDATE_RECHECK_SECS)).await;
+                    if matches!(update(), UpdateState::UpToDate | UpdateState::Unknown) {
+                        update.set(UpdateState::Checking);
+                    }
+                }
             }
             #[cfg(all(target_arch = "wasm32", feature = "web"))]
             {
@@ -212,27 +350,46 @@ pub fn StatusBar(
     let dir_name = workspace_dir();
     let git = workspace_git();
     let root_path = workspace_root_path();
-    let (update_label, update_title, update_url, update_clickable) = match update() {
+    let (update_label, update_title, update_action) = match update() {
         UpdateState::Checking => (
             "检查中…".to_string(),
             "正在检查更新".to_string(),
-            None,
-            false,
+            UpdateAction::None,
         ),
+        // 最新版不显示文字，只保留悬停提示
         UpdateState::UpToDate => (
-            "已是最新".to_string(),
+            String::new(),
             "当前已是最新版本".to_string(),
-            None,
-            false,
+            UpdateAction::None,
         ),
         UpdateState::Available { latest, url } => (
             "(+1)".to_string(),
             format!("有更新：v{latest}（点击打开发布页）"),
-            Some(url),
-            true,
+            UpdateAction::OpenUrl(url),
         ),
-        UpdateState::Unknown => (String::new(), format!("Pusa · {GH_REPO}"), None, false),
+        UpdateState::Downloading { latest, pct } => (
+            format!("下载 v{latest} {pct}%"),
+            format!("正在后台下载更新 v{latest}（增量包），完成后点击重启即可"),
+            UpdateAction::None,
+        ),
+        UpdateState::RestartReady { latest } => (
+            "重启更新".to_string(),
+            format!("v{latest} 已下载，点击重启完成更新"),
+            UpdateAction::Restart,
+        ),
+        UpdateState::Failed { latest, msg } => (
+            "(+1)".to_string(),
+            format!("v{latest} 自动更新失败：{msg}（点击打开发布页手动下载）"),
+            UpdateAction::OpenUrl(GH_RELEASES_LATEST_PAGE.to_string()),
+        ),
+        UpdateState::Unknown => (
+            String::new(),
+            format!("Pusa · {GH_REPO}"),
+            UpdateAction::None,
+        ),
     };
+    let update_clickable = !matches!(update_action, UpdateAction::None);
+    let update_is_restart = matches!(update_action, UpdateAction::Restart);
 
     let workspace_title = if dir_name.is_empty() {
         String::new()
@@ -332,13 +489,18 @@ pub fn StatusBar(
                 if update_clickable {
                     button {
                         r#type: "button",
-                        class: "ac-status-bar-version is-update",
+                        class: if update_is_restart {
+                            "ac-status-bar-version is-update is-restart"
+                        } else {
+                            "ac-status-bar-version is-update"
+                        },
                         title: "{update_title}",
                         onclick: move |_| {
-                            let url = update_url
-                                .clone()
-                                .unwrap_or_else(|| GH_RELEASES_LATEST_PAGE.to_string());
-                            open_external_url(&url);
+                            match update_action.clone() {
+                                UpdateAction::OpenUrl(url) => open_external_url(&url),
+                                UpdateAction::Restart => restart_to_apply_update(update),
+                                UpdateAction::None => {}
+                            }
                         },
                         span { "v{ver} " }
                         span { class: "ac-status-bar-update", "{update_label}" }

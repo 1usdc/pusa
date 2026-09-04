@@ -7,7 +7,8 @@ use dioxus::html::point_interaction::ModifiersInteraction;
 use dioxus::prelude::*;
 use dioxus_free_icons::Icon;
 use dioxus_free_icons::icons::ld_icons::{
-    LdChevronDown, LdChevronRight, LdFile, LdFilePlus, LdFolder, LdFolderPlus, LdRefreshCw,
+    LdChevronDown, LdChevronRight, LdFile, LdFilePlus, LdFolder, LdFolderPlus, LdMonitor,
+    LdRefreshCw, LdRotateCcw, LdSmartphone,
 };
 use keyboard_types::{Key, Modifiers};
 
@@ -233,6 +234,196 @@ pub fn fs_open_in_browser(path: &str) -> Result<(), String> {
 #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
 pub fn fs_open_in_browser(_path: &str) -> Result<(), String> {
     Err("Web 端请直接使用浏览器打开。".into())
+}
+
+/// 文件树「打开预览」：HTML 文件或含 index/任意 html 的目录。
+pub fn fs_resolve_html_preview(path: &str, is_dir: bool) -> Option<String> {
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        crate::desktop::html_preview::resolve_html_preview(Path::new(path), is_dir)
+            .map(|p| p.to_string_lossy().into_owned())
+    }
+    #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+    {
+        let is_html = Path::new(path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("html") || e.eq_ignore_ascii_case("htm"));
+        if !is_dir && is_html {
+            Some(path.to_string())
+        } else {
+            None
+        }
+    }
+}
+
+pub fn fs_is_pdf_path(path: &str) -> bool {
+    Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("pdf"))
+}
+
+/// PDF 预览 iframe 的 `src`（走 `pusapreview` 协议，由 WebView 自带的 PDF 渲染器显示）。
+pub fn fs_pdf_preview_src(path: &str) -> Result<String, String> {
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        crate::desktop::html_preview::pdf_preview_src(Path::new(path))
+    }
+    #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+    {
+        let _ = path;
+        Err("Web 端暂不支持 PDF 预览。".into())
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HtmlPreviewViewport {
+    Desktop,
+    Mobile,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HtmlPreviewResizeEdge {
+    N,
+    S,
+    E,
+    W,
+    Ne,
+    Nw,
+    Se,
+    Sw,
+}
+
+#[derive(Clone, Copy)]
+struct HtmlPreviewResizeDrag {
+    edge: HtmlPreviewResizeEdge,
+    start_x: f64,
+    start_y: f64,
+    start_w: i32,
+    start_h: i32,
+    /// 机身当前的缩放比例；鼠标位移是屏幕像素，要换算回设备像素。
+    scale: f64,
+}
+
+/// 手机机身外圈的边框宽度（px），与 CSS `.ac-html-preview-device` 的 `border-width` 一致。
+const HTML_PREVIEW_PHONE_BEZEL: i32 = 1;
+
+/// 让「机身 + 边框」整体落在舞台内容区内的缩放比例，最多 1（不放大）。
+/// 舞台尺寸未知（尚未测量）时返回 1。
+fn html_preview_fit_scale(stage_w: f64, stage_h: f64, phone_w: i32, phone_h: i32) -> f64 {
+    if stage_w <= 0.0 || stage_h <= 0.0 {
+        return 1.0;
+    }
+    let outer_w = (phone_w + 2 * HTML_PREVIEW_PHONE_BEZEL) as f64;
+    let outer_h = (phone_h + 2 * HTML_PREVIEW_PHONE_BEZEL) as f64;
+    let s = (stage_w / outer_w).min(stage_h / outer_h).min(1.0);
+    ((s * 1000.0).floor() / 1000.0).max(0.2)
+}
+
+struct HtmlPreviewPhoneModel {
+    label: &'static str,
+    width: i32,
+    height: i32,
+}
+
+const HTML_PREVIEW_PHONE_MODELS: &[HtmlPreviewPhoneModel] = &[
+    HtmlPreviewPhoneModel {
+        label: "苹果 iPhone 16 Pro",
+        width: 393,
+        height: 852,
+    },
+    HtmlPreviewPhoneModel {
+        label: "苹果 iPhone SE",
+        width: 375,
+        height: 667,
+    },
+    HtmlPreviewPhoneModel {
+        label: "谷歌 Pixel 8",
+        width: 412,
+        height: 915,
+    },
+    HtmlPreviewPhoneModel {
+        label: "常见 Android 360",
+        width: 360,
+        height: 800,
+    },
+    HtmlPreviewPhoneModel {
+        label: "常见 Android 390",
+        width: 390,
+        height: 844,
+    },
+];
+
+const HTML_PREVIEW_PHONE_MIN_W: i32 = 240;
+const HTML_PREVIEW_PHONE_MIN_H: i32 = 320;
+const HTML_PREVIEW_PHONE_MAX_W: i32 = 720;
+const HTML_PREVIEW_PHONE_MAX_H: i32 = 1400;
+
+const HTML_PREVIEW_RESIZE_HANDLES: [(&str, HtmlPreviewResizeEdge); 8] = [
+    ("n", HtmlPreviewResizeEdge::N),
+    ("s", HtmlPreviewResizeEdge::S),
+    ("e", HtmlPreviewResizeEdge::E),
+    ("w", HtmlPreviewResizeEdge::W),
+    ("ne", HtmlPreviewResizeEdge::Ne),
+    ("nw", HtmlPreviewResizeEdge::Nw),
+    ("se", HtmlPreviewResizeEdge::Se),
+    ("sw", HtmlPreviewResizeEdge::Sw),
+];
+
+fn html_preview_apply_resize(drag: HtmlPreviewResizeDrag, x: f64, y: f64) -> (i32, i32) {
+    let scale = if drag.scale > 0.0 { drag.scale } else { 1.0 };
+    let dx = ((x - drag.start_x) / scale).round() as i32;
+    let dy = ((y - drag.start_y) / scale).round() as i32;
+    let mut w = drag.start_w;
+    let mut h = drag.start_h;
+    match drag.edge {
+        HtmlPreviewResizeEdge::E | HtmlPreviewResizeEdge::Ne | HtmlPreviewResizeEdge::Se => {
+            w = drag.start_w + dx;
+        }
+        HtmlPreviewResizeEdge::W | HtmlPreviewResizeEdge::Nw | HtmlPreviewResizeEdge::Sw => {
+            w = drag.start_w - dx;
+        }
+        _ => {}
+    }
+    match drag.edge {
+        HtmlPreviewResizeEdge::S | HtmlPreviewResizeEdge::Se | HtmlPreviewResizeEdge::Sw => {
+            h = drag.start_h + dy;
+        }
+        HtmlPreviewResizeEdge::N | HtmlPreviewResizeEdge::Ne | HtmlPreviewResizeEdge::Nw => {
+            h = drag.start_h - dy;
+        }
+        _ => {}
+    }
+    (
+        w.clamp(HTML_PREVIEW_PHONE_MIN_W, HTML_PREVIEW_PHONE_MAX_W),
+        h.clamp(HTML_PREVIEW_PHONE_MIN_H, HTML_PREVIEW_PHONE_MAX_H),
+    )
+}
+
+#[derive(Clone, PartialEq)]
+pub enum HtmlPreviewFrame {
+    Url(String),
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    SrcDoc(String),
+}
+
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+pub fn fs_html_preview_frame(path: &str) -> Result<HtmlPreviewFrame, String> {
+    let p = Path::new(path);
+    #[cfg(target_os = "windows")]
+    {
+        crate::desktop::html_preview::preview_srcdoc(p).map(HtmlPreviewFrame::SrcDoc)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        crate::desktop::html_preview::preview_iframe_src(p).map(HtmlPreviewFrame::Url)
+    }
+}
+
+#[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+pub fn fs_html_preview_frame(_path: &str) -> Result<HtmlPreviewFrame, String> {
+    Err("HTML 内置预览仅桌面端可用。".into())
 }
 
 /// 系统文件管理器显示文案。
@@ -579,6 +770,9 @@ pub fn SidebarFileExplorer(
     /// 最近写入成功的路径，短暂高亮。
     highlighted_paths: Signal<HashSet<String>>,
     on_open_file: EventHandler<String>,
+    /// HTML 文件/站点在中间栏内置浏览器打开。
+    on_open_html_preview: EventHandler<String>,
+    on_open_pdf_preview: EventHandler<String>,
     /// 打开终端并 cd 到目录（文件则父目录）。
     on_open_in_terminal: EventHandler<String>,
     /// 将路径加入当前 pusa 聊天草稿（支持多选）。
@@ -1138,35 +1332,82 @@ pub fn SidebarFileExplorer(
                             style: "{menu_style}",
                             onclick: move |evt| evt.stop_propagation(),
 
-                            if !is_dir {
-                                button {
-                                    r#type: "button",
-                                    class: "ac-chat-history-ctx-menu__item",
-                                    role: "menuitem",
-                                    onclick: {
-                                        let path = path.clone();
-                                        move |_| {
-                                            ctx_menu.set(None);
-                                            on_open_file.call(path.clone());
+                            {
+                                let html_preview = fs_resolve_html_preview(&path, is_dir);
+                                let is_pdf = !is_dir && fs_is_pdf_path(&path);
+                                rsx! {
+                                    if let Some(html) = html_preview.clone() {
+                                        button {
+                                            r#type: "button",
+                                            class: "ac-chat-history-ctx-menu__item",
+                                            role: "menuitem",
+                                            onclick: move |_| {
+                                                ctx_menu.set(None);
+                                                on_open_html_preview.call(html.clone());
+                                            },
+                                            "在Pusa打开"
                                         }
-                                    },
-                                    "打开预览"
-                                }
-                                button {
-                                    r#type: "button",
-                                    class: "ac-chat-history-ctx-menu__item",
-                                    role: "menuitem",
-                                    onclick: {
-                                        let path = path.clone();
-                                        move |_| {
-                                            ctx_menu.set(None);
-                                            match fs_open_in_browser(&path) {
-                                                Ok(()) => notice.set(None),
-                                                Err(e) => notice.set(Some(e)),
-                                            }
+                                    } else if is_pdf {
+                                        button {
+                                            r#type: "button",
+                                            class: "ac-chat-history-ctx-menu__item",
+                                            role: "menuitem",
+                                            onclick: {
+                                                let path = path.clone();
+                                                move |_| {
+                                                    ctx_menu.set(None);
+                                                    on_open_pdf_preview.call(path.clone());
+                                                }
+                                            },
+                                            "在Pusa打开"
                                         }
-                                    },
-                                    "在浏览器中打开"
+                                        button {
+                                            r#type: "button",
+                                            class: "ac-chat-history-ctx-menu__item",
+                                            role: "menuitem",
+                                            onclick: {
+                                                let path = path.clone();
+                                                move |_| {
+                                                    ctx_menu.set(None);
+                                                    match fs_open_in_browser(&path) {
+                                                        Ok(()) => notice.set(None),
+                                                        Err(e) => notice.set(Some(e)),
+                                                    }
+                                                }
+                                            },
+                                            "在浏览器中打开"
+                                        }
+                                    } else if !is_dir {
+                                        button {
+                                            r#type: "button",
+                                            class: "ac-chat-history-ctx-menu__item",
+                                            role: "menuitem",
+                                            onclick: {
+                                                let path = path.clone();
+                                                move |_| {
+                                                    ctx_menu.set(None);
+                                                    on_open_file.call(path.clone());
+                                                }
+                                            },
+                                            "打开预览"
+                                        }
+                                        button {
+                                            r#type: "button",
+                                            class: "ac-chat-history-ctx-menu__item",
+                                            role: "menuitem",
+                                            onclick: {
+                                                let path = path.clone();
+                                                move |_| {
+                                                    ctx_menu.set(None);
+                                                    match fs_open_in_browser(&path) {
+                                                        Ok(()) => notice.set(None),
+                                                        Err(e) => notice.set(Some(e)),
+                                                    }
+                                                }
+                                            },
+                                            "在浏览器中打开"
+                                        }
+                                    }
                                 }
                             }
                             button {
@@ -1383,7 +1624,7 @@ pub fn SidebarFileExplorer(
                             }
                             button {
                                 r#type: "button",
-                                class: "ac-chat-history-ctx-menu__item is-danger",
+                                class: "ac-chat-history-ctx-menu__item",
                                 role: "menuitem",
                                 onclick: {
                                     let path = path.clone();
@@ -1911,6 +2152,291 @@ pub fn FileMdPreviewPane(
                 Err(err) => rsx! {
                     div { class: "ac-file-editor-error", "{err}" }
                 },
+            }
+        }
+    }
+}
+
+/// 中间栏内置预览：`srcdoc` + `pusapreview://` 资源，不打开系统浏览器。
+#[component]
+pub fn FileHtmlPreviewPane(path: String) -> Element {
+    let path_key = path.clone();
+    let frame = use_memo(move || fs_html_preview_frame(&path_key));
+    let title = fs_file_title(&path);
+    let mut viewport = use_signal(|| HtmlPreviewViewport::Desktop);
+    let mut drawer_open = use_signal(|| false);
+    let mut model_idx = use_signal(|| 0usize);
+    let default_model = &HTML_PREVIEW_PHONE_MODELS[0];
+    let mut phone_w = use_signal(|| default_model.width);
+    let mut phone_h = use_signal(|| default_model.height);
+    let mut resized = use_signal(|| false);
+    let mut drag = use_signal(|| None::<HtmlPreviewResizeDrag>);
+    // 舞台内容区尺寸（不含 padding），由 ResizeObserver 回填；用于把机身缩放到能完整放下。
+    let mut stage_size = use_signal(|| (0.0f64, 0.0f64));
+    let is_mobile = viewport() == HtmlPreviewViewport::Mobile;
+    let (stage_w, stage_h) = stage_size();
+    let phone_scale = html_preview_fit_scale(stage_w, stage_h, phone_w(), phone_h());
+    let slot_w = (phone_w() + 2 * HTML_PREVIEW_PHONE_BEZEL) as f64 * phone_scale;
+    let slot_h = (phone_h() + 2 * HTML_PREVIEW_PHONE_BEZEL) as f64 * phone_scale;
+    let stage_class = if is_mobile {
+        "ac-html-preview-stage is-mobile"
+    } else {
+        "ac-html-preview-stage"
+    };
+    let pane_class = if drag().is_some() {
+        "ac-html-preview-pane is-resizing"
+    } else {
+        "ac-html-preview-pane"
+    };
+    let selected_model = HTML_PREVIEW_PHONE_MODELS
+        .get(model_idx())
+        .unwrap_or(&HTML_PREVIEW_PHONE_MODELS[0]);
+    let iframe_title = format!("预览 {title}");
+
+    rsx! {
+        section {
+            class: "{pane_class}",
+            onmousemove: move |event| {
+                let Some(current) = drag() else {
+                    return;
+                };
+                let coords = event.data.client_coordinates();
+                let (next_w, next_h) = html_preview_apply_resize(current, coords.x, coords.y);
+                if next_w != phone_w() || next_h != phone_h() {
+                    phone_w.set(next_w);
+                    phone_h.set(next_h);
+                    resized.set(true);
+                }
+            },
+            onmouseup: move |_| drag.set(None),
+            onmouseleave: move |_| drag.set(None),
+            div {
+                class: "{stage_class}",
+                onresize: move |event| {
+                    if let Ok(size) = event.data().get_content_box_size() {
+                        let next = (size.width, size.height);
+                        if next != stage_size() {
+                            stage_size.set(next);
+                        }
+                    }
+                },
+                if is_mobile {
+                    // slot 占据缩放后的实际尺寸，机身内部仍按真实设备像素排版，只做视觉缩放，
+                    // 这样 iframe 里的媒体查询与真机一致，同时机身永远不会顶到舞台上下边。
+                    div {
+                        class: "ac-html-preview-device-slot",
+                        style: "width: {slot_w:.1}px; height: {slot_h:.1}px;",
+                        div {
+                            class: "ac-html-preview-device",
+                            style: "width: {phone_w()}px; height: {phone_h()}px; transform: scale({phone_scale});",
+                            div { class: "ac-html-preview-device-body",
+                                match frame() {
+                                    Ok(HtmlPreviewFrame::Url(src)) => rsx! {
+                                        iframe {
+                                            class: "ac-html-preview-frame",
+                                            src: "{src}",
+                                            title: "{iframe_title}",
+                                        }
+                                    },
+                                    Ok(HtmlPreviewFrame::SrcDoc(srcdoc)) => rsx! {
+                                        iframe {
+                                            class: "ac-html-preview-frame",
+                                            srcdoc: "{srcdoc}",
+                                            title: "{iframe_title}",
+                                        }
+                                    },
+                                    Err(err) => rsx! {
+                                        div { class: "ac-file-editor-error", "{err}" }
+                                    },
+                                }
+                            }
+                            for (name, edge) in HTML_PREVIEW_RESIZE_HANDLES {
+                                div {
+                                    class: "ac-html-preview-handle ac-html-preview-handle-{name}",
+                                    onmousedown: move |event| {
+                                        event.prevent_default();
+                                        event.stop_propagation();
+                                        let coords = event.data.client_coordinates();
+                                        drag.set(Some(HtmlPreviewResizeDrag {
+                                            edge,
+                                            start_x: coords.x,
+                                            start_y: coords.y,
+                                            start_w: phone_w(),
+                                            start_h: phone_h(),
+                                            scale: phone_scale,
+                                        }));
+                                    },
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    match frame() {
+                        Ok(HtmlPreviewFrame::Url(src)) => rsx! {
+                            iframe {
+                                class: "ac-html-preview-frame",
+                                src: "{src}",
+                                title: "{iframe_title}",
+                            }
+                        },
+                        Ok(HtmlPreviewFrame::SrcDoc(srcdoc)) => rsx! {
+                            iframe {
+                                class: "ac-html-preview-frame",
+                                srcdoc: "{srcdoc}",
+                                title: "{iframe_title}",
+                            }
+                        },
+                        Err(err) => rsx! {
+                            div { class: "ac-file-editor-error", "{err}" }
+                        },
+                    }
+                }
+            }
+            if is_mobile {
+                div { class: "ac-html-preview-phone-bar",
+                    button {
+                        r#type: "button",
+                        class: if drawer_open() {
+                            "ac-html-preview-chip is-active"
+                        } else {
+                            "ac-html-preview-chip"
+                        },
+                        title: "选择手机型号",
+                        aria_label: "选择手机型号",
+                        aria_expanded: drawer_open(),
+                        onclick: move |_| drawer_open.toggle(),
+                        Icon {
+                            icon: LdSmartphone,
+                            width: 14,
+                            height: 14,
+                            fill: "currentColor",
+                        }
+                        span { "{selected_model.label}" }
+                    }
+                }
+                if drawer_open() {
+                    button {
+                        r#type: "button",
+                        class: "ac-html-preview-drawer-mask",
+                        aria_label: "关闭型号列表",
+                        onclick: move |_| drawer_open.set(false),
+                    }
+                }
+                aside {
+                    class: if drawer_open() {
+                        "ac-html-preview-drawer is-open"
+                    } else {
+                        "ac-html-preview-drawer"
+                    },
+                    "aria-label": "手机型号",
+                    p { class: "ac-html-preview-drawer-title", "手机型号" }
+                    for (idx, model) in HTML_PREVIEW_PHONE_MODELS.iter().enumerate() {
+                        button {
+                            r#type: "button",
+                            class: if idx == model_idx() {
+                                "ac-html-preview-model is-active"
+                            } else {
+                                "ac-html-preview-model"
+                            },
+                            onclick: move |_| {
+                                model_idx.set(idx);
+                                phone_w.set(HTML_PREVIEW_PHONE_MODELS[idx].width);
+                                phone_h.set(HTML_PREVIEW_PHONE_MODELS[idx].height);
+                                resized.set(false);
+                                drawer_open.set(false);
+                            },
+                            span { class: "ac-html-preview-model-name", "{model.label}" }
+                            span { class: "ac-html-preview-model-size", "{model.width} × {model.height}" }
+                        }
+                    }
+                }
+            }
+            // 悬浮球：单击直接在桌面 / 手机视口之间切换，图标显示当前模式。
+            div { class: "ac-html-preview-fab",
+                button {
+                    r#type: "button",
+                    class: "ac-html-preview-fab-ball",
+                    title: if is_mobile { "切换为桌面预览" } else { "切换为手机预览" },
+                    aria_label: if is_mobile { "切换为桌面预览" } else { "切换为手机预览" },
+                    aria_pressed: is_mobile,
+                    onclick: move |_| {
+                        if viewport() == HtmlPreviewViewport::Mobile {
+                            viewport.set(HtmlPreviewViewport::Desktop);
+                            drawer_open.set(false);
+                        } else {
+                            viewport.set(HtmlPreviewViewport::Mobile);
+                        }
+                    },
+                    if is_mobile {
+                        Icon {
+                            icon: LdSmartphone,
+                            width: 16,
+                            height: 16,
+                            fill: "currentColor",
+                        }
+                    } else {
+                        Icon {
+                            icon: LdMonitor,
+                            width: 16,
+                            height: 16,
+                            fill: "currentColor",
+                        }
+                    }
+                }
+                // 手动拖过机身尺寸后才出现：还原为当前型号的默认尺寸。
+                if is_mobile && resized() {
+                    button {
+                        r#type: "button",
+                        class: "ac-html-preview-fab-ball is-secondary",
+                        title: "还原为当前型号默认尺寸",
+                        aria_label: "还原尺寸",
+                        onclick: move |_| {
+                            let model = HTML_PREVIEW_PHONE_MODELS
+                                .get(model_idx())
+                                .unwrap_or(&HTML_PREVIEW_PHONE_MODELS[0]);
+                            phone_w.set(model.width);
+                            phone_h.set(model.height);
+                            resized.set(false);
+                        },
+                        Icon {
+                            icon: LdRotateCcw,
+                            width: 16,
+                            height: 16,
+                            fill: "currentColor",
+                        }
+                    }
+                }
+            }
+            if drag().is_some() {
+                div { class: "ac-html-preview-resize-mask" }
+            }
+        }
+    }
+}
+
+/// PDF 内置预览：整页 iframe，渲染交给 WebView（WKWebView / WebView2 均内置 PDF 阅读器）。
+#[component]
+pub fn FilePdfPreviewPane(path: String) -> Element {
+    let path_key = path.clone();
+    let src = use_memo(move || fs_pdf_preview_src(&path_key));
+    let title = fs_file_title(&path);
+    let iframe_title = format!("预览 {title}");
+
+    rsx! {
+        section { class: "ac-html-preview-pane ac-pdf-preview-pane",
+            div { class: "ac-html-preview-stage",
+                match src() {
+                    Ok(src) => rsx! {
+                        iframe {
+                            class: "ac-html-preview-frame",
+                            src: "{src}",
+                            title: "{iframe_title}",
+                        }
+                    },
+                    Err(err) => rsx! {
+                        div { class: "ac-file-editor-error", "{err}" }
+                    },
+                }
             }
         }
     }

@@ -1,6 +1,6 @@
 [package]
 name = "desktop"
-version = "1.1.0"
+version = "1.1.2"
 edition = "2021"
 description = "Desktop entry (Dioxus desktop / system WebView)"
 
@@ -20,6 +20,8 @@ dioxus = { version = "0.7.9", default-features = false, features = [
     "asset",
 ] }
 ui = { path = "../ui", default-features = false, features = ["native"] }
+# 自动更新：安装器 / 增量包 / 重启应用（打包见 scripts/velopack-pack-*.sh）
+velopack = "1.2"
 
 # 开发态 Dock 图标：裸 `cargo run` / `just desktop` 无 .app 包时，需 AppKit 设置。
 [target.'cfg(target_os = "macos")'.dependencies]

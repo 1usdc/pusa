@@ -30,9 +30,9 @@ pub use error_text::friendly_chat_error_message;
 pub use facade::api_base_url;
 pub use facade::{
     activate_role, create_conversation, create_role, delete_conversation, delete_role,
-    install_skill, list_chat_models, list_conversations, load_agent_run_detail,
-    load_conversation_messages, load_equipped_skills, load_installed_skills, load_roles,
-    load_skill_market, run_chat_turn, toggle_skill_equip, uninstall_installed_skill,
+    install_skill, list_chat_models, list_chat_models_from_credentials, list_conversations,
+    load_agent_run_detail, load_conversation_messages, load_equipped_skills, load_installed_skills,
+    load_roles, load_skill_market, run_chat_turn, toggle_skill_equip, uninstall_installed_skill,
     update_conversation_title, update_role,
 };
 pub use markdown::ChatMarkdownBody;

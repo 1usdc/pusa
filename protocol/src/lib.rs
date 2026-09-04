@@ -15,9 +15,10 @@ pub struct ChatMessageDto {
 /// 普通聊天 Agent 工具循环缺省最大步数。
 pub const DEFAULT_CHAT_MAX_AGENT_STEPS: u32 = 200;
 
-/// 聊天栏 Agent 工作模式（与 UI 工具条 Agent / Plan / Debug / Multitask / Ask 对齐）。
+/// 聊天栏 Agent 工作模式（与 UI 工具条 Agent / Ask / Plan / Debug / Multitask 对齐）。
 ///
 /// - [`ChatTurnMode::Agent`]：单通道工具循环（默认）。
+/// - [`ChatTurnMode::Ask`]：问答，不跑工具循环（`disable_tools`）。
 /// - [`ChatTurnMode::Multitask`]：父 Agent 可 `spawn_subagent` 并行拆任务；后续发送不排队。
 /// - 其余变体先占位，执行层暂与 Agent 相同。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -34,6 +35,36 @@ pub enum ChatTurnMode {
 impl ChatTurnMode {
     pub const fn is_multitask(self) -> bool {
         matches!(self, Self::Multitask)
+    }
+
+    pub const fn is_ask(self) -> bool {
+        matches!(self, Self::Ask)
+    }
+
+    /// Ask 模式不使用工具；其余模式走 Agent 工具循环。
+    pub const fn allows_tools(self) -> bool {
+        !self.is_ask()
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Agent => "agent",
+            Self::Plan => "plan",
+            Self::Debug => "debug",
+            Self::Multitask => "multitask",
+            Self::Ask => "ask",
+        }
+    }
+
+    pub fn parse_persist(raw: &str) -> Option<Self> {
+        match raw.trim() {
+            "agent" => Some(Self::Agent),
+            "plan" => Some(Self::Plan),
+            "debug" => Some(Self::Debug),
+            "multitask" => Some(Self::Multitask),
+            "ask" => Some(Self::Ask),
+            _ => None,
+        }
     }
 }
 
@@ -54,6 +85,9 @@ pub struct ChatTurnRequest {
     /// 工作模式；缺省 [`ChatTurnMode::Agent`]。旧客户端不传此字段。
     #[serde(default)]
     pub mode: ChatTurnMode,
+    /// Ask 模式为 true：不进入工具循环。旧 core 可忽略未知字段。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub disable_tools: bool,
 }
 
 /// 会话列表中的摘要。
@@ -451,10 +485,11 @@ pub struct LlmConfigDto {
     /// 密钥格式偏好（OpenAI / Anthropic）。旧后端不返回时默认 OpenAI。
     #[serde(default)]
     pub provider: LlmApiProvider,
-    /// 已保存的全部密钥组。旧后端不返回时为空；对话使用 `active_credential_id` 对应项。
+    /// 已保存的全部密钥组。旧后端不返回时为空。
+    /// 对话默认走 `active_credential_id`；UI 可同时开启多组，并合并其模型列表。
     #[serde(default)]
     pub credentials: Vec<LlmCredentialDto>,
-    /// 当前启用的密钥组 id；空表示尚未配置。
+    /// 核心库当前用于对话的密钥组 id；空表示尚未配置。与 UI 多选开关独立。
     #[serde(default)]
     pub active_credential_id: String,
 }
@@ -907,5 +942,25 @@ mod tests {
         let json = serde_json::to_string(&detail).unwrap();
         let decoded: AgentRunDetailDto = serde_json::from_str(&json).unwrap();
         assert_eq!(decoded, detail);
+    }
+
+    #[test]
+    fn chat_turn_ask_mode_serializes_disable_tools() {
+        let req = ChatTurnRequest {
+            conversation_id: Some("c1".into()),
+            messages: vec![],
+            system: None,
+            model: "gpt".into(),
+            max_agent_steps: Some(1),
+            mode: ChatTurnMode::Ask,
+            disable_tools: true,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("\"mode\":\"ask\""));
+        assert!(json.contains("\"disable_tools\":true"));
+        let decoded: ChatTurnRequest = serde_json::from_str(&json).unwrap();
+        assert!(decoded.mode.is_ask());
+        assert!(decoded.disable_tools);
+        assert!(!decoded.mode.allows_tools());
     }
 }

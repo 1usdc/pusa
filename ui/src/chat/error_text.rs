@@ -47,7 +47,37 @@ pub fn friendly_chat_error_message(raw: &str) -> String {
         return "网络暂时不可用，请稍后重试".to_string();
     }
 
+    // 上游把 nginx/Express 错误页整页塞进 `OpenAI HTTP 500: <!DOCTYPE html>…`。
+    // 500 不是 JSON `{"error":…}`，正文也不该进聊天气泡。
+    if looks_like_html_error_page(&lower) {
+        let head = status_line_without_html(raw);
+        if head.is_empty() {
+            return "上游返回了网页错误（非 JSON），请检查该密钥的 Base URL。".to_string();
+        }
+        return format!("{head}：对方返回了网页而不是 JSON，已隐藏 HTML。请检查 Base URL 是否为 /v1 兼容接口。");
+    }
+
     raw.to_string()
+}
+
+fn looks_like_html_error_page(lower: &str) -> bool {
+    lower.contains("<!doctype")
+        || lower.contains("<html")
+        || lower.contains("<pre>")
+        || lower.contains("<body")
+}
+
+/// 只保留状态行（`OpenAI HTTP 500 Internal Server Error`），丢掉后面的网页。
+fn status_line_without_html(raw: &str) -> String {
+    let first = raw.lines().next().unwrap_or(raw);
+    let cut = first
+        .find('<')
+        .map(|i| &first[..i])
+        .unwrap_or(first)
+        .trim()
+        .trim_end_matches(':')
+        .trim();
+    cut.to_string()
 }
 
 #[cfg(test)]
@@ -121,5 +151,15 @@ mod tests {
         // 4xx 业务错误（非 401/429）保持原文，避免误把"模型未配置"等可操作错误吃掉。
         let raw = "HTTP 400 model required";
         assert_eq!(friendly_chat_error_message(raw), raw);
+    }
+
+    #[test]
+    fn hides_html_body_on_openai_http_500() {
+        let raw = "OpenAI HTTP 500 Internal Server Error: <!DOCTYPE html>\n<html lang=\"en\">\n<pre>Internal Server Error</pre>";
+        let out = friendly_chat_error_message(raw);
+        assert!(out.starts_with("OpenAI HTTP 500 Internal Server Error"));
+        assert!(!out.to_lowercase().contains("<!doctype"));
+        assert!(!out.contains("<html"));
+        assert!(out.contains("网页"));
     }
 }

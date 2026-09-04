@@ -245,7 +245,7 @@ pub fn NativeTitleBar(
                                     show_titlebar_settings_menu.set(false);
                                     show_settings_modal.set(true);
                                 },
-                                "API Key"
+                                "AI大模型"
                             }
                             TitlebarThemeToggle {
                                     ui_theme,

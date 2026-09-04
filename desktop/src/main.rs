@@ -1,7 +1,9 @@
 //! 桌面（系统 WebView / wry）入口。
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use dioxus::desktop::tao::dpi::LogicalSize;
+use dioxus::desktop::wry::http::Response;
 use dioxus::desktop::tao::window::Icon;
 use dioxus::desktop::{Config, WindowBuilder};
 use dioxus::prelude::*;
@@ -30,6 +32,10 @@ const PUSA_DOCK_ICON_PNG: &[u8] = include_bytes!("../assets/app-icon.png");
 // Dioxus 0.7 的 `LaunchBuilder::new` 在部分配置下仍会误报弃用。
 #[allow(deprecated)]
 fn main() {
+    // 必须最先执行：Velopack 在安装 / 卸载 / 更新后首启等钩子场景下可能直接退出或重启进程。
+    // 非 Velopack 安装（`dx serve`、旧 DMG）时这里是空操作。
+    velopack::VelopackApp::build().run();
+
     let icon_path = pusa_icon_png();
 
     dioxus::LaunchBuilder::new()
@@ -41,12 +47,32 @@ fn main() {
                 .with_window(build_window(&icon_path))
                 .with_background_color(WEBVIEW_BG)
                 .with_custom_index(BOOT_INDEX_HTML.to_string())
+                .with_custom_protocol(ui::HTML_PREVIEW_PROTOCOL, |_id, request| {
+                    html_preview_protocol_response(&request.uri().to_string())
+                })
                 .with_on_window(|_window, _dom| {
                     #[cfg(target_os = "macos")]
                     set_macos_dock_icon();
                 })
         })
         .launch(App);
+}
+
+fn html_preview_protocol_response(uri: &str) -> Response<Cow<'static, [u8]>> {
+    match ui::serve_html_preview(uri) {
+        Ok((mime, body)) => Response::builder()
+            .status(200)
+            .header("Content-Type", mime)
+            .header("Cache-Control", "no-cache")
+            .header("Access-Control-Allow-Origin", "*")
+            .body(Cow::from(body))
+            .unwrap_or_else(|_| Response::new(Cow::from(Vec::<u8>::new()))),
+        Err(status) => Response::builder()
+            .status(status)
+            .header("Content-Type", "text/plain; charset=utf-8")
+            .body(Cow::from(b"Not Found".to_vec()))
+            .unwrap_or_else(|_| Response::new(Cow::from(Vec::<u8>::new()))),
+    }
 }
 
 fn load_window_icon(path: &Path) -> Option<Icon> {
