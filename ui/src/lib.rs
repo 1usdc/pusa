@@ -126,6 +126,8 @@ fn WebAppShell() -> Element {
         show_titlebar_settings_menu,
         developer_mode,
     });
+    let open_browser_tick = use_signal(|| 0u64);
+    use_context_provider(|| crate::shell::browser::OpenBrowserTick(open_browser_tick));
 
     rsx! {
         document::Title { "Pusa" }

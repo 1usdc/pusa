@@ -111,9 +111,16 @@ fi
 
 say "== 3) 上传 GitHub Release =="
 if [[ "${MODE}" == "velopack" ]]; then
-	# vpk 会上传 .pkg / Portable.zip / full+delta .nupkg / releases.<channel>.json；
+	# vpk 会上传 full+delta .nupkg / releases.<channel>.json（mac 始终 --noInst，无 .pkg）；
 	# --merge 让 Windows 产物之后能挂到同一个 Release。
 	vpk_upload_github "${VPK_OUT}" "${VPK_CHANNEL}" "${TAG}" "${SHA}" "${TAG#desktop-v}"
+	# DMG 由 velopack-dmg-mac.sh 生成，不在 vpk 的资产清单里，单独用 gh 挂到同一个 Release
+	shopt -s nullglob
+	dmgs=( "${VPK_OUT}"/*.dmg )
+	shopt -u nullglob
+	if [[ ${#dmgs[@]} -gt 0 ]]; then
+		gh release upload "${TAG}" "${dmgs[@]}" --clobber
+	fi
 	echo "✓ macOS Velopack Release ${TAG} 已上传（channel ${VPK_CHANNEL}）"
 	ls -lh "${VPK_OUT}"
 	exit 0

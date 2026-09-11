@@ -2,7 +2,8 @@
 # macOS：把 dx bundle 产出的 Pusa.app 打成 Velopack 发布包（签名 + 公证由 vpk 完成）。
 #
 # 输入：desktop/dist/Pusa.app（已嵌入 libpusa_core.dylib，**未签名**——vpk 会在注入 UpdateMac 后统一深签）
-# 输出：desktop/dist/velopack/（.pkg 安装器、Portable.zip、full/delta .nupkg、releases.<channel>.json）
+# 输出：desktop/dist/velopack/（.dmg、full/delta .nupkg、releases.<channel>.json）
+#   始终 --noInst：不出 .pkg；Portable.zip 由 velopack-dmg-mac.sh 改封装成 DMG 后删除（DMG=0 则保留 zip）。
 #
 # 用法：
 #   bash scripts/velopack-pack-mac.sh            # 签名 + 公证
@@ -10,7 +11,6 @@
 #   RELEASE_NOTES_FILE=CHANGELOG.md ...          # 可选：写进 releases.json 的发布说明（markdown）
 #
 # 凭证：.env.signing（MACOS_SIGNING_IDENTITY / APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID）
-#   .pkg 需要 “Developer ID Installer” 证书；钥匙串里没有时自动 --noInst，只出 Portable.zip。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -58,16 +58,6 @@ resolve_app_identity() {
 		| awk -F'"' '/Developer ID Application/ { print $2; exit }'
 }
 
-resolve_installer_identity() {
-	if [[ -n "${MACOS_INSTALLER_IDENTITY:-}" ]]; then
-		printf '%s' "${MACOS_INSTALLER_IDENTITY}"
-		return 0
-	fi
-	# Installer 证书不在 codesigning policy 里，直接列全部
-	security find-identity -v 2>/dev/null \
-		| awk -F'"' '/Developer ID Installer/ { print $2; exit }'
-}
-
 # vpk 只接受 notarytool 的 keychain profile 名；用 .env.signing 里的 Apple ID 凭证（重新）写一份
 ensure_notary_profile() {
 	[[ -n "${APPLE_ID:-}" ]] || die "请设置 APPLE_ID（或 NOTARIZE=0 跳过公证）"
@@ -80,7 +70,7 @@ ensure_notary_profile() {
 }
 
 main() {
-	local app ver channel out app_identity inst_identity main_exe
+	local app ver channel out app_identity main_exe
 	local -a args
 
 	app="$(find_app_bundle)"
@@ -96,7 +86,6 @@ main() {
 
 	app_identity="$(resolve_app_identity)"
 	[[ -n "${app_identity}" ]] || die "未找到 Developer ID Application 证书；请设置 MACOS_SIGNING_IDENTITY 或在钥匙串安装证书"
-	inst_identity="$(resolve_installer_identity)"
 
 	log "== Velopack pack（macOS）=="
 	log "   app:      ${app}"
@@ -104,10 +93,13 @@ main() {
 	log "   channel:  ${channel}"
 	log "   mainExe:  ${main_exe}"
 	log "   sign app: ${app_identity}"
+	log "   installer: --noInst（不出 .pkg，用户安装用 .dmg）"
 
 	mkdir -p "${out}"
 	# 清掉本机上次同版本残留，但保留 vpk download 拉下来的旧版（用于 delta）
 	find "${out}" -maxdepth 1 -type f -name "${VPK_PACK_ID}-${ver}-*" -delete 2>/dev/null || true
+	# 旧版可能留下的 Setup.pkg 一并清掉，避免误上传
+	rm -f "${out}/${VPK_PACK_ID}-${channel}-Setup.pkg"
 
 	# vpk 强制要求 --signEntitlements 文件以 .entitlements 结尾；仓库里是 .plist，复制一份改名
 	# （放临时目录，避免混进产物目录被 vpk upload 一起上传）
@@ -129,15 +121,8 @@ main() {
 		--outputDir "${out}"
 		--signAppIdentity "${app_identity}"
 		--signEntitlements "${entitlements_vpk}"
+		--noInst
 	)
-
-	if [[ -n "${inst_identity}" ]]; then
-		log "   sign pkg: ${inst_identity}"
-		args+=(--signInstallIdentity "${inst_identity}")
-	else
-		log "   ⚠ 钥匙串无 “Developer ID Installer” 证书：跳过 .pkg，只出 Portable.zip（--noInst）"
-		args+=(--noInst)
-	fi
 
 	if [[ "${NOTARIZE}" == "1" ]]; then
 		ensure_notary_profile
@@ -153,6 +138,11 @@ main() {
 
 	# 与 CI 一致：非交互
 	vpk "${args[@]}" --yes
+
+	# Portable.zip → DMG（拖拽安装更符合 mac 习惯；.app 仍是 Velopack 处理过的，支持应用内更新）
+	if [[ "${DMG:-1}" == "1" ]]; then
+		bash "${ROOT}/scripts/velopack-dmg-mac.sh"
+	fi
 
 	log "✓ Velopack 产物：${out}"
 	ls -lh "${out}"

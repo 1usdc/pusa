@@ -448,12 +448,16 @@ enum CenterTabKind {
     FileHtmlPreview { path: String },
     /// PDF 内置预览（不写入操作缓存）。
     FilePdfPreview { path: String },
+    /// STL 3D 模型内置预览（不写入操作缓存）。
+    FileStlPreview { path: String },
     /// 工具轨迹中某次编辑的前后对比（不写入操作缓存）。
     FileDiff {
         path: String,
         old_text: String,
         new_text: String,
     },
+    /// Pusa 浏览器：地址栏 + iframe 浏览任意网址（url 为空时显示地址栏空态）。
+    WebBrowser { url: String },
 }
 
 #[derive(Clone, PartialEq)]
@@ -488,6 +492,7 @@ enum CenterTabKindCache {
     SkillMarket { key: String },
     Plugin { key: String },
     File { path: String },
+    WebBrowser { url: String },
 }
 
 impl CenterTabKindCache {
@@ -500,10 +505,12 @@ impl CenterTabKindCache {
             CenterTabKind::SkillMarket { key } => Some(Self::SkillMarket { key: key.clone() }),
             CenterTabKind::Plugin { key } => Some(Self::Plugin { key: key.clone() }),
             CenterTabKind::File { path } => Some(Self::File { path: path.clone() }),
+            CenterTabKind::WebBrowser { url } => Some(Self::WebBrowser { url: url.clone() }),
             CenterTabKind::FileDiff { .. }
             | CenterTabKind::FileMdPreview { .. }
             | CenterTabKind::FileHtmlPreview { .. }
-            | CenterTabKind::FilePdfPreview { .. } => None,
+            | CenterTabKind::FilePdfPreview { .. }
+            | CenterTabKind::FileStlPreview { .. } => None,
         }
     }
 }
@@ -516,6 +523,7 @@ impl From<CenterTabKindCache> for CenterTabKind {
             CenterTabKindCache::SkillMarket { key } => Self::SkillMarket { key },
             CenterTabKindCache::Plugin { key } => Self::Plugin { key },
             CenterTabKindCache::File { path } => Self::File { path },
+            CenterTabKindCache::WebBrowser { url } => Self::WebBrowser { url },
         }
     }
 }
@@ -860,6 +868,8 @@ fn persist_file_tree_state(
 }
 
 const CENTER_TAB_ROLE_ID: &str = "role";
+/// Pusa 浏览器标签 id 前缀；可同时开多个（`web-browser:1`、`web-browser:2`…）。
+const CENTER_TAB_WEB_BROWSER_PREFIX: &str = "web-browser:";
 
 impl CenterTab {
     fn role() -> Self {
@@ -950,6 +960,39 @@ impl CenterTab {
             kind: CenterTabKind::FilePdfPreview { path },
         }
     }
+
+    fn file_stl_preview(path: String) -> Self {
+        let name = super::files::fs_file_title(&path);
+        let id = format!("file-stl-preview:{path}");
+        Self {
+            id,
+            title: format!("预览 · {name}"),
+            kind: CenterTabKind::FileStlPreview { path },
+        }
+    }
+
+    /// 新建一个 Pusa 浏览器标签（每次调用都是新标签，不复用已有的）。
+    ///
+    /// id 取「现有浏览器标签最大序号 + 1」，保证与已打开 / 从缓存恢复的标签不撞；
+    /// 老缓存里的固定 id `web-browser` 视为序号 0。
+    fn web_browser(existing: &[CenterTab]) -> Self {
+        let next = existing
+            .iter()
+            .filter(|t| matches!(t.kind, CenterTabKind::WebBrowser { .. }))
+            .map(|t| {
+                t.id
+                    .strip_prefix(CENTER_TAB_WEB_BROWSER_PREFIX)
+                    .and_then(|n| n.parse::<u32>().ok())
+                    .unwrap_or(0)
+            })
+            .max()
+            .map_or(1, |n| n + 1);
+        Self {
+            id: format!("{CENTER_TAB_WEB_BROWSER_PREFIX}{next}"),
+            title: super::browser::browser_tab_title(""),
+            kind: CenterTabKind::WebBrowser { url: String::new() },
+        }
+    }
 }
 
 fn center_open_or_focus(tabs: &mut Vec<CenterTab>, active_id: &mut Option<String>, tab: CenterTab) {
@@ -995,7 +1038,9 @@ fn center_tab_skill_key(kind: &CenterTabKind) -> Option<String> {
         | CenterTabKind::FileMdPreview { .. }
         | CenterTabKind::FileHtmlPreview { .. }
         | CenterTabKind::FilePdfPreview { .. }
-        | CenterTabKind::FileDiff { .. } => None,
+        | CenterTabKind::FileStlPreview { .. }
+        | CenterTabKind::FileDiff { .. }
+        | CenterTabKind::WebBrowser { .. } => None,
     }
 }
 
@@ -1020,6 +1065,7 @@ fn center_tab_display_path(kind: &CenterTabKind) -> Option<&str> {
         | CenterTabKind::FileMdPreview { path }
         | CenterTabKind::FileHtmlPreview { path }
         | CenterTabKind::FilePdfPreview { path }
+        | CenterTabKind::FileStlPreview { path }
         | CenterTabKind::FileDiff { path, .. } => Some(path.as_str()),
         _ => None,
     }
@@ -1053,7 +1099,6 @@ fn apply_opened_project_root(
     mut active_tab: Signal<&'static str>,
     mut center_tabs: Signal<Vec<CenterTab>>,
     mut active_center_id: Signal<Option<String>>,
-    mut home_logo_menu_open: Signal<bool>,
     mut plugin_refresh_tick: Signal<u64>,
 ) {
     use std::path::Path;
@@ -1067,13 +1112,13 @@ fn apply_opened_project_root(
     fs_notice.set(None);
     recent_project_dirs.set(super::files::fs_recent_project_dirs());
     active_tab.set("files");
-    home_logo_menu_open.set(false);
     center_tabs.with_mut(|tabs| {
         tabs.retain(|tab| match &tab.kind {
             CenterTabKind::File { path }
             | CenterTabKind::FileMdPreview { path }
             | CenterTabKind::FileHtmlPreview { path }
             | CenterTabKind::FilePdfPreview { path }
+            | CenterTabKind::FileStlPreview { path }
             | CenterTabKind::FileDiff { path, .. } => {
                 Path::new(path).starts_with(Path::new(&root))
             }
@@ -1161,7 +1206,6 @@ fn apply_created_local_application(
     active_tab: Signal<&'static str>,
     center_tabs: Signal<Vec<CenterTab>>,
     active_center_id: Signal<Option<String>>,
-    home_logo_menu_open: Signal<bool>,
     mut fs_section_open: Signal<bool>,
     toast: super::toast::ToastCtx,
     mut plugin_refresh_tick: Signal<u64>,
@@ -1188,7 +1232,6 @@ fn apply_created_local_application(
                 active_tab,
                 center_tabs,
                 active_center_id,
-                home_logo_menu_open,
                 plugin_refresh_tick,
             );
             fs_section_open.set(true);
@@ -2646,6 +2689,7 @@ fn WebShellTitlebar(
     } else {
         "ac-web-titlebar-reveal ac-web-titlebar-reveal--dock"
     };
+    let open_browser = try_use_context::<super::browser::OpenBrowserTick>();
 
     rsx! {
         div { class: "{titlebar_reveal_class}",
@@ -2700,6 +2744,18 @@ fn WebShellTitlebar(
                                 Icon { icon: VscLayoutSidebarLeftDock, width: 14, height: 14, fill: "currentColor", class: "ac-web-titlebar-icon" }
                             } else {
                                 Icon { icon: VscLayoutSidebarRightDock, width: 14, height: 14, fill: "currentColor", class: "ac-web-titlebar-icon" }
+                            }
+                        }
+                    }
+                    if let Some(open_browser) = open_browser {
+                        div { class: "ac-web-titlebar-switch-wrap",
+                            button {
+                                r#type: "button",
+                                class: "ac-web-titlebar-switch-icon-outside",
+                                title: "打开 Pusa 浏览器",
+                                aria_label: "打开 Pusa 浏览器",
+                                onclick: move |_| open_browser.request(),
+                                Icon { icon: LdGlobe, width: 14, height: 14, fill: "currentColor", class: "ac-web-titlebar-icon" }
                             }
                         }
                     }
@@ -2903,7 +2959,8 @@ pub fn Console(
     let fs_create_parent = use_signal(|| None::<String>);
     let mut fs_notice = use_signal(|| None::<String>);
     let mut recent_project_dirs = use_signal(super::files::fs_recent_project_dirs);
-    let mut home_logo_menu_open = use_signal(|| false);
+    // 中间栏标签栏右键菜单：视口坐标（position: fixed），None = 关闭。
+    let mut center_tabs_ctx_menu = use_signal(|| None::<(f64, f64)>);
     let mut fs_drafts = use_signal(HashMap::<String, String>::new);
     let mut fs_baselines = use_signal(HashMap::<String, String>::new);
     let mut fs_dirty = use_signal(HashSet::<String>::new);
@@ -2978,6 +3035,33 @@ pub fn Console(
     let mut chat_history_error = use_signal(|| None::<String>);
     // 会话历史右键菜单（展开/收起栏共用）
     let mut chat_history_ctx_menu = use_signal(|| None::<ChatHistoryCtxMenu>);
+    // 中间栏标签栏 / 空页右键菜单动作（DOM 自绘菜单共用）。
+    let mut run_tab_strip_action = move |action: super::browser::TabStripMenuAction| match action {
+        super::browser::TabStripMenuAction::OpenBrowser => {
+            // 总是新开一个浏览器标签（已开着浏览器时再点 = 再开一个）。
+            center_tabs.with_mut(|tabs| {
+                active_center_id.with_mut(|active| {
+                    let tab = CenterTab::web_browser(tabs);
+                    center_open_or_focus(tabs, active, tab);
+                });
+            });
+            show_center.set(true);
+        }
+    };
+    // 标题栏地球图标等：外壳递增 OpenBrowserTick → 这里开新标签。
+    let open_browser_tick = try_use_context::<super::browser::OpenBrowserTick>();
+    let mut last_open_browser_tick = use_signal(|| 0u64);
+    use_effect(move || {
+        let Some(super::browser::OpenBrowserTick(tick)) = open_browser_tick else {
+            return;
+        };
+        let n = tick();
+        if n == 0 || n == last_open_browser_tick() {
+            return;
+        }
+        last_open_browser_tick.set(n);
+        run_tab_strip_action(super::browser::TabStripMenuAction::OpenBrowser);
+    });
     let mut chat_title_editing = use_signal(|| false);
     let mut chat_title_editing_id = use_signal(|| None::<String>);
     let mut chat_title_draft = use_signal(String::new);
@@ -4080,7 +4164,6 @@ pub fn Console(
                                 active_tab,
                                 center_tabs,
                                 active_center_id,
-                                home_logo_menu_open,
                                 plugin_refresh_tick,
                             );
                         }
@@ -4783,9 +4866,11 @@ pub fn Console(
                                         center_shutting_down.set(false);
                                     }
                                     show_center.set(true);
-                                    // PDF 没有文本编辑器可看，单击直接进内置预览。
+                                    // PDF / STL 没有文本编辑器可看，单击直接进内置预览。
                                     let tab = if super::files::fs_is_pdf_path(&path) {
                                         CenterTab::file_pdf_preview(path)
+                                    } else if super::files::fs_is_stl_path(&path) {
+                                        CenterTab::file_stl_preview(path)
                                     } else {
                                         CenterTab::file(path)
                                     };
@@ -4808,6 +4893,23 @@ pub fn Console(
                                                 tabs,
                                                 active,
                                                 CenterTab::file_pdf_preview(path),
+                                            );
+                                        });
+                                    });
+                                },
+                                on_open_stl_preview: move |path: String| {
+                                    fs_selected_path.set(Some(path.clone()));
+                                    fs_save_notice.set(None);
+                                    if center_shutting_down() {
+                                        center_shutting_down.set(false);
+                                    }
+                                    show_center.set(true);
+                                    center_tabs.with_mut(|tabs| {
+                                        active_center_id.with_mut(|active| {
+                                            center_open_or_focus(
+                                                tabs,
+                                                active,
+                                                CenterTab::file_stl_preview(path),
                                             );
                                         });
                                     });
@@ -5092,7 +5194,14 @@ pub fn Console(
                             _ => None,
                         });
                         rsx! {
-                            div { class: "ac-center-tabs", role: "tablist",
+                            div {
+                                class: "ac-center-tabs",
+                                role: "tablist",
+                                oncontextmenu: move |evt| {
+                                    evt.prevent_default();
+                                    let coords = evt.data.client_coordinates();
+                                    center_tabs_ctx_menu.set(Some((coords.x, coords.y)));
+                                },
                                 div { class: "ac-center-tabs-scroll",
                                     for tab in center_tabs() {
                                         {
@@ -5553,6 +5662,32 @@ pub fn Console(
                                     path,
                                 }
                             },
+                            Some(CenterTabKind::FileStlPreview { path }) => rsx! {
+                                super::files::FileStlPreviewPane {
+                                    key: "stl-preview:{path}",
+                                    path,
+                                }
+                            },
+                            Some(CenterTabKind::WebBrowser { url }) => {
+                                // 多个浏览器标签共用同一渲染位：按标签 id 加 key，
+                                // 切换标签时重建面板（地址栏草稿、iframe 不串到别的标签）。
+                                let tab_id = active_center_id().unwrap_or_default();
+                                let tab_id_nav = tab_id.clone();
+                                rsx! {
+                                    super::browser::WebBrowserPane {
+                                        key: "{tab_id}",
+                                        url,
+                                        on_navigate: move |next: String| {
+                                            center_tabs.with_mut(|tabs| {
+                                                if let Some(tab) = tabs.iter_mut().find(|t| t.id == tab_id_nav) {
+                                                    tab.title = super::browser::browser_tab_title(&next);
+                                                    tab.kind = CenterTabKind::WebBrowser { url: next.clone() };
+                                                }
+                                            });
+                                        },
+                                    }
+                                }
+                            },
                             Some(CenterTabKind::FileDiff {
                                 path,
                                 old_text,
@@ -5782,109 +5917,13 @@ pub fn Console(
                         }
                             },
                             None => rsx! {
-                                div { class: "ac-center-empty",
+                                div {
+                                    class: "ac-center-empty",
                                     div { class: "ac-center-empty-logo-wrap",
                                         img {
                                             src: LOGO_PNG,
                                             alt: "Pusa",
                                             class: "ac-center-empty-logo",
-                                            oncontextmenu: move |evt| {
-                                                evt.prevent_default();
-                                                if super::files::fs_available() {
-                                                    home_logo_menu_open.set(true);
-                                                }
-                                            },
-                                        }
-                                        if home_logo_menu_open() && super::files::fs_available() {
-                                            div {
-                                                class: "ac-center-empty-logo-menu-backdrop",
-                                                onclick: move |_| home_logo_menu_open.set(false),
-                                            }
-                                            div {
-                                                class: "ac-center-empty-logo-menu",
-                                                role: "menu",
-                                                button {
-                                                    r#type: "button",
-                                                    class: "ac-center-empty-logo-menu-item",
-                                                    role: "menuitem",
-                                                    onclick: move |_| {
-                                                        home_logo_menu_open.set(false);
-                                                        match super::files::fs_open_project_directory_dialog() {
-                                                            Ok(Some(root)) => {
-                                                                apply_opened_project_root(
-                                                                    root,
-                                                                    fs_root_path,
-                                                                    fs_expanded,
-                                                                    fs_children_cache,
-                                                                    fs_selected_path,
-                                                                    fs_create_mode,
-                                                                    fs_create_name,
-                                                                    fs_create_parent,
-                                                                    fs_notice,
-                                                                    recent_project_dirs,
-                                                                    active_tab,
-                                                                    center_tabs,
-                                                                    active_center_id,
-                                                                    home_logo_menu_open,
-                                                                    plugin_refresh_tick,
-                                                                );
-                                                            }
-                                                            Ok(None) => {}
-                                                            Err(e) => fs_notice.set(Some(e)),
-                                                        }
-                                                    },
-                                                    "打开项目"
-                                                }
-                                                if !recent_project_dirs().is_empty() {
-                                                    div { class: "ac-center-empty-logo-menu-sep", role: "separator" }
-                                                    for dir in recent_project_dirs() {
-                                                        {
-                                                            let dir_path = dir.clone();
-                                                            let dir_label = super::files::fs_root_display_name(&dir);
-                                                            let dir_title = dir.clone();
-                                                            rsx! {
-                                                                button {
-                                                                    r#type: "button",
-                                                                    class: "ac-center-empty-logo-menu-item",
-                                                                    role: "menuitem",
-                                                                    title: "{dir_title}",
-                                                                    onclick: move |_| {
-                                                                        home_logo_menu_open.set(false);
-                                                                        match super::files::fs_set_workspace_root(&dir_path) {
-                                                                            Ok(root) => {
-                                                                                apply_opened_project_root(
-                                                                                    root,
-                                                                                    fs_root_path,
-                                                                                    fs_expanded,
-                                                                                    fs_children_cache,
-                                                                                    fs_selected_path,
-                                                                                    fs_create_mode,
-                                                                                    fs_create_name,
-                                                                                    fs_create_parent,
-                                                                                    fs_notice,
-                                                                                    recent_project_dirs,
-                                                                                    active_tab,
-                                                                                    center_tabs,
-                                                                                    active_center_id,
-                                                                                    home_logo_menu_open,
-                                                                                    plugin_refresh_tick,
-                                                                                );
-                                                                            }
-                                                                            Err(e) => {
-                                                                                recent_project_dirs.set(
-                                                                                    super::files::fs_recent_project_dirs(),
-                                                                                );
-                                                                                fs_notice.set(Some(e));
-                                                                            }
-                                                                        }
-                                                                    },
-                                                                    "{dir_label}"
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
                                         }
                                     }
                                     p { class: "ac-center-empty-intro", "万千世界，皆为梦幻泡影" }
@@ -5914,7 +5953,6 @@ pub fn Console(
                                                                 active_tab,
                                                                 center_tabs,
                                                                 active_center_id,
-                                                                home_logo_menu_open,
                                                                 plugin_refresh_tick,
                                                             );
                                                         }
@@ -5954,7 +5992,6 @@ pub fn Console(
                                                                 active_tab,
                                                                 center_tabs,
                                                                 active_center_id,
-                                                                home_logo_menu_open,
                                                                 plugin_refresh_tick,
                                                             );
                                                         }
@@ -7814,7 +7851,6 @@ pub fn Console(
                                                     active_tab,
                                                     center_tabs,
                                                     active_center_id,
-                                                    home_logo_menu_open,
                                                     fs_section_open,
                                                     toast,
                                                     plugin_refresh_tick,
@@ -7862,7 +7898,6 @@ pub fn Console(
                                                 active_tab,
                                                 center_tabs,
                                                 active_center_id,
-                                                home_logo_menu_open,
                                                 fs_section_open,
                                                 toast,
                                                 plugin_refresh_tick,
@@ -7872,6 +7907,45 @@ pub fn Console(
                                     }
                                 },
                                 "创建"
+                            }
+                        }
+                    }
+                }
+            }
+
+            if let Some((ctx_x, ctx_y)) = center_tabs_ctx_menu() {
+                {
+                    let menu_style = format!("left: {ctx_x:.0}px; top: {ctx_y:.0}px;");
+                    rsx! {
+                        div {
+                            class: "ac-chat-history-ctx-backdrop",
+                            onclick: move |_| center_tabs_ctx_menu.set(None),
+                            oncontextmenu: move |evt| {
+                                evt.prevent_default();
+                                center_tabs_ctx_menu.set(None);
+                            },
+                        }
+                        div {
+                            class: "ac-chat-history-ctx-menu",
+                            role: "menu",
+                            style: "{menu_style}",
+                            onclick: move |evt| evt.stop_propagation(),
+                            button {
+                                r#type: "button",
+                                class: "ac-chat-history-ctx-menu__item",
+                                role: "menuitem",
+                                onclick: move |_| {
+                                    center_tabs_ctx_menu.set(None);
+                                    run_tab_strip_action(super::browser::TabStripMenuAction::OpenBrowser);
+                                },
+                                Icon {
+                                    icon: LdGlobe,
+                                    width: 14,
+                                    height: 14,
+                                    fill: "currentColor",
+                                    class: "ac-chat-header-icon",
+                                }
+                                "打开 Pusa 浏览器"
                             }
                         }
                     }

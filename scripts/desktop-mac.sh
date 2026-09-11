@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 本机 macOS 打包发版：dx bundle --release → 嵌入 dylib → Velopack（vpk 签名 + 公证 + 增量包）
-#   → desktop/dist/velopack/（.pkg / Portable.zip / full+delta .nupkg / releases.<channel>.json）
+#   → desktop/dist/velopack/（.dmg / full+delta .nupkg / releases.<channel>.json；始终 --noInst 不出 .pkg）
 #
 # 用法：
 #   just desktop-mac                         # 先把 desktop/Cargo.toml patch 位 +1

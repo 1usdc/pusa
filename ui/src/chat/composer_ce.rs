@@ -409,6 +409,149 @@ pub const INSTALL_BRIDGE_JS: &str = r#"(async () => {
     }
   };
 
+  /** 事件目标（可能是文本节点）所属的 composer 根；已禁用（contenteditable=false）视为无。 */
+  const composerOf = (target) => {
+    if (!target) return null;
+    const base = target.nodeType === 3 ? target.parentElement : target;
+    const el = base && base.closest ? base.closest('[data-ac-composer]') : null;
+    if (!el || el.getAttribute('contenteditable') === 'false') return null;
+    return el;
+  };
+
+  /** DataTransfer 是否携带文件（截图/图片/文件）：这类粘贴交给 attachments.rs 的钩子处理。 */
+  const dtHasFiles = (dt) => {
+    if (!dt) return false;
+    try {
+      if (dt.files && dt.files.length > 0) return true;
+      if (dt.items) {
+        for (let i = 0; i < dt.items.length; i++) {
+          if (dt.items[i] && dt.items[i].kind === 'file') return true;
+        }
+      }
+    } catch (_) {}
+    return false;
+  };
+
+  const PLAIN_BLOCK_TAGS = new Set([
+    'P', 'DIV', 'LI', 'TR', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'PRE', 'BLOCKQUOTE',
+    'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'UL', 'OL', 'DL', 'DT', 'DD', 'SECTION', 'ARTICLE',
+    'HEADER', 'FOOTER', 'NAV', 'ASIDE', 'MAIN', 'FIGURE', 'FIGCAPTION', 'ADDRESS', 'HR', 'FORM', 'FIELDSET',
+  ]);
+  const PLAIN_SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'HEAD', 'NOSCRIPT', 'TITLE', 'META', 'LINK']);
+
+  /**
+   * 富文本 HTML → 纯文本：只保留文字，<br>/块级元素转成换行，表格单元格用 Tab 分隔。
+   * 非 <pre> 内的空白按 HTML 渲染规则折叠，避免源码缩进变成多余空行/空格。
+   */
+  const htmlToPlainText = (html) => {
+    let doc = null;
+    try { doc = new DOMParser().parseFromString(String(html || ''), 'text/html'); } catch (_) {}
+    if (!doc || !doc.body) return '';
+    let out = '';
+    let preDepth = 0;
+    const walk = (node) => {
+      if (node.nodeType === 3) {
+        let t = (node.nodeValue || '').replace(/\u00a0/g, ' ');
+        if (preDepth === 0) {
+          t = t.replace(/[ \t\r\n\f]+/g, ' ');
+          // 块起点/换行后的前导空白是源码缩进，丢掉
+          if (out.length === 0 || out.endsWith('\n')) t = t.replace(/^ +/, '');
+        }
+        out += t;
+        return;
+      }
+      if (node.nodeType !== 1) return;
+      const tag = node.tagName;
+      if (PLAIN_SKIP_TAGS.has(tag)) return;
+      if (tag === 'BR') { out += '\n'; return; }
+      const block = PLAIN_BLOCK_TAGS.has(tag);
+      const breakLine = () => {
+        out = out.replace(/[ \t]+$/, '');
+        if (out.length > 0 && !out.endsWith('\n')) out += '\n';
+      };
+      if (block) breakLine();
+      if (tag === 'PRE') preDepth++;
+      const kids = node.childNodes;
+      for (let i = 0; i < kids.length; i++) walk(kids[i]);
+      if (tag === 'PRE') preDepth--;
+      if (tag === 'TD' || tag === 'TH') out += '\t';
+      if (block) breakLine();
+    };
+    walk(doc.body);
+    return out;
+  };
+
+  /**
+   * 从 DataTransfer 取纯文本：优先 text/plain（原样保留首尾空格，只统一换行），
+   * 仅当没有 text/plain 时才从 text/html 提取文字，并把多余空行压到最多两个。
+   */
+  const dtPlainText = (dt) => {
+    if (!dt) return '';
+    let text = '';
+    try { text = dt.getData('text/plain') || ''; } catch (_) {}
+    if (text) return text.replace(/\r\n?/g, '\n');
+    let html = '';
+    try { html = dt.getData('text/html') || ''; } catch (_) {}
+    if (!html) return '';
+    return htmlToPlainText(html)
+      .replace(/\r\n?/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/^\n+|\n+$/g, '');
+  };
+
+  /**
+   * 在当前 caret 处插入纯文本。caret 若落在 chip 内先挪到 chip 之后（与 sanitizeCaret 一致）。
+   * 优先 execCommand('insertText')：进 undo 栈且浏览器自带 input 事件，文档级 input 监听即可回传 sendable；
+   * 不可用时回退为 Range 插 TextNode（根节点是 white-space: pre-wrap，\n 可直接显示）并手动派发 input。
+   */
+  const insertPlainAtCaret = (el, text) => {
+    if (!el || !text) return;
+    ensureChipAnchors(el);
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || !sel.anchorNode ||
+        !(sel.anchorNode === el || el.contains(sel.anchorNode))) {
+      focusEnd(el.getAttribute('data-ac-composer'));
+    } else {
+      const chip = closestChip(sel.anchorNode, el);
+      if (chip) placeCaretAfter(chip);
+    }
+    let ok = false;
+    try { ok = document.execCommand('insertText', false, text); } catch (_) { ok = false; }
+    if (ok) {
+      syncEmptyClass(el);
+      return;
+    }
+    const s = window.getSelection();
+    if (!s || s.rangeCount === 0) return;
+    const range = s.getRangeAt(0);
+    range.deleteContents();
+    const tn = document.createTextNode(text);
+    range.insertNode(tn);
+    placeCaretInText(tn, (tn.nodeValue || '').length);
+    saveCaret(el);
+    syncEmptyClass(el);
+    let ev = null;
+    try { ev = new InputEvent('input', { bubbles: true, inputType: 'insertFromPaste', data: text }); }
+    catch (_) { ev = new Event('input', { bubbles: true }); }
+    el.dispatchEvent(ev);
+  };
+
+  /** 拖放落点 → Range（Chromium 用 caretRangeFromPoint，标准 API 为 caretPositionFromPoint）。 */
+  const caretRangeAtPoint = (x, y) => {
+    try {
+      if (document.caretRangeFromPoint) return document.caretRangeFromPoint(x, y);
+      if (document.caretPositionFromPoint) {
+        const pos = document.caretPositionFromPoint(x, y);
+        if (!pos || !pos.offsetNode) return null;
+        const r = document.createRange();
+        r.setStart(pos.offsetNode, pos.offset);
+        r.collapse(true);
+        return r;
+      }
+    } catch (_) {}
+    return null;
+  };
+
   const collectRemovedIds = (node, out) => {
     if (!node) return;
     if (node.nodeType === 1) {
@@ -454,8 +597,73 @@ pub const INSTALL_BRIDGE_JS: &str = r#"(async () => {
     document.querySelectorAll('[data-ac-composer]').forEach(observeRoot);
   };
 
-  if (window.__acComposerDocBound !== 7) {
-    window.__acComposerDocBound = 7;
+  if (window.__acComposerDocBound !== 8) {
+    window.__acComposerDocBound = 8;
+
+    // 粘贴统一转纯文本：网页/Word/IDE 复制来的 HTML、颜色、字体、链接、<div>/<br> 结构
+    // 一律只保留文字。含文件（截图/图片）的粘贴不拦截，交给 attachments.rs 的 capture 钩子。
+    // 这里 preventDefault 后浏览器不再触发 beforeinput(insertFromPaste)，不会与下面的兜底重复插入。
+    document.addEventListener('paste', (e) => {
+      const el = composerOf(e.target);
+      if (!el) return;
+      const dt = e.clipboardData;
+      if (!dt || dtHasFiles(dt)) return;
+      const text = dtPlainText(dt);
+      // 即便取不到文字也阻止默认，避免 RTF 等其它格式以富文本形式落进编辑器
+      e.preventDefault();
+      if (!text) return;
+      insertPlainAtCaret(el, text);
+    }, true);
+
+    // 拖放文本：contenteditable 默认会把外部拖入的 HTML 原样落进来，同样转纯文本。
+    // 编辑器内部自己拖动选区（源已是纯文本）走默认行为，否则源文本不会被移走而重复。
+    document.addEventListener('dragstart', (e) => {
+      const el = composerOf(e.target);
+      if (el) el.__acInternalDrag = true;
+    }, true);
+    document.addEventListener('dragend', () => {
+      document.querySelectorAll('[data-ac-composer]').forEach((el) => { el.__acInternalDrag = false; });
+    }, true);
+    document.addEventListener('drop', (e) => {
+      const el = composerOf(e.target);
+      if (!el) return;
+      if (el.__acInternalDrag) { el.__acInternalDrag = false; return; }
+      const dt = e.dataTransfer;
+      if (!dt || dtHasFiles(dt)) return;
+      const text = dtPlainText(dt);
+      e.preventDefault();
+      if (!text) return;
+      el.focus();
+      const r = caretRangeAtPoint(e.clientX, e.clientY);
+      const sel = window.getSelection();
+      if (r && sel && el.contains(r.startContainer)) {
+        sel.removeAllRanges();
+        sel.addRange(r);
+      } else {
+        focusEnd(el.getAttribute('data-ac-composer'));
+      }
+      insertPlainAtCaret(el, text);
+    }, true);
+
+    // 兜底：若 paste/drop 事件被其它监听 stopPropagation 抢先，浏览器仍会在真正插入前
+    // 触发 beforeinput；带 text/html 的富文本在这里改为纯文本。取消默认后再插入，
+    // 用 setTimeout 跳出当前编辑动作，避免在 beforeinput 内调用 execCommand 被忽略。
+    document.addEventListener('beforeinput', (e) => {
+      if (e.inputType !== 'insertFromPaste' && e.inputType !== 'insertFromDrop') return;
+      const el = composerOf(e.target);
+      if (!el) return;
+      const dt = e.dataTransfer;
+      if (!dt || dtHasFiles(dt)) return;
+      let types = [];
+      try { types = Array.from(dt.types || []); } catch (_) {}
+      // 只有纯文本时默认行为本来就是纯文本，不必干预
+      if (types.indexOf('text/html') < 0) return;
+      const text = dtPlainText(dt);
+      e.preventDefault();
+      if (!text) return;
+      setTimeout(() => insertPlainAtCaret(el, text), 0);
+    }, true);
+
     document.addEventListener('input', (e) => {
       const t = e.target;
       const el = t && t.closest ? t.closest('[data-ac-composer]') : null;

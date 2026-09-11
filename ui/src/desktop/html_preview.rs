@@ -8,6 +8,12 @@ use std::sync::{Mutex, OnceLock};
 
 pub const PROTOCOL_NAME: &str = "pusapreview";
 
+/// 内置 STL 查看器页面（纯 WebGL，无第三方依赖，离线可用）。
+const STL_VIEWER_HTML: &str = include_str!("../../assets/stl-viewer/index.html");
+/// 查看器在预览站点内的虚拟文件名：`pusapreview://localhost/<token>/__pusa_stl_viewer__.html?src=…`。
+/// 与被预览的 `.stl` 同源同目录，页面里 `fetch(src)` 不涉及跨域。
+const STL_VIEWER_FILE: &str = "__pusa_stl_viewer__.html";
+
 fn roots() -> &'static Mutex<HashMap<String, PathBuf>> {
     static ROOTS: OnceLock<Mutex<HashMap<String, PathBuf>>> = OnceLock::new();
     ROOTS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -36,6 +42,44 @@ pub fn pdf_preview_src(pdf_path: &Path) -> Result<String, String> {
         asset_base(&token),
         encode_path_seg(&file_name)
     ))
+}
+
+pub fn is_stl_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("stl"))
+}
+
+/// STL 预览 iframe `src`：查看器页面 + query 指向同目录下的模型文件。
+pub fn stl_preview_src(stl_path: &Path) -> Result<String, String> {
+    if !is_stl_path(stl_path) {
+        return Err("不是 STL 文件。".into());
+    }
+    let (token, file_name) = register_file(stl_path)?;
+    let base = asset_base(&token);
+    let model_url = format!("{base}{}", encode_path_seg(&file_name));
+    Ok(format!(
+        "{base}{STL_VIEWER_FILE}?src={}&name={}",
+        encode_query_value(&model_url),
+        encode_query_value(&file_name)
+    ))
+}
+
+/// Windows WebView2 下 iframe `src` 不能用 `http://pusapreview.localhost`（会弹系统浏览器），
+/// 改为 `srcdoc` 注入查看器页面，并把模型地址写进 `window.__PUSA_STL__`；
+/// 跨源 `fetch` 依赖协议响应里的 `Access-Control-Allow-Origin: *`。
+#[cfg(target_os = "windows")]
+pub fn stl_preview_srcdoc(stl_path: &Path) -> Result<String, String> {
+    if !is_stl_path(stl_path) {
+        return Err("不是 STL 文件。".into());
+    }
+    let (token, file_name) = register_file(stl_path)?;
+    let model_url = format!("{}{}", asset_base(&token), encode_path_seg(&file_name));
+    let cfg = serde_json::json!({ "src": model_url, "name": file_name });
+    // `</` 转义，避免 JSON 字符串提前闭合 `<script>`。
+    let cfg_js = cfg.to_string().replace("</", "<\\/");
+    let tag = format!("<script>window.__PUSA_STL__={cfg_js};</script>");
+    Ok(inject_head(STL_VIEWER_HTML, &tag))
 }
 
 /// 文件：自身；目录：`index.html` / `index.htm`，否则第一个 `.html`。
@@ -77,7 +121,8 @@ pub fn preview_iframe_src(html_path: &Path) -> Result<String, String> {
 pub fn preview_srcdoc(html_path: &Path) -> Result<String, String> {
     let (token, _) = register_file(html_path)?;
     let raw = fs::read_to_string(html_path).map_err(|e| format!("无法读取 HTML：{e}"))?;
-    Ok(inject_base(&raw, &asset_base(&token)))
+    let tag = format!(r#"<base href="{}">"#, asset_base(&token));
+    Ok(inject_head(&raw, &tag))
 }
 
 /// 把文件所在目录注册为预览站点根，返回 (token, 文件名)。
@@ -114,12 +159,23 @@ fn encode_path_seg(name: &str) -> String {
     out
 }
 
+/// query 值编码：与 `encode_path_seg` 同一保留集（`URLSearchParams` 可原样解出 `:` `/` `%` 等）。
+fn encode_query_value(value: &str) -> String {
+    encode_path_seg(value)
+}
+
 pub fn serve_request(uri: &str) -> Result<(&'static str, Vec<u8>), u16> {
     let (token, rel) = parse_preview_uri(uri).ok_or(404u16)?;
     let root = {
         let map = roots().lock().map_err(|_| 500u16)?;
         map.get(&token).cloned().ok_or(404u16)?
     };
+    if rel == STL_VIEWER_FILE {
+        return Ok((
+            "text/html; charset=utf-8",
+            STL_VIEWER_HTML.as_bytes().to_vec(),
+        ));
+    }
     let candidate = if rel.is_empty() {
         root.join("index.html")
     } else {
@@ -187,9 +243,9 @@ fn parse_preview_uri(uri: &str) -> Option<(String, String)> {
     Some((token.to_string(), percent_decode(rel)))
 }
 
+/// 把 `tag` 插到 `<head>` 开标签之后；没有 `<head>` 时补一个。
 #[cfg(target_os = "windows")]
-fn inject_base(html: &str, base: &str) -> String {
-    let tag = format!(r#"<base href="{base}">"#);
+fn inject_head(html: &str, tag: &str) -> String {
     let lower = html.to_ascii_lowercase();
     if let Some(i) = lower.find("<head") {
         if let Some(gt) = html[i..].find('>') {
@@ -214,6 +270,7 @@ fn mime_of(path: &Path) -> &'static str {
     {
         "html" | "htm" => "text/html; charset=utf-8",
         "pdf" => "application/pdf",
+        "stl" => "model/stl",
         "css" => "text/css; charset=utf-8",
         "js" | "mjs" => "text/javascript; charset=utf-8",
         "json" | "map" => "application/json",

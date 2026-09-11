@@ -5,8 +5,8 @@
 #   Pusa-<ver>-<channel>-full.nupkg     全量包（客户端首次 / 回退）
 #   Pusa-<ver>-<channel>-delta.nupkg    相对上一版的增量包（需先 vpk download 上一版）
 #   releases.<channel>.json             客户端 GithubSource 读取的清单
-#   macOS: Pusa-<channel>.pkg + Pusa-<channel>-Portable.zip
-#   Windows: Pusa-<channel>-Setup.exe + Pusa-<channel>-Portable.zip
+#   macOS: Pusa-<ver>-<channel>.dmg（始终 --noInst，不出 .pkg；channel 形如 macos-arm64 / macos-x64）
+#   Windows: Pusa-<channel>-Setup.exe + Pusa-<channel>-Portable.zip（channel win-x64）
 #
 # 客户端（ui/src/desktop/updater.rs）用 GithubSource 读 Release 资产里的 releases.<channel>.json，
 # channel 由安装包自带的 sq.version 决定，客户端代码无需感知。
@@ -33,8 +33,8 @@ vpk_channel() {
 	case "$(uname -s)" in
 		Darwin)
 			case "$(uname -m)" in
-				arm64) printf 'osx-arm64' ;;
-				*) printf 'osx-x64' ;;
+				arm64) printf 'macos-arm64' ;;
+				*) printf 'macos-x64' ;;
 			esac
 			;;
 		MINGW* | MSYS* | CYGWIN*) printf 'win-x64' ;;

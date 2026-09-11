@@ -135,6 +135,7 @@ ui/src/
 ├── icons.rs               # 自定义 SVG 图标
 ├── shell/                 # 主控制台骨架
 │   ├── console.rs         # 三栏布局、会话历史、标题栏开关等
+│   ├── browser.rs         # Pusa 浏览器标签（地址栏 + iframe，右键菜单打开）
 │   ├── files.rs           # FILES 树、文件编辑器、行内 diff
 │   ├── syntax.rs          # 代码语法高亮
 │   ├── plugins.rs         # 我的应用 / 应用市场 / 智能 UI
@@ -253,9 +254,9 @@ CI：`.github/workflows/`（桌面打包已改为本机流程，不再走 Action
 
 **打包**（`scripts/velopack-pack-mac.sh` / `scripts/velopack-pack-windows.ps1`，由 `desktop-mac.sh` / `desktop-windows.ps1` 默认调用）
 
-- `vpk download github` 拉上一版全量包 → `vpk pack` 生成 full + delta `.nupkg`、安装器（mac `.pkg`、win `Setup.exe`）、Portable.zip、`releases.<channel>.json`，输出到 `desktop/dist/velopack/`。
+- `vpk download github` 拉上一版全量包 → `vpk pack` 生成 full + delta `.nupkg`、`releases.<channel>.json`（mac 始终 `--noInst` 不出 `.pkg`，Portable 再封成 `.dmg`；win 仍出 `Setup.exe` + Portable.zip），输出到 `desktop/dist/velopack/`。
 - macOS 的签名 + 公证由 vpk 完成（`--signAppIdentity` / `--signInstallIdentity` / `--notaryProfile`）；Windows `SIGN=1` 走 Azure Trusted Signing。
-- channel 按 host 决定（`osx-arm64` / `osx-x64` / `win-x64`），`VPK_CHANNEL` 可覆盖；公共配置见 `scripts/velopack-common.sh`。
+- channel 按 host 决定（`macos-arm64` / `macos-x64` / `win-x64`），`VPK_CHANNEL` 可覆盖；公共配置见 `scripts/velopack-common.sh`。
 
 **发布**（`scripts/release-mac.sh` / `scripts/release-windows.sh`）
 
@@ -267,7 +268,7 @@ CI：`.github/workflows/`（桌面打包已改为本机流程，不再走 Action
 **注意事项**
 
 - packId 固定为 `Pusa`（安装目录 / 缓存目录 / Windows 注册表键），发布后不可再改。
-- 旧 DMG 安装的用户不是 Velopack 实例，只能看到「(+1)」跳到发布页手动装一次 `.pkg`，之后才有应用内更新。
+- 旧非 Velopack 安装的用户只能看到「(+1)」跳到发布页，手动装一次当前 `.dmg` 后才有应用内更新。
 - vpk 会在注入 `UpdateMac` 后统一对 `.app` 深签，因此交给 `velopack-pack-mac.sh` 的 `.app` **不能预先 codesign**（`VELOPACK=1` 时 `desktop-mac.sh` 不再调用 `macos-sign-notarize.sh`）。
 
 ---

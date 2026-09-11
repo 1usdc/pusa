@@ -10,12 +10,14 @@ use dioxus_free_icons::icons::bs_icons::{
     BsGear, BsLayoutSidebar, BsLayoutSidebarInset, BsLayoutSidebarInsetReverse,
     BsLayoutSidebarReverse,
 };
+use dioxus_free_icons::icons::ld_icons::LdGlobe;
 use dioxus_free_icons::Icon;
 
 use crate::desktop::window;
 use crate::icons::{
     VscLayoutPanel, VscLayoutPanelOff, VscLayoutSidebarLeftDock, VscLayoutSidebarRightDock,
 };
+use crate::shell::browser::OpenBrowserTick;
 use crate::shell::theme::{self, TitlebarThemeToggle};
 
 #[component]
@@ -108,6 +110,7 @@ pub fn NativeTitleBar(
         "显示右边聊天栏"
     };
     let ui_theme = use_signal(theme::load);
+    let open_browser = use_context::<OpenBrowserTick>();
 
     rsx! {
         NativeResizeHandle {
@@ -177,6 +180,14 @@ pub fn NativeTitleBar(
                     } else {
                         Icon { icon: VscLayoutSidebarRightDock, width: 12, height: 12, fill: "currentColor", class: "ac-web-titlebar-icon" }
                     }
+                }
+                button {
+                    r#type: "button",
+                    class: "ac-web-titlebar-btn",
+                    title: "打开 Pusa 浏览器",
+                    aria_label: "打开 Pusa 浏览器",
+                    onclick: move |_| open_browser.request(),
+                    Icon { icon: LdGlobe, width: 12, height: 12, fill: "currentColor", class: "ac-web-titlebar-icon" }
                 }
             }
             div {

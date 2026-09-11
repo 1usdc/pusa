@@ -97,12 +97,8 @@ pub async fn post_chat_stream(
     };
 
     if !gloo_resp.ok() {
-        // 不要把"chat stream HTTP 502"原样返出去——console.rs 会把错误塞进对话气泡，
-        // 用 friendly_chat_error_message 把 502/503/504 都映射成"云平台暂时抖动，请稍后重试"。
         let status = gloo_resp.status();
-        let raw = format!("chat stream HTTP {status}");
-        let friendly = crate::chat::friendly_chat_error_message(&raw);
-        anyhow::bail!("{friendly}");
+        anyhow::bail!("chat stream HTTP {status}");
     }
 
     let web_resp: web_sys::Response = gloo_resp.into();

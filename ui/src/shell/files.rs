@@ -236,7 +236,7 @@ pub fn fs_open_in_browser(_path: &str) -> Result<(), String> {
     Err("Web 端请直接使用浏览器打开。".into())
 }
 
-/// 文件树「打开预览」：HTML 文件或含 index/任意 html 的目录。
+/// 文件树「在Pusa中预览」：HTML 文件或含 index/任意 html 的目录。
 pub fn fs_resolve_html_preview(path: &str, is_dir: bool) -> Option<String> {
     #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
     {
@@ -275,6 +275,33 @@ pub fn fs_pdf_preview_src(path: &str) -> Result<String, String> {
         let _ = path;
         Err("Web 端暂不支持 PDF 预览。".into())
     }
+}
+
+pub fn fs_is_stl_path(path: &str) -> bool {
+    Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("stl"))
+}
+
+/// STL 预览 iframe：内置 WebGL 查看器页面（走 `pusapreview` 协议，同源 `fetch` 模型文件）。
+/// Windows 与 HTML 预览一样改走 `srcdoc`。
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+pub fn fs_stl_preview_frame(path: &str) -> Result<HtmlPreviewFrame, String> {
+    let p = Path::new(path);
+    #[cfg(target_os = "windows")]
+    {
+        crate::desktop::html_preview::stl_preview_srcdoc(p).map(HtmlPreviewFrame::SrcDoc)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        crate::desktop::html_preview::stl_preview_src(p).map(HtmlPreviewFrame::Url)
+    }
+}
+
+#[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+pub fn fs_stl_preview_frame(_path: &str) -> Result<HtmlPreviewFrame, String> {
+    Err("Web 端暂不支持 STL 预览。".into())
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -773,6 +800,8 @@ pub fn SidebarFileExplorer(
     /// HTML 文件/站点在中间栏内置浏览器打开。
     on_open_html_preview: EventHandler<String>,
     on_open_pdf_preview: EventHandler<String>,
+    /// STL 模型在中间栏内置 3D 查看器打开。
+    on_open_stl_preview: EventHandler<String>,
     /// 打开终端并 cd 到目录（文件则父目录）。
     on_open_in_terminal: EventHandler<String>,
     /// 将路径加入当前 pusa 聊天草稿（支持多选）。
@@ -1335,6 +1364,7 @@ pub fn SidebarFileExplorer(
                             {
                                 let html_preview = fs_resolve_html_preview(&path, is_dir);
                                 let is_pdf = !is_dir && fs_is_pdf_path(&path);
+                                let is_stl = !is_dir && fs_is_stl_path(&path);
                                 rsx! {
                                     if let Some(html) = html_preview.clone() {
                                         button {
@@ -1345,7 +1375,7 @@ pub fn SidebarFileExplorer(
                                                 ctx_menu.set(None);
                                                 on_open_html_preview.call(html.clone());
                                             },
-                                            "在Pusa打开"
+                                            "在Pusa中预览"
                                         }
                                     } else if is_pdf {
                                         button {
@@ -1359,7 +1389,37 @@ pub fn SidebarFileExplorer(
                                                     on_open_pdf_preview.call(path.clone());
                                                 }
                                             },
-                                            "在Pusa打开"
+                                            "在Pusa中预览"
+                                        }
+                                        button {
+                                            r#type: "button",
+                                            class: "ac-chat-history-ctx-menu__item",
+                                            role: "menuitem",
+                                            onclick: {
+                                                let path = path.clone();
+                                                move |_| {
+                                                    ctx_menu.set(None);
+                                                    match fs_open_in_browser(&path) {
+                                                        Ok(()) => notice.set(None),
+                                                        Err(e) => notice.set(Some(e)),
+                                                    }
+                                                }
+                                            },
+                                            "在浏览器中打开"
+                                        }
+                                    } else if is_stl {
+                                        button {
+                                            r#type: "button",
+                                            class: "ac-chat-history-ctx-menu__item",
+                                            role: "menuitem",
+                                            onclick: {
+                                                let path = path.clone();
+                                                move |_| {
+                                                    ctx_menu.set(None);
+                                                    on_open_stl_preview.call(path.clone());
+                                                }
+                                            },
+                                            "在Pusa中预览"
                                         }
                                         button {
                                             r#type: "button",
@@ -1389,7 +1449,7 @@ pub fn SidebarFileExplorer(
                                                     on_open_file.call(path.clone());
                                                 }
                                             },
-                                            "打开预览"
+                                            "在Pusa中预览"
                                         }
                                         button {
                                             r#type: "button",
@@ -2430,6 +2490,41 @@ pub fn FilePdfPreviewPane(path: String) -> Element {
                         iframe {
                             class: "ac-html-preview-frame",
                             src: "{src}",
+                            title: "{iframe_title}",
+                        }
+                    },
+                    Err(err) => rsx! {
+                        div { class: "ac-file-editor-error", "{err}" }
+                    },
+                }
+            }
+        }
+    }
+}
+
+/// STL 内置预览：整页 iframe 载入自带的 WebGL 查看器（旋转 / 缩放 / 平移）。
+#[component]
+pub fn FileStlPreviewPane(path: String) -> Element {
+    let path_key = path.clone();
+    let frame = use_memo(move || fs_stl_preview_frame(&path_key));
+    let title = fs_file_title(&path);
+    let iframe_title = format!("预览 {title}");
+
+    rsx! {
+        section { class: "ac-html-preview-pane ac-stl-preview-pane",
+            div { class: "ac-html-preview-stage",
+                match frame() {
+                    Ok(HtmlPreviewFrame::Url(src)) => rsx! {
+                        iframe {
+                            class: "ac-html-preview-frame",
+                            src: "{src}",
+                            title: "{iframe_title}",
+                        }
+                    },
+                    Ok(HtmlPreviewFrame::SrcDoc(srcdoc)) => rsx! {
+                        iframe {
+                            class: "ac-html-preview-frame",
+                            srcdoc: "{srcdoc}",
                             title: "{iframe_title}",
                         }
                     },

@@ -1535,6 +1535,11 @@ html[data-theme="dark"] .app-shell-native-frame {
     background: var(--primary-color-1, #f1f5f9);
 }
 
+/* STL 预览：查看器页面自绘背景（#f8fafc / 深色跟随系统），舞台与之对齐避免边缘色差。 */
+.ac-stl-preview-pane .ac-html-preview-stage {
+    background: #f8fafc;
+}
+
 .ac-html-preview-stage {
     flex: 1 1 auto;
     min-width: 0;
@@ -1569,6 +1574,91 @@ html[data-theme="dark"] .app-shell-native-frame {
     height: 100%;
     border: 0;
     background: #fff;
+}
+
+/* Pusa 浏览器：中间栏内嵌网页标签（地址栏 + iframe）。 */
+.ac-web-browser-pane {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+    width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+    background: var(--primary-color-1, #f1f5f9);
+}
+
+.ac-web-browser-bar {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex: none;
+    padding: 0.5rem 0.75rem;
+    box-sizing: border-box;
+}
+
+.ac-web-browser-input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.4rem 0.85rem;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    background: #fff;
+    color: inherit;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    outline: none;
+    box-sizing: border-box;
+    transition: border-color 0.15s ease;
+}
+
+.ac-web-browser-input:focus {
+    border-color: var(--border-color-hover);
+}
+
+/* 与聊天栏发送钮（.ac-chat-send-btn 默认态）同色：--search-button 浅蓝灰 + 白字 */
+.ac-web-browser-go {
+    flex: none;
+    padding: 0.4rem 0.95rem;
+    border: 0;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8125rem;
+    font-weight: 650;
+    color: #fff;
+    background: var(--search-button);
+    cursor: pointer;
+    /* 不做 transform 位移：面板里有 iframe，位移会触发整窗合成重建，聊天栏会闪烁 */
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.ac-web-browser-go:hover {
+    background: var(--search-button-hover);
+}
+
+.ac-web-browser-frame {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    border: 0;
+    background: #fff;
+}
+
+.ac-web-browser-empty {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    color: color-mix(in srgb, currentColor 55%, transparent);
+    font-size: 0.875rem;
+    text-align: center;
+}
+
+.ac-web-browser-empty p {
+    margin: 0;
 }
 
 /* 机身：width/height 为真实设备像素（content-box），外圈 1px 灰线勾出手机轮廓，
@@ -1857,11 +1947,17 @@ html[data-theme="dark"] .app-shell-native-frame {
 
 .ac-main-body:has(.ac-center-empty) {
     display: flex;
-    align-items: center;
+    align-items: stretch;
     justify-content: center;
+    padding: 0;
 }
 
+/* 铺满整个中间栏，右键任意空白处都能命中自定义菜单（而非 WebView 原生菜单）。 */
 .ac-center-empty {
+    flex: 1;
+    width: 100%;
+    min-height: 100%;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -1906,11 +2002,11 @@ html[data-theme="dark"] .app-shell-native-frame {
     max-width: min(18rem, 72vw);
     padding: 0.35rem 0;
     border-radius: 0.65rem;
-    background: #2c2c2e;
-    color: #f5f5f7;
+    background: #fff;
+    color: #1d1d1f;
     box-shadow:
-        0 12px 28px color-mix(in srgb, #000 28%, transparent),
-        0 0 0 1px color-mix(in srgb, #fff 8%, transparent);
+        0 12px 28px color-mix(in srgb, #000 18%, transparent),
+        0 0 0 1px color-mix(in srgb, #000 8%, transparent);
 }
 
 .ac-center-empty-logo-menu::after {
@@ -1920,7 +2016,7 @@ html[data-theme="dark"] .app-shell-native-frame {
     left: 50%;
     transform: translateX(-50%);
     border: 6px solid transparent;
-    border-top-color: #2c2c2e;
+    border-top-color: #fff;
 }
 
 .ac-center-empty-logo-menu-item {
@@ -1942,13 +2038,13 @@ html[data-theme="dark"] .app-shell-native-frame {
 }
 
 .ac-center-empty-logo-menu-item:hover {
-    background: color-mix(in srgb, #fff 12%, transparent);
+    background: color-mix(in srgb, #000 7%, transparent);
 }
 
 .ac-center-empty-logo-menu-sep {
     height: 1px;
     margin: 0.3rem 0.55rem;
-    background: color-mix(in srgb, #fff 14%, transparent);
+    background: color-mix(in srgb, #000 10%, transparent);
 }
 
 .ac-center-empty-intro {
@@ -3261,7 +3357,8 @@ html[data-theme="dark"] .ac-xterm-host {
 }
 
 .ac-main-body:has(.ac-file-editor),
-.ac-main-body:has(.ac-html-preview-pane) {
+.ac-main-body:has(.ac-html-preview-pane),
+.ac-main-body:has(.ac-web-browser-pane) {
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -12021,7 +12118,20 @@ html[data-theme="dark"] .ac-html-preview-pane {
     background: #141416;
 }
 
+html[data-theme="dark"] .ac-web-browser-pane {
+    background: #141416;
+}
+
+html[data-theme="dark"] .ac-web-browser-input {
+    background: #1c1c20;
+    color: #f5f5f7;
+}
+
 html[data-theme="dark"] .ac-html-preview-stage {
+    background: #1c1c20;
+}
+
+html[data-theme="dark"] .ac-stl-preview-pane .ac-html-preview-stage {
     background: #1c1c20;
 }
 
@@ -12108,6 +12218,27 @@ html[data-theme="dark"] .ac-html-preview-fab-ball.is-secondary {
 html[data-theme="dark"] .ac-html-preview-fab-ball:hover {
     color: var(--brand, #93c5fd);
     border-color: color-mix(in srgb, var(--brand, #60a5fa) 40%, transparent);
+}
+
+/* 首页空态右键菜单：深色主题恢复深色面板 */
+html[data-theme="dark"] .ac-center-empty-logo-menu {
+    background: #2c2c2e;
+    color: #f5f5f7;
+    box-shadow:
+        0 12px 28px color-mix(in srgb, #000 28%, transparent),
+        0 0 0 1px color-mix(in srgb, #fff 8%, transparent);
+}
+
+html[data-theme="dark"] .ac-center-empty-logo-menu::after {
+    border-top-color: #2c2c2e;
+}
+
+html[data-theme="dark"] .ac-center-empty-logo-menu-item:hover {
+    background: color-mix(in srgb, #fff 12%, transparent);
+}
+
+html[data-theme="dark"] .ac-center-empty-logo-menu-sep {
+    background: color-mix(in srgb, #fff 14%, transparent);
 }
 
 /* 首页空态操作行：磨砂黑 + 深色键帽 */

@@ -66,7 +66,7 @@ if [[ "${BUILD}" == "1" ]]; then
 fi
 
 # 优先 Velopack 产物（desktop/dist/velopack/releases.<channel>.json 存在即认为是 Velopack 构建）。
-# 本脚本只发 Windows 包：非 Windows 主机上 vpk_channel 会按 host 给 osx-*，这里强制回 win-x64（可用 VPK_CHANNEL 覆盖）。
+# 本脚本只发 Windows 包：非 Windows 主机上 vpk_channel 会按 host 给 macos-*，这里强制回 win-x64（可用 VPK_CHANNEL 覆盖）。
 VPK_OUT="$(vpk_out_dir "${ROOT}")"
 VPK_CHANNEL="$(vpk_channel)"
 if [[ "${VPK_CHANNEL}" != win-* ]]; then

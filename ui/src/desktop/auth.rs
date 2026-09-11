@@ -244,6 +244,8 @@ pub fn DesktopAppShell() -> Element {
     let _toast_ctx = use_init_toast_ctx();
     let llm_models_refresh = use_signal(|| 0u32);
     use_context_provider(|| LlmModelsRefresh(llm_models_refresh));
+    let open_browser_tick = use_signal(|| 0u64);
+    use_context_provider(|| crate::shell::browser::OpenBrowserTick(open_browser_tick));
 
     use_effect(move || {
         crate::shell::theme::restore_on_launch();

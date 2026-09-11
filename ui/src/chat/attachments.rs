@@ -317,7 +317,8 @@ pub mod desktop_paste {
     }
     if (files.length === 0) return;
 
-    // 有图片时拦截默认粘贴，避免二进制进 textarea；纯文本仍走浏览器默认。
+    // 有图片时拦截默认粘贴，避免二进制进 textarea；不含文件的粘贴由 composer_ce.rs
+    // 桥的 paste 监听转成纯文本插入（两者按「是否有文件」互斥，不会重复处理）。
     e.preventDefault();
     e.stopPropagation();
 
