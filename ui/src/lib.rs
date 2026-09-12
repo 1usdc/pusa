@@ -106,20 +106,21 @@ fn WebAppShell() -> Element {
     let mut show_settings_modal = use_signal(|| false);
     let show_about_modal = use_signal(|| false);
     let show_titlebar_settings_menu = use_signal(|| false);
-    let developer_mode = use_signal(|| crate::web::dev_mode::get());
+    let developer_mode = use_signal(crate::shell::dev_mode::load);
     // 必须在子组件首次 `use_toast()` 之前调用：把全局 toast ctx 注入到 Dioxus context。
     let _toast_ctx = use_init_toast_ctx();
     let llm_models_refresh = use_signal(|| 0u32);
     use_context_provider(|| crate::shell::LlmModelsRefresh(llm_models_refresh));
 
     use_effect(move || {
-        crate::web::dev_mode::sync_body_to(developer_mode());
+        crate::shell::dev_mode::sync_body_to(developer_mode());
     });
 
     use_effect(move || {
         crate::shell::theme::restore_on_launch();
     });
 
+    use_context_provider(|| crate::shell::dev_mode::DeveloperMode(developer_mode));
     use_context_provider(|| crate::web::ShellChromeCtx {
         show_settings_modal,
         show_about_modal,

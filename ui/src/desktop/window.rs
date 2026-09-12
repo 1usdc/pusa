@@ -373,6 +373,16 @@ mod imp {
         }
     }
 
+    pub fn is_maximized() -> bool {
+        unsafe {
+            let hwnd = hwnd();
+            if hwnd == 0 {
+                return false;
+            }
+            IsZoomed(hwnd) != 0
+        }
+    }
+
     pub(super) fn apply_rounding() {
         let hwnd = hwnd();
         if hwnd == 0 {
@@ -402,6 +412,10 @@ mod imp {
         std::process::exit(0);
     }
 
+    pub fn is_maximized() -> bool {
+        false
+    }
+
     pub(super) fn apply_rounding() {}
 }
 
@@ -417,6 +431,10 @@ mod imp {
         std::process::exit(0);
     }
 
+    pub fn is_maximized() -> bool {
+        false
+    }
+
     pub(super) fn apply_rounding() {}
 }
 
@@ -424,7 +442,7 @@ mod imp {
 pub use imp::drag_window;
 
 #[cfg(not(target_os = "macos"))]
-pub use imp::{close_window, drag_window, minimize_window, toggle_maximize};
+pub use imp::{close_window, drag_window, is_maximized, minimize_window, toggle_maximize};
 
 /// 对当前前台窗口应用系统级圆角（macOS：`contentView` 根 layer + 主队列；Windows：DWM）。
 pub fn apply_host_window_rounding() {

@@ -2,7 +2,7 @@
 //!
 //! macOS：系统红绿灯由 tao `WindowBuilderExtMacOS` 保留（透明标题栏 + fullsize content）；
 //! 本组件只渲染业务按钮，左侧用 spacer 避开原生红绿灯命中区。
-//! Windows：无系统装饰，仍自绘红绿灯。
+//! Windows：右侧 Win 风格最小化 / 最大化 / 关闭（无红绿黄圆点）。
 #![cfg(all(feature = "native", not(target_arch = "wasm32")))]
 
 use dioxus::prelude::*;
@@ -45,35 +45,59 @@ fn NativeTrafficControls() -> Element {
     }
 }
 
-/// Windows：无系统装饰，自绘红绿灯。
 #[cfg(not(target_os = "macos"))]
 #[component]
 fn NativeTrafficControls() -> Element {
+    rsx! {}
+}
+
+/// Windows：右侧原生风格窗口按钮（最小化 / 最大化或还原 / 关闭）。
+#[cfg(target_os = "windows")]
+#[component]
+fn NativeCaptionControls() -> Element {
+    let mut maximized = use_signal(window::is_maximized);
+
     rsx! {
-        div { class: "ac-native-traffic",
+        div { class: "ac-native-caption", role: "group", aria_label: "窗口控制",
             button {
                 r#type: "button",
-                class: "ac-native-dot ac-native-dot-close",
-                title: "关闭",
-                aria_label: "关闭",
-                onclick: move |_| window::close_window(),
-            }
-            button {
-                r#type: "button",
-                class: "ac-native-dot ac-native-dot-min",
+                class: "ac-native-caption-btn ac-native-caption-min",
                 title: "最小化",
                 aria_label: "最小化",
                 onclick: move |_| window::minimize_window(),
+                span { class: "ac-native-caption-icon ac-native-caption-icon-min", aria_hidden: "true" }
             }
             button {
                 r#type: "button",
-                class: "ac-native-dot ac-native-dot-zoom",
-                title: "缩放",
-                aria_label: "缩放",
-                onclick: move |_| window::toggle_maximize(),
+                class: "ac-native-caption-btn ac-native-caption-max",
+                title: if maximized() { "向下还原" } else { "最大化" },
+                aria_label: if maximized() { "向下还原" } else { "最大化" },
+                onclick: move |_| {
+                    window::toggle_maximize();
+                    maximized.set(window::is_maximized());
+                },
+                if maximized() {
+                    span { class: "ac-native-caption-icon ac-native-caption-icon-restore", aria_hidden: "true" }
+                } else {
+                    span { class: "ac-native-caption-icon ac-native-caption-icon-max", aria_hidden: "true" }
+                }
+            }
+            button {
+                r#type: "button",
+                class: "ac-native-caption-btn ac-native-caption-close",
+                title: "关闭",
+                aria_label: "关闭",
+                onclick: move |_| window::close_window(),
+                span { class: "ac-native-caption-icon ac-native-caption-icon-close", aria_hidden: "true" }
             }
         }
     }
+}
+
+#[cfg(not(target_os = "windows"))]
+#[component]
+fn NativeCaptionControls() -> Element {
+    rsx! {}
 }
 
 /// Linux 保留系统装饰，不渲染自定义栏（避免无 `Window` 句柄时无法拖拽）。
@@ -112,6 +136,14 @@ pub fn NativeTitleBar(
     let ui_theme = use_signal(theme::load);
     let open_browser = use_context::<OpenBrowserTick>();
 
+    let titlebar_class = if cfg!(target_os = "macos") {
+        "ac-native-titlebar ac-native-titlebar--macos"
+    } else if cfg!(target_os = "windows") {
+        "ac-native-titlebar ac-native-titlebar--windows"
+    } else {
+        "ac-native-titlebar"
+    };
+
     rsx! {
         NativeResizeHandle {
             class: "ac-native-resize-hit ac-native-resize-n".to_string(),
@@ -138,11 +170,7 @@ pub fn NativeTitleBar(
             class: "ac-native-resize-hit ac-native-resize-sw".to_string(),
         }
         div {
-            class: if cfg!(target_os = "macos") {
-                "ac-native-titlebar ac-native-titlebar--macos"
-            } else {
-                "ac-native-titlebar"
-            },
+            class: "{titlebar_class}",
             onmounted: move |_| {
                 window::apply_host_window_rounding();
                 window::schedule_host_window_rounding_retry();
@@ -256,7 +284,7 @@ pub fn NativeTitleBar(
                                     show_titlebar_settings_menu.set(false);
                                     show_settings_modal.set(true);
                                 },
-                                "AI大模型"
+                                "API 密钥"
                             }
                             TitlebarThemeToggle {
                                     ui_theme,
@@ -276,6 +304,7 @@ pub fn NativeTitleBar(
                     }
                 }
             }
+            NativeCaptionControls {}
         }
     }
 }

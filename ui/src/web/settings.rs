@@ -53,7 +53,7 @@ pub fn WebSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
     rsx! {
         div { class: "ac-settings-card ac-settings-card--wide",
             div { class: "ac-settings-head",
-                h1 { class: "ac-settings-title", "AI大模型" }
+                h1 { class: "ac-settings-title", "API 密钥" }
                 button {
                     r#type: "button",
                     class: "ac-settings-close",

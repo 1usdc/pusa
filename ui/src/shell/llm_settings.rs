@@ -205,7 +205,7 @@ pub fn LlmCredentialsPanel(
     rsx! {
         div { class: "ac-llm-cred-panel",
             p { class: "ac-settings-lead",
-                "可添加多组端点。API Key 可留空。打开开关的端点会同时启用，模型列表合并这些地址。"
+                "可添加多组AI大模型端点，打开的端点会同时启用，模型列表可切换选择这些模型。"
             }
             if let Some(h) = hint.filter(|s| !s.trim().is_empty()) {
                 p { class: "ac-settings-saved", "{h}" }
@@ -317,7 +317,7 @@ pub fn LlmCredentialsPanel(
                             oninput: move |e| add_key.set(e.value()),
                         }
                     }
-                    label { class: "ac-settings-label", "Base URL（须以 /v1 结尾）"
+                    label { class: "ac-settings-label", "Base URL（以 /v1 结尾）"
                         input {
                             r#type: "text",
                             class: "ac-settings-input",

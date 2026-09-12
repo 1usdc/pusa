@@ -436,6 +436,147 @@ html[data-theme="dark"] .app-shell-native-frame {
     padding: 0 4px 0 0;
 }
 
+/* Windows：贴边标题栏；右侧 caption 顶满高度 */
+.ac-native-titlebar--windows {
+    padding: 0 0 0 10px;
+    gap: 6px;
+}
+
+/* Windows 原生风格窗口按钮（右对齐，约 Win11 命中区） */
+.ac-native-caption {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    flex-shrink: 0;
+    height: 100%;
+    margin-left: 4px;
+}
+
+.ac-native-caption-btn {
+    appearance: none;
+    -webkit-appearance: none;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 46px;
+    height: 100%;
+    min-width: 46px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: var(--secondary-color-1);
+    cursor: default;
+    box-shadow: none;
+}
+
+.ac-native-caption-btn:hover {
+    background: color-mix(in srgb, var(--secondary-color-1) 8%, transparent);
+}
+
+.ac-native-caption-btn:active {
+    background: color-mix(in srgb, var(--secondary-color-1) 14%, transparent);
+}
+
+.ac-native-caption-close:hover {
+    background: #e81123;
+    color: #fff;
+}
+
+.ac-native-caption-close:active {
+    background: #f1707a;
+    color: #fff;
+}
+
+.ac-native-caption-btn:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--brand) 55%, transparent);
+    outline-offset: -2px;
+}
+
+.ac-native-caption-icon {
+    display: block;
+    width: 10px;
+    height: 10px;
+    box-sizing: border-box;
+    pointer-events: none;
+}
+
+.ac-native-caption-icon-min {
+    width: 10px;
+    height: 1px;
+    background: currentColor;
+}
+
+.ac-native-caption-icon-max {
+    width: 10px;
+    height: 10px;
+    border: 1px solid currentColor;
+    background: transparent;
+}
+
+.ac-native-caption-icon-restore {
+    position: relative;
+    width: 10px;
+    height: 10px;
+    border: none;
+    background: transparent;
+}
+
+.ac-native-caption-icon-restore::before,
+.ac-native-caption-icon-restore::after {
+    content: "";
+    position: absolute;
+    box-sizing: border-box;
+    border: 1px solid currentColor;
+    background: transparent;
+}
+
+.ac-native-caption-icon-restore::before {
+    top: 0;
+    right: 0;
+    width: 8px;
+    height: 8px;
+}
+
+.ac-native-caption-icon-restore::after {
+    left: 0;
+    bottom: 0;
+    width: 8px;
+    height: 8px;
+    background: color-mix(in srgb, var(--primary-color-1) 80%, transparent);
+}
+
+.ac-native-caption-icon-close {
+    position: relative;
+    width: 10px;
+    height: 10px;
+}
+
+.ac-native-caption-icon-close::before,
+.ac-native-caption-icon-close::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 12px;
+    height: 1px;
+    background: currentColor;
+}
+
+.ac-native-caption-icon-close::before {
+    transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.ac-native-caption-icon-close::after {
+    transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+html[data-theme="dark"] .ac-native-caption-icon-restore::after {
+    background: color-mix(in srgb, var(--primary-color-1) 80%, transparent);
+}
+
 /* macOS：系统红绿灯占位（inset x=14 + 三灯间距，约对齐 Apple HIG） */
 .ac-native-traffic-spacer {
     flex-shrink: 0;
@@ -9551,6 +9692,22 @@ button.ac-chat-trace-primary.is-link:hover {
     font-weight: 850;
 }
 
+.ac-agent-detail-timing {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.45rem;
+}
+
+.ac-agent-detail-timing span {
+    padding: 0.18rem 0.5rem;
+    border-radius: 0.4rem;
+    color: var(--secondary-color-2);
+    background: var(--primary-color-2);
+    font-size: 0.66rem;
+    font-weight: 800;
+}
+
 .ac-agent-detail-tool {
     margin-top: 0.8rem;
     padding-top: 0.8rem;
@@ -11414,8 +11571,13 @@ html[data-theme="dark"] .ac-chat-model-wrap .ac-chat-mode-sheet__opt.is-active .
     padding: 0;
     background: transparent;
     text-align: left;
-    cursor: default;
+    cursor: pointer;
     border-radius: 0.35rem;
+}
+
+.ac-about-title-tappable {
+    cursor: default;
+    user-select: none;
 }
 
 .ac-about-row-tappable:focus-visible {

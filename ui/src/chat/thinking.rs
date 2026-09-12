@@ -754,9 +754,15 @@ pub fn ChatThinkingHydrator(
         spawn(async move {
             if let Ok(detail) = load_agent_run_detail(run_id).await {
                 chat_messages.with_mut(|msgs| {
-                    if let Some(UiChatMessage::Assistant { thinking, .. }) = msgs.get_mut(msg_index)
+                    if let Some(UiChatMessage::Assistant {
+                        content,
+                        thinking,
+                        ..
+                    }) = msgs.get_mut(msg_index)
                     {
+                        let answer = content.clone();
                         *thinking = UiAgentThinking::from_agent_run_detail(&detail);
+                        thinking.clear_thoughts_duplicating_answer(&answer);
                     }
                 });
             }

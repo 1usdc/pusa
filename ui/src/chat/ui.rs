@@ -140,10 +140,26 @@ impl UiAgentThinking {
         }
     }
 
+    /// 无工具调用且 `model_text` 与最终气泡正文相同：清除该步思考文案（避免「思考」与回答双显）。
+    pub fn clear_thoughts_duplicating_answer(&mut self, answer: &str) {
+        let answer = normalize_chat_cmp(answer);
+        if answer.is_empty() {
+            return;
+        }
+        for step in &mut self.steps {
+            if step.tools.is_empty() && normalize_chat_cmp(&step.model_text) == answer {
+                step.model_text.clear();
+            }
+        }
+    }
+
     pub fn has_visible_content(&self) -> bool {
-        !self.steps.is_empty()
-            || matches!(self.status, ThinkingStatus::Running)
-            || self.total_duration_ms.is_some()
+        if matches!(self.status, ThinkingStatus::Running) {
+            return true;
+        }
+        self.steps
+            .iter()
+            .any(|s| !s.tools.is_empty() || !s.model_text.trim().is_empty())
     }
 
     /// 优先用落库总耗时，否则汇总各 step。
@@ -158,6 +174,13 @@ impl UiAgentThinking {
             None
         }
     }
+}
+
+fn normalize_chat_cmp(s: &str) -> String {
+    s.trim()
+        .chars()
+        .filter(|c| *c != '\r')
+        .collect::<String>()
 }
 
 /// 单条气泡展示。

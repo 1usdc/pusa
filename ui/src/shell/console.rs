@@ -1912,7 +1912,7 @@ fn OpenAiSetupModal(
                 div { class: "ac-api-modal",
                     h2 { class: "ac-api-modal-title", "配置 API Key" }
                     p { class: "ac-api-modal-desc",
-                        "服务端未设置模型配置。请填写 OpenAI（sk-…）或 Anthropic（sk-ant-…）格式的 API Key，以及兼容端点的 Base URL（须以 /v1 结尾）；配置将保存到服务端数据库。"
+                        "服务端未设置模型配置。请填写 OpenAI（sk-…）或 Anthropic（sk-ant-…）格式的 API Key，以及兼容端点的 Base URL（以 /v1 结尾）；配置将保存到服务端数据库。"
                     }
                     div { class: "ac-api-modal-field",
                         label { class: "ac-auth-label", "API Key"
@@ -2182,6 +2182,32 @@ fn format_duration_ms(duration_ms: Option<i64>) -> String {
     }
 }
 
+/// 已落库的耗时；缺失字段显示为破折号（兼容旧 run）。
+fn format_stored_duration_ms(duration_ms: Option<i64>) -> String {
+    match duration_ms {
+        Some(ms) => format_duration_ms(Some(ms)),
+        None => "—".into(),
+    }
+}
+
+fn format_step_timing_breakdown(
+    duration_ms: Option<i64>,
+    cpu_ms: Option<i64>,
+    io_ms: Option<i64>,
+    block_ms: Option<i64>,
+) -> String {
+    let total = format_stored_duration_ms(duration_ms);
+    if cpu_ms.is_none() && io_ms.is_none() && block_ms.is_none() {
+        return total;
+    }
+    format!(
+        "{total}（CPU {} · IO {} · 阻塞 {}）",
+        format_stored_duration_ms(cpu_ms),
+        format_stored_duration_ms(io_ms),
+        format_stored_duration_ms(block_ms)
+    )
+}
+
 fn upsert_thinking_step_index(thinking: &mut UiAgentThinking, index: usize) -> usize {
     if let Some(pos) = thinking.steps.iter().position(|s| s.index == index) {
         return pos;
@@ -2360,6 +2386,7 @@ fn apply_chat_sse_event(
             index,
             model_output,
             duration_ms,
+            ..
         } => {
             with_assistant_at(msgs, assistant_idx, |_, thinking| {
                 let pos = upsert_thinking_step_index(thinking, index);
@@ -2372,7 +2399,7 @@ fn apply_chat_sse_event(
             });
         }
         SseEvent::AgentFinalizing => {
-            with_assistant_at(msgs, assistant_idx, |_, thinking| {
+            with_assistant_at(msgs, assistant_idx, |content, thinking| {
                 thinking.status = ThinkingStatus::Done;
                 thinking.expanded = true;
                 if thinking.total_duration_ms.is_none() {
@@ -2381,6 +2408,8 @@ fn apply_chat_sse_event(
                         thinking.total_duration_ms = Some(sum);
                     }
                 }
+                // 无工具时正文曾进思考面板，收尾 AnswerDelta 后再清掉与气泡重复的「思考」。
+                thinking.clear_thoughts_duplicating_answer(content);
             });
         }
         SseEvent::TurnPersisted {
@@ -2460,7 +2489,7 @@ fn build_agent_run_full_text(detail: &AgentRunDetailDto) -> String {
             "步骤 #{} | {} | {}\n",
             step.index,
             step.phase,
-            format_duration_ms(step.duration_ms)
+            format_step_timing_breakdown(step.duration_ms, step.cpu_ms, step.io_ms, step.block_ms)
         ));
         if !step.model_output.trim().is_empty() {
             out.push_str("模型输出:\n");
@@ -2828,7 +2857,7 @@ fn WebShellTitlebar(
                                         show_titlebar_settings_menu.set(false);
                                         show_settings_modal.set(true);
                                     },
-                                    "AI大模型"
+                                    "API 密钥"
                                 }
                                 crate::shell::theme::TitlebarThemeToggle {
                                     ui_theme,
@@ -3295,10 +3324,7 @@ pub fn Console(
         ))
     });
 
-    #[cfg(all(target_arch = "wasm32", feature = "web"))]
-    let developer_mode = use_context::<crate::web::ShellChromeCtx>().developer_mode;
-    #[cfg(not(all(target_arch = "wasm32", feature = "web")))]
-    let developer_mode = use_signal(|| false);
+    let developer_mode = use_context::<crate::shell::dev_mode::DeveloperMode>().0;
 
     // Reconcile：若当前选中的 chat_model 不在最新模型列表里（譬如服务端把
     // 旧模型下架），自动回落到列表第一项。`chat_models` 通过 .read() 触发
@@ -7691,6 +7717,11 @@ pub fn Console(
                                         div { class: "ac-agent-detail-step-head",
                                             strong { "步骤 #{step.index}" }
                                             span { "{step.phase} · {format_duration_ms(step.duration_ms)}" }
+                                        }
+                                        div { class: "ac-agent-detail-timing",
+                                            span { "CPU {format_stored_duration_ms(step.cpu_ms)}" }
+                                            span { "IO {format_stored_duration_ms(step.io_ms)}" }
+                                            span { "阻塞 {format_stored_duration_ms(step.block_ms)}" }
                                         }
                                         if !step.model_output.trim().is_empty() {
                                             div { class: "ac-agent-detail-block-title", "模型输出" }

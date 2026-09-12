@@ -148,8 +148,18 @@ pub struct AgentRunStepDetailDto {
     pub created_at: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completed_at: Option<i64>,
+    /// 墙钟总耗时（CPU + IO + 阻塞）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_ms: Option<i64>,
+    /// 模型推理 / 流式生成耗时（含工具结果摘要的 LLM 调用）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpu_ms: Option<i64>,
+    /// 工具执行耗时（文件/终端/网络等，并行时取墙钟）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub io_ms: Option<i64>,
+    /// 调度间隙、锁等待等剩余阻塞耗时。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_ms: Option<i64>,
     pub tools: Vec<AgentToolCallDetailDto>,
 }
 
@@ -190,6 +200,12 @@ pub enum SseEvent {
         model_output: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         duration_ms: Option<i64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cpu_ms: Option<i64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        io_ms: Option<i64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        block_ms: Option<i64>,
     },
     AgentFinalizing,
     /// 当前 Agent 步的模型输出增量（仅思考面板）。
@@ -901,6 +917,9 @@ mod tests {
             index: 1,
             model_output: "step text".into(),
             duration_ms: Some(99),
+            cpu_ms: Some(80),
+            io_ms: Some(10),
+            block_ms: Some(9),
         };
         let done_json = serde_json::to_string(&done).unwrap();
         assert_eq!(serde_json::from_str::<SseEvent>(&done_json).unwrap(), done);
@@ -926,6 +945,9 @@ mod tests {
                 created_at: 100,
                 completed_at: Some(101),
                 duration_ms: Some(1200),
+                cpu_ms: Some(900),
+                io_ms: Some(250),
+                block_ms: Some(50),
                 tools: vec![AgentToolCallDetailDto {
                     id: 3,
                     tool_call_id: "call-1".into(),

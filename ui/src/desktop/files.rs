@@ -53,7 +53,7 @@ struct RecentProjectsStore {
     dirs: Vec<String>,
 }
 
-fn app_data_dir() -> PathBuf {
+pub(crate) fn app_data_dir() -> PathBuf {
     let root = dirs::data_local_dir()
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
         .join("AnotherClaw");

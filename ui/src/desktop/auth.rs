@@ -51,7 +51,7 @@ fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
     rsx! {
         div { class: "ac-settings-card ac-settings-card--wide",
             div { class: "ac-settings-head",
-                h1 { class: "ac-settings-title", "AI大模型" }
+                h1 { class: "ac-settings-title", "API 密钥" }
                 button {
                     r#type: "button",
                     class: "ac-settings-close",
@@ -163,11 +163,22 @@ fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
 
 #[component]
 fn DesktopAboutModal(mut show_about_modal: Signal<bool>) -> Element {
+    let developer_mode = use_context::<crate::shell::dev_mode::DeveloperMode>().0;
+    let mut triple_title = use_signal(|| (0u32, 0.0f64));
+    let mut triple_dev = use_signal(|| (0u32, 0.0f64));
     let dto = AboutInfoDto {
         version: crate::version::app_version(),
         runtime_os: std::env::consts::OS.to_string(),
         runtime_arch: std::env::consts::ARCH.to_string(),
     };
+
+    use_effect(move || {
+        if !show_about_modal() {
+            triple_title.set((0, 0.0));
+            triple_dev.set((0, 0.0));
+        }
+    });
+
     rsx! {
         div { class: "ac-settings-modal-root ac-about-modal-root",
             div {
@@ -177,7 +188,18 @@ fn DesktopAboutModal(mut show_about_modal: Signal<bool>) -> Element {
             div { class: "ac-settings-modal-dialog",
                 div { class: "ac-settings-card ac-about-card",
                     div { class: "ac-settings-head",
-                        h1 { class: "ac-settings-title", "关于本机" }
+                        h1 {
+                            class: "ac-settings-title ac-about-title-tappable",
+                            role: "button",
+                            tabindex: "0",
+                            title: "连续点击三次可开关开发者模式",
+                            onclick: move |_| {
+                                crate::shell::dev_mode::register_triple_click(triple_title, move || {
+                                    crate::shell::dev_mode::toggle(developer_mode);
+                                });
+                            },
+                            "关于本机"
+                        }
                         button {
                             r#type: "button",
                             class: "ac-settings-close",
@@ -191,6 +213,20 @@ fn DesktopAboutModal(mut show_about_modal: Signal<bool>) -> Element {
                         div { class: "ac-about-row",
                             dt { "版本号" }
                             dd { "{dto.version}" }
+                        }
+                        if developer_mode() {
+                            div {
+                                class: "ac-about-row ac-about-row-tappable",
+                                role: "button",
+                                tabindex: "0",
+                                onclick: move |_| {
+                                    crate::shell::dev_mode::register_triple_click(triple_dev, move || {
+                                        crate::shell::dev_mode::apply(false, developer_mode);
+                                    });
+                                },
+                                dt { "开发者模式" }
+                                dd { "true" }
+                            }
                         }
                         div { class: "ac-about-row",
                             dt { "系统" }
@@ -245,14 +281,20 @@ pub fn DesktopAppShell() -> Element {
     let mut show_settings_modal = use_signal(|| false);
     let show_about_modal = use_signal(|| false);
     let show_titlebar_settings_menu = use_signal(|| false);
+    let developer_mode = use_signal(crate::shell::dev_mode::load);
     let _toast_ctx = use_init_toast_ctx();
     let llm_models_refresh = use_signal(|| 0u32);
     use_context_provider(|| LlmModelsRefresh(llm_models_refresh));
     let open_browser_tick = use_signal(|| 0u64);
     use_context_provider(|| crate::shell::browser::OpenBrowserTick(open_browser_tick));
+    use_context_provider(|| crate::shell::dev_mode::DeveloperMode(developer_mode));
 
     use_effect(move || {
         crate::shell::theme::restore_on_launch();
+    });
+
+    use_effect(move || {
+        crate::shell::dev_mode::sync_body_to(developer_mode());
     });
 
     use_effect(move || {

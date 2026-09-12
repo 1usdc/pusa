@@ -1,6 +1,7 @@
 //! 主控制台骨架（布局与交互）。
 pub(crate) mod browser;
 mod console;
+pub(crate) mod dev_mode;
 pub(crate) mod files;
 mod llm_enabled;
 mod llm_settings;

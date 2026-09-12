@@ -74,3 +74,4 @@ if (-not (Test-Path $dest)) {
 }
 
 just pusa-core
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
