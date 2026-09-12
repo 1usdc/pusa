@@ -135,6 +135,7 @@ ui/src/
 ├── icons.rs               # 自定义 SVG 图标
 ├── shell/                 # 主控制台骨架
 │   ├── console.rs         # 三栏布局、会话历史、标题栏开关等
+│   ├── browser.rs         # Pusa 浏览器标签（地址栏 + iframe，右键菜单打开）
 │   ├── files.rs           # FILES 树、文件编辑器、行内 diff
 │   ├── syntax.rs          # 代码语法高亮
 │   ├── plugins.rs         # 我的应用 / 应用市场 / 智能 UI
@@ -223,11 +224,11 @@ UI (chat facade)
 | `just web` | 启动 Web（`scripts/web.sh`） |
 | `just server` | 启动 API（`scripts/server.sh`） |
 | `just desktop` | 桌面热重载（`scripts/desktop.sh`） |
-| `just desktop-mac` | 本机 macOS 打包 + 签名公证（`scripts/desktop-mac.sh`） |
-| `just desktop-mac-release` | 本机 DMG 上传 GitHub Release（`scripts/desktop-mac-release.sh`） |
-| `just desktop-windows` | 本机 Windows 打包（默认不签名；`SIGN=1` → Azure Artifact Signing） |
-| `just release-mac` | macOS 发版（tag 取自 `desktop/Cargo.toml`；可选 `BUILD=1`） |
-| `just release-windows` | Windows 发版（同上；可选 `BUILD=1`） |
+| `just desktop-mac` | 本机 macOS 打包 → Velopack 包（`scripts/desktop-mac.sh`；`VELOPACK=0` 回退 DMG） |
+| `just desktop-mac-release` | 旧流程：本机 DMG 上传 GitHub Release（`scripts/desktop-mac-release.sh`） |
+| `just desktop-windows` | 本机 Windows 打包 → Velopack 包（默认不签名；`SIGN=1` → Azure Trusted Signing；`VELOPACK=0` 回退 NSIS） |
+| `just release-mac` | macOS 发版（tag 取自 `desktop/Cargo.toml`；可选 `BUILD=1`；有 Velopack 产物时 `vpk upload github`） |
+| `just release-windows` | Windows 发版（同上；可选 `BUILD=1`；mac 上代发 Windows 包：`VPK_CHANNEL=win-x64`） |
 | `just db-clear` | 清空 `data/` |
 | `just push` | 仅推送远端 |
 
@@ -240,6 +241,35 @@ UI (chat facade)
 桌面打包签名凭证见 `.env.signing.example`（复制为 `.env.signing`，已 gitignore）。
 
 CI：`.github/workflows/`（桌面打包已改为本机流程，不再走 Actions）。
+
+### 5.1 自动更新（Velopack）
+
+桌面端用 [Velopack](https://velopack.io) 做跨平台增量更新，客户端与打包/发布脚本约定如下。
+
+**客户端**
+
+- `desktop/src/main.rs`：`main()` 首行 `velopack::VelopackApp::build().run()`，处理安装/卸载/更新后首启钩子；非 Velopack 安装时为空操作。
+- `ui/src/desktop/updater.rs`：Velopack 薄封装（`manager` / `check` / `download` / `apply_and_restart` / `pending_restart`），全部阻塞调用，需在 `spawn_blocking` 里跑；`GITHUB_REPO_URL` 与脚本 `VPK_REPO_URL` 一致。
+- `ui/src/shell/status_bar.rs`：状态机 `Checking → Downloading{pct} → RestartReady`（失败 → `Failed`，退化为跳发布页）。检查后**后台静默下载**（delta 优先，自动回退全量），下载完成后版本号变为「重启更新」，点击即退出→应用→重启；每小时重查一次。非 Velopack 安装（`dx serve` / 旧 DMG）走 GitHub Release API，只显示「(+1)」并跳转发布页。
+
+**打包**（`scripts/velopack-pack-mac.sh` / `scripts/velopack-pack-windows.ps1`，由 `desktop-mac.sh` / `desktop-windows.ps1` 默认调用）
+
+- `vpk download github` 拉上一版全量包 → `vpk pack` 生成 full + delta `.nupkg`、`releases.<channel>.json`（mac 始终 `--noInst` 不出 `.pkg`，Portable 再封成 `.dmg`；win 仍出 `Setup.exe` + Portable.zip），输出到 `desktop/dist/velopack/`。
+- macOS 的签名 + 公证由 vpk 完成（`--signAppIdentity` / `--signInstallIdentity` / `--notaryProfile`）；Windows `SIGN=1` 走 Azure Trusted Signing。
+- channel 按 host 决定（`macos-arm64` / `macos-x64` / `win-x64`），`VPK_CHANNEL` 可覆盖；公共配置见 `scripts/velopack-common.sh`。
+
+**发布**（`scripts/release-mac.sh` / `scripts/release-windows.sh`）
+
+- 检测到 `desktop/dist/velopack/releases.<channel>.json` 即走 `vpk upload github --merge`，把安装器、`.nupkg` 与 `releases.<channel>.json` 一起挂到 `desktop-vX.Y.Z` 的 GitHub Release 资产；mac / win 可先后上传到同一个 Release。
+- 没有 Velopack 产物时回退到旧的 `gh release upload`（`*.dmg` / `*-setup.exe`）。
+
+**前置依赖**：.NET 8 SDK（mac `brew install --cask dotnet-sdk`，win `winget install Microsoft.DotNet.SDK.8`）+ `dotnet tool install -g vpk`，并确保 `~/.dotnet/tools` 在 `PATH`。
+
+**注意事项**
+
+- packId 固定为 `Pusa`（安装目录 / 缓存目录 / Windows 注册表键），发布后不可再改。
+- 旧非 Velopack 安装的用户只能看到「(+1)」跳到发布页，手动装一次当前 `.dmg` 后才有应用内更新。
+- vpk 会在注入 `UpdateMac` 后统一对 `.app` 深签，因此交给 `velopack-pack-mac.sh` 的 `.app` **不能预先 codesign**（`VELOPACK=1` 时 `desktop-mac.sh` 不再调用 `macos-sign-notarize.sh`）。
 
 ---
 

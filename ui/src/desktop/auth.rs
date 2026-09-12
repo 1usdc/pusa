@@ -6,13 +6,25 @@ use dioxus::prelude::*;
 use protocol::{AboutInfoDto, LlmConfigDto, LlmCredentialUpsertBody};
 
 use crate::desktop::agent;
-use crate::shell::LlmCredentialsPanel;
 use crate::shell::toast::{use_init_toast_ctx, use_toast, ToastViewport};
+use crate::shell::{
+    activate_id_after_toggle, enabled_after_delete, enabled_after_toggle, enabled_after_upsert,
+    format_llm_settings_error, overlay_enabled_credential_ids, LlmCredentialsPanel,
+    LlmModelsRefresh,
+};
 use crate::Console;
 
-fn apply_cfg(cfg: LlmConfigDto, mut credentials: Signal<Vec<protocol::LlmCredentialDto>>, mut active_id: Signal<String>) {
+fn apply_cfg(
+    cfg: LlmConfigDto,
+    mut credentials: Signal<Vec<protocol::LlmCredentialDto>>,
+    mut active_id: Signal<String>,
+    mut enabled_ids: Signal<Vec<String>>,
+) {
+    let known: Vec<String> = cfg.credentials.iter().map(|c| c.id.clone()).collect();
+    let enabled = overlay_enabled_credential_ids(&known, &cfg.active_credential_id);
     credentials.set(cfg.credentials);
     active_id.set(cfg.active_credential_id);
+    enabled_ids.set(enabled);
 }
 
 #[component]
@@ -20,16 +32,18 @@ fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
     let toast = use_toast();
     let credentials = use_signal(Vec::<protocol::LlmCredentialDto>::new);
     let active_id = use_signal(String::new);
+    let mut enabled_ids = use_signal(Vec::<String>::new);
     let mut load_hint = use_signal(|| None::<String>);
+    let refresh = use_context::<LlmModelsRefresh>().0;
 
     use_effect(move || {
         spawn(async move {
             match async { agent::runtime_ctx()?.llm_config_get().await }.await {
                 Ok(cfg) => {
-                    apply_cfg(cfg, credentials, active_id);
+                    apply_cfg(cfg, credentials, active_id, enabled_ids);
                     load_hint.set(None);
                 }
-                Err(err) => load_hint.set(Some(err.to_string())),
+                Err(err) => load_hint.set(Some(format_llm_settings_error(&err.to_string()))),
             }
         });
     });
@@ -37,7 +51,7 @@ fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
     rsx! {
         div { class: "ac-settings-card ac-settings-card--wide",
             div { class: "ac-settings-head",
-                h1 { class: "ac-settings-title", "API Key" }
+                h1 { class: "ac-settings-title", "AI大模型" }
                 button {
                     r#type: "button",
                     class: "ac-settings-close",
@@ -49,41 +63,96 @@ fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
             }
             LlmCredentialsPanel {
                 credentials: credentials(),
-                active_id: active_id(),
+                enabled_ids: enabled_ids(),
                 hint: load_hint(),
                 on_add: move |body: LlmCredentialUpsertBody| {
                     spawn(async move {
+                        let prev_ids: Vec<String> =
+                            credentials().iter().map(|c| c.id.clone()).collect();
+                        let prev_enabled = enabled_ids();
                         match async { agent::runtime_ctx()?.llm_credential_upsert(body).await }.await {
                             Ok(cfg) => {
-                                apply_cfg(cfg, credentials, active_id);
+                                let new_ids: Vec<String> =
+                                    cfg.credentials.iter().map(|c| c.id.clone()).collect();
+                                apply_cfg(cfg, credentials, active_id, enabled_ids);
+                                enabled_ids.set(enabled_after_upsert(
+                                    &prev_enabled,
+                                    &prev_ids,
+                                    &new_ids,
+                                    refresh,
+                                ));
                                 load_hint.set(None);
                                 toast.success("已添加密钥");
                             }
-                            Err(err) => load_hint.set(Some(err.to_string())),
+                            Err(err) => {
+                                load_hint.set(Some(format_llm_settings_error(&err.to_string())))
+                            }
                         }
                     });
                 },
-                on_activate: move |id: String| {
+                on_rename: move |(id, label): (String, String)| {
                     spawn(async move {
-                        match async { agent::runtime_ctx()?.llm_credential_activate(&id).await }.await {
+                        let Some(cred) = credentials().into_iter().find(|c| c.id == id) else {
+                            return;
+                        };
+                        let body = LlmCredentialUpsertBody {
+                            id: Some(cred.id),
+                            provider: cred.provider,
+                            api_key: cred.api_key,
+                            openai_v1_base: cred.openai_v1_base,
+                            label,
+                        };
+                        match async { agent::runtime_ctx()?.llm_credential_upsert(body).await }.await {
                             Ok(cfg) => {
-                                apply_cfg(cfg, credentials, active_id);
+                                apply_cfg(cfg, credentials, active_id, enabled_ids);
                                 load_hint.set(None);
-                                toast.success("已切换当前密钥");
+                                toast.success("已更新名称");
                             }
-                            Err(err) => load_hint.set(Some(err.to_string())),
+                            Err(err) => {
+                                load_hint.set(Some(format_llm_settings_error(&err.to_string())))
+                            }
+                        }
+                    });
+                },
+                on_toggle: move |(id, on): (String, bool)| {
+                    spawn(async move {
+                        let next = enabled_after_toggle(&enabled_ids(), &id, on, refresh);
+                        enabled_ids.set(next.clone());
+                        if let Some(activate) =
+                            activate_id_after_toggle(&next, &active_id(), &id, on)
+                        {
+                            match async {
+                                agent::runtime_ctx()?.llm_credential_activate(&activate).await
+                            }
+                            .await
+                            {
+                                Ok(cfg) => {
+                                    apply_cfg(cfg, credentials, active_id, enabled_ids);
+                                    enabled_ids.set(next);
+                                    load_hint.set(None);
+                                }
+                                Err(err) => {
+                                    load_hint.set(Some(format_llm_settings_error(&err.to_string())))
+                                }
+                            }
                         }
                     });
                 },
                 on_delete: move |id: String| {
                     spawn(async move {
+                        let prev_enabled = enabled_ids();
                         match async { agent::runtime_ctx()?.llm_credential_delete(&id).await }.await {
                             Ok(cfg) => {
-                                apply_cfg(cfg, credentials, active_id);
+                                let known: Vec<String> =
+                                    cfg.credentials.iter().map(|c| c.id.clone()).collect();
+                                apply_cfg(cfg, credentials, active_id, enabled_ids);
+                                enabled_ids.set(enabled_after_delete(&prev_enabled, &known, refresh));
                                 load_hint.set(None);
                                 toast.success("已删除密钥");
                             }
-                            Err(err) => load_hint.set(Some(err.to_string())),
+                            Err(err) => {
+                                load_hint.set(Some(format_llm_settings_error(&err.to_string())))
+                            }
                         }
                     });
                 },
@@ -177,6 +246,10 @@ pub fn DesktopAppShell() -> Element {
     let show_about_modal = use_signal(|| false);
     let show_titlebar_settings_menu = use_signal(|| false);
     let _toast_ctx = use_init_toast_ctx();
+    let llm_models_refresh = use_signal(|| 0u32);
+    use_context_provider(|| LlmModelsRefresh(llm_models_refresh));
+    let open_browser_tick = use_signal(|| 0u64);
+    use_context_provider(|| crate::shell::browser::OpenBrowserTick(open_browser_tick));
 
     use_effect(move || {
         crate::shell::theme::restore_on_launch();

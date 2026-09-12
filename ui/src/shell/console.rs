@@ -35,7 +35,8 @@ use crate::chat::{
     activate_role, attachment_from_file_data, attachment_from_path, ce_clear, ce_focus_end,
     ce_insert_chip, ce_insert_text, ce_serialize, ce_set_html, chip_html, compose_user_payload,
     composer_seed_html, composer_seed_html_from_segs, create_conversation, create_role,
-    delete_conversation, delete_role, install_skill, list_chat_models, list_conversations,
+    delete_conversation, delete_role, install_skill, list_chat_models, list_chat_models_from_credentials,
+    list_conversations,
     load_agent_run_detail, load_conversation_messages, load_equipped_skills, load_installed_skills,
     load_roles, load_skill_market, parse_user_message_segments, pending_has_path, pending_remove_ids,
     run_chat_turn, toggle_skill_equip, uninstall_installed_skill, update_conversation_title,
@@ -49,28 +50,28 @@ use crate::persona;
 use crate::web::llm_config;
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
 use crate::web::password_field::{AcPasswordInput, PasswordFieldStyle};
+use crate::custom_chat_models::CustomChatModelPref;
 use protocol::{
     AgentRunDetailDto, ChatMessageDto, ChatTurnRequest, ConversationSummaryDto,
-    InstalledSkillDto, RoleCreateRequest, RoleDto, RoleUpdateRequest, SkillMarketItemDto,
-    SkillRegistryDto, SseEvent, StoredChatMessageDto, DEFAULT_CHAT_MAX_AGENT_STEPS,
+    InstalledSkillDto, LlmApiProvider, LlmCredentialDto, RoleCreateRequest, RoleDto,
+    RoleUpdateRequest, SkillMarketItemDto, SkillRegistryDto, SseEvent, StoredChatMessageDto,
+    DEFAULT_CHAT_MAX_AGENT_STEPS,
 };
 
-/// 聊天栏工具条里的 Agent 工作模式（图：Agent / Plan / Debug / Multitask / Ask）。
+/// 聊天栏工具条里的 Agent 工作模式（图：Agent / Ask / Plan / Multitask）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ChatAgentMode {
     Agent,
+    Ask,
     Plan,
     /// 已从模式菜单隐藏，保留以兼容协议枚举。
     #[allow(dead_code)]
     Debug,
     Multitask,
-    /// 已从模式菜单隐藏，保留以兼容协议枚举。
-    #[allow(dead_code)]
-    Ask,
 }
 
 impl ChatAgentMode {
-    const VISIBLE: [Self; 3] = [Self::Agent, Self::Plan, Self::Multitask];
+    const VISIBLE: [Self; 4] = [Self::Agent, Self::Ask, Self::Plan, Self::Multitask];
 
     fn label(self) -> &'static str {
         match self {
@@ -102,6 +103,16 @@ impl ChatAgentMode {
             Self::Ask => protocol::ChatTurnMode::Ask,
         }
     }
+
+    fn from_turn_mode(mode: protocol::ChatTurnMode) -> Self {
+        match mode {
+            protocol::ChatTurnMode::Agent => Self::Agent,
+            protocol::ChatTurnMode::Plan => Self::Plan,
+            protocol::ChatTurnMode::Debug => Self::Debug,
+            protocol::ChatTurnMode::Multitask => Self::Multitask,
+            protocol::ChatTurnMode::Ask => Self::Ask,
+        }
+    }
 }
 
 /// 聊天栏顶部"模型选择"下拉的一项。
@@ -119,9 +130,10 @@ struct ChatModelEntry {
     id: String,
     display_name: Option<String>,
     custom: bool,
+    source_credential_id: Option<String>,
 }
 
-fn load_custom_chat_model_ids() -> Vec<String> {
+fn load_custom_chat_models() -> Vec<CustomChatModelPref> {
     #[cfg(all(target_arch = "wasm32", feature = "web"))]
     {
         return crate::web::prefs::custom_chat_models_get();
@@ -139,24 +151,37 @@ fn load_custom_chat_model_ids() -> Vec<String> {
     }
 }
 
-fn persist_custom_chat_model_ids(ids: &[String]) {
+fn persist_custom_chat_models(items: &[CustomChatModelPref]) {
     #[cfg(all(target_arch = "wasm32", feature = "web"))]
     {
-        crate::web::prefs::custom_chat_models_set(ids);
+        crate::web::prefs::custom_chat_models_set(items);
     }
     #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
     {
-        crate::desktop::files::custom_chat_models_set(ids);
+        crate::desktop::files::custom_chat_models_set(items);
     }
 }
 
 fn custom_chat_model_entries() -> Vec<ChatModelEntry> {
-    load_custom_chat_model_ids()
+    load_custom_chat_models()
         .into_iter()
-        .map(|id| ChatModelEntry {
-            id,
-            display_name: None,
-            custom: true,
+        .map(|r| {
+            let cred = r.credential_id.trim();
+            let name = r.name.trim();
+            ChatModelEntry {
+                id: r.id,
+                display_name: if name.is_empty() {
+                    None
+                } else {
+                    Some(name.to_string())
+                },
+                custom: true,
+                source_credential_id: if cred.is_empty() {
+                    None
+                } else {
+                    Some(cred.to_string())
+                },
+            }
         })
         .collect()
 }
@@ -172,12 +197,184 @@ fn merge_chat_models(remote: Vec<ChatModelEntry>, custom: Vec<ChatModelEntry>) -
     out
 }
 
-fn custom_ids_from_models(models: &[ChatModelEntry]) -> Vec<String> {
-    models
+fn push_unique_models(out: &mut Vec<ChatModelEntry>, extra: Vec<ChatModelEntry>) {
+    for m in extra {
+        if !out.iter().any(|x| x.id == m.id) {
+            out.push(m);
+        }
+    }
+}
+
+#[derive(Clone, PartialEq)]
+struct SavedLlmKey {
+    id: String,
+    label: String,
+    base: String,
+}
+
+struct LlmPickerSources {
+    endpoints: Vec<(String, String, String)>,
+    saved: Vec<SavedLlmKey>,
+}
+
+fn credential_display_label(cred: &LlmCredentialDto) -> String {
+    let label = cred.label.trim();
+    if !label.is_empty() {
+        return label.to_string();
+    }
+    match cred.provider {
+        LlmApiProvider::Openai => "OpenAI".into(),
+        LlmApiProvider::Anthropic => "Anthropic".into(),
+    }
+}
+
+fn truncate_chars(s: &str, max: usize) -> String {
+    let t = s.trim();
+    if t.chars().count() <= max {
+        t.to_string()
+    } else {
+        let head: String = t.chars().take(max.saturating_sub(1)).collect();
+        format!("{head}…")
+    }
+}
+
+fn saved_key_option_label(k: &SavedLlmKey) -> String {
+    format!(
+        "{} · {} · {}",
+        k.label,
+        k.id,
+        truncate_chars(&k.base, 28)
+    )
+}
+
+fn saved_keys_from_credentials(creds: &[LlmCredentialDto]) -> Vec<SavedLlmKey> {
+    creds
+        .iter()
+        .map(|c| SavedLlmKey {
+            id: c.id.clone(),
+            label: credential_display_label(c),
+            base: c.openai_v1_base.clone(),
+        })
+        .collect()
+}
+
+fn enabled_endpoints_from_config(
+    creds: Vec<LlmCredentialDto>,
+    active_id: &str,
+) -> Vec<(String, String, String)> {
+    let known: Vec<String> = creds.iter().map(|c| c.id.clone()).collect();
+    let enabled = crate::shell::overlay_enabled_credential_ids(&known, active_id);
+    creds
+        .into_iter()
+        .filter(|c| enabled.iter().any(|id| id == &c.id))
+        .map(|c| (c.id, c.openai_v1_base, c.api_key))
+        .collect()
+}
+
+async fn load_llm_picker_sources() -> LlmPickerSources {
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        let Ok(cfg) = async { crate::desktop::agent::runtime_ctx()?.llm_config_get().await }.await
+        else {
+            return LlmPickerSources {
+                endpoints: Vec::new(),
+                saved: Vec::new(),
+            };
+        };
+        let saved = saved_keys_from_credentials(&cfg.credentials);
+        let endpoints = enabled_endpoints_from_config(cfg.credentials, &cfg.active_credential_id);
+        return LlmPickerSources { endpoints, saved };
+    }
+    #[cfg(all(target_arch = "wasm32", feature = "web"))]
+    {
+        let Some(cfg) = crate::web::llm_config::fetch_llm_config().await else {
+            return LlmPickerSources {
+                endpoints: Vec::new(),
+                saved: Vec::new(),
+            };
+        };
+        let saved = saved_keys_from_credentials(&cfg.credentials);
+        let endpoints = enabled_endpoints_from_config(cfg.credentials, &cfg.active_credential_id);
+        return LlmPickerSources { endpoints, saved };
+    }
+    #[cfg(not(any(
+        all(feature = "native", not(target_arch = "wasm32")),
+        all(target_arch = "wasm32", feature = "web")
+    )))]
+    {
+        LlmPickerSources {
+            endpoints: Vec::new(),
+            saved: Vec::new(),
+        }
+    }
+}
+
+fn persist_custom_from_models(models: &[ChatModelEntry]) {
+    let items: Vec<CustomChatModelPref> = models
         .iter()
         .filter(|m| m.custom)
-        .map(|m| m.id.clone())
-        .collect()
+        .map(|m| CustomChatModelPref {
+            id: m.id.clone(),
+            name: m.display_name.clone().unwrap_or_default(),
+            credential_id: m.source_credential_id.clone().unwrap_or_default(),
+        })
+        .collect();
+    persist_custom_chat_models(&items);
+}
+
+fn try_add_custom_chat_model(
+    draft: &str,
+    mut chat_models: Signal<Vec<ChatModelEntry>>,
+    mut chat_model: Signal<String>,
+    mut custom_model_draft: Signal<String>,
+    mut sheet_open: Signal<bool>,
+) {
+    let id = draft.trim().to_string();
+    if id.is_empty() {
+        return;
+    }
+    let exists_custom = chat_models().iter().any(|m| m.id == id && m.custom);
+    let exists_any = chat_models().iter().any(|m| m.id == id);
+    if !exists_custom && !exists_any {
+        chat_models.with_mut(|list| {
+            list.push(ChatModelEntry {
+                id: id.clone(),
+                display_name: None,
+                custom: true,
+                source_credential_id: None,
+            });
+        });
+        persist_custom_from_models(&chat_models());
+    }
+    persist_chat_model(&id);
+    chat_model.set(id);
+    custom_model_draft.set(String::new());
+    sheet_open.set(false);
+}
+
+fn apply_custom_chat_model_edit(
+    id: &str,
+    name: &str,
+    cred_id: &str,
+    known_keys: &[SavedLlmKey],
+    mut chat_models: Signal<Vec<ChatModelEntry>>,
+    mut editing_id: Signal<Option<String>>,
+) {
+    let name = name.trim().to_string();
+    let cred = cred_id.trim().to_string();
+    let cred = if cred.is_empty() || !known_keys.iter().any(|k| k.id == cred) {
+        None
+    } else {
+        Some(cred)
+    };
+    chat_models.with_mut(|list| {
+        if let Some(m) = list.iter_mut().find(|m| m.id == id && m.custom) {
+            m.display_name = if name.is_empty() { None } else { Some(name) };
+            m.source_credential_id = cred;
+        }
+    });
+    persist_custom_from_models(&chat_models());
+    editing_id.set(None);
 }
 
 /// `search_market` 返回的按源前缀警告（见 `shared` 的 `skills` 模块）；非开发者模式隐藏底层错误串。
@@ -248,12 +445,20 @@ enum CenterTabKind {
     File { path: String },
     /// Markdown 预览（不写入操作缓存；关闭不影响编辑草稿）。
     FileMdPreview { path: String },
+    /// HTML 内置浏览器预览（不写入操作缓存）。
+    FileHtmlPreview { path: String },
+    /// PDF 内置预览（不写入操作缓存）。
+    FilePdfPreview { path: String },
+    /// STL 3D 模型内置预览（不写入操作缓存）。
+    FileStlPreview { path: String },
     /// 工具轨迹中某次编辑的前后对比（不写入操作缓存）。
     FileDiff {
         path: String,
         old_text: String,
         new_text: String,
     },
+    /// Pusa 浏览器：地址栏 + iframe 浏览任意网址（url 为空时显示地址栏空态）。
+    WebBrowser { url: String },
 }
 
 #[derive(Clone, PartialEq)]
@@ -288,6 +493,7 @@ enum CenterTabKindCache {
     SkillMarket { key: String },
     Plugin { key: String },
     File { path: String },
+    WebBrowser { url: String },
 }
 
 impl CenterTabKindCache {
@@ -300,7 +506,12 @@ impl CenterTabKindCache {
             CenterTabKind::SkillMarket { key } => Some(Self::SkillMarket { key: key.clone() }),
             CenterTabKind::Plugin { key } => Some(Self::Plugin { key: key.clone() }),
             CenterTabKind::File { path } => Some(Self::File { path: path.clone() }),
-            CenterTabKind::FileDiff { .. } | CenterTabKind::FileMdPreview { .. } => None,
+            CenterTabKind::WebBrowser { url } => Some(Self::WebBrowser { url: url.clone() }),
+            CenterTabKind::FileDiff { .. }
+            | CenterTabKind::FileMdPreview { .. }
+            | CenterTabKind::FileHtmlPreview { .. }
+            | CenterTabKind::FilePdfPreview { .. }
+            | CenterTabKind::FileStlPreview { .. } => None,
         }
     }
 }
@@ -313,6 +524,7 @@ impl From<CenterTabKindCache> for CenterTabKind {
             CenterTabKindCache::SkillMarket { key } => Self::SkillMarket { key },
             CenterTabKindCache::Plugin { key } => Self::Plugin { key },
             CenterTabKindCache::File { path } => Self::File { path },
+            CenterTabKindCache::WebBrowser { url } => Self::WebBrowser { url },
         }
     }
 }
@@ -657,6 +869,8 @@ fn persist_file_tree_state(
 }
 
 const CENTER_TAB_ROLE_ID: &str = "role";
+/// Pusa 浏览器标签 id 前缀；可同时开多个（`web-browser:1`、`web-browser:2`…）。
+const CENTER_TAB_WEB_BROWSER_PREFIX: &str = "web-browser:";
 
 impl CenterTab {
     fn role() -> Self {
@@ -727,6 +941,59 @@ impl CenterTab {
             kind: CenterTabKind::FileMdPreview { path },
         }
     }
+
+    fn file_html_preview(path: String) -> Self {
+        let name = super::files::fs_file_title(&path);
+        let id = format!("file-html-preview:{path}");
+        Self {
+            id,
+            title: format!("预览 · {name}"),
+            kind: CenterTabKind::FileHtmlPreview { path },
+        }
+    }
+
+    fn file_pdf_preview(path: String) -> Self {
+        let name = super::files::fs_file_title(&path);
+        let id = format!("file-pdf-preview:{path}");
+        Self {
+            id,
+            title: format!("预览 · {name}"),
+            kind: CenterTabKind::FilePdfPreview { path },
+        }
+    }
+
+    fn file_stl_preview(path: String) -> Self {
+        let name = super::files::fs_file_title(&path);
+        let id = format!("file-stl-preview:{path}");
+        Self {
+            id,
+            title: format!("预览 · {name}"),
+            kind: CenterTabKind::FileStlPreview { path },
+        }
+    }
+
+    /// 新建一个 Pusa 浏览器标签（每次调用都是新标签，不复用已有的）。
+    ///
+    /// id 取「现有浏览器标签最大序号 + 1」，保证与已打开 / 从缓存恢复的标签不撞；
+    /// 老缓存里的固定 id `web-browser` 视为序号 0。
+    fn web_browser(existing: &[CenterTab]) -> Self {
+        let next = existing
+            .iter()
+            .filter(|t| matches!(t.kind, CenterTabKind::WebBrowser { .. }))
+            .map(|t| {
+                t.id
+                    .strip_prefix(CENTER_TAB_WEB_BROWSER_PREFIX)
+                    .and_then(|n| n.parse::<u32>().ok())
+                    .unwrap_or(0)
+            })
+            .max()
+            .map_or(1, |n| n + 1);
+        Self {
+            id: format!("{CENTER_TAB_WEB_BROWSER_PREFIX}{next}"),
+            title: super::browser::browser_tab_title(""),
+            kind: CenterTabKind::WebBrowser { url: String::new() },
+        }
+    }
 }
 
 fn center_open_or_focus(tabs: &mut Vec<CenterTab>, active_id: &mut Option<String>, tab: CenterTab) {
@@ -770,7 +1037,11 @@ fn center_tab_skill_key(kind: &CenterTabKind) -> Option<String> {
         | CenterTabKind::Plugin { .. }
         | CenterTabKind::File { .. }
         | CenterTabKind::FileMdPreview { .. }
-        | CenterTabKind::FileDiff { .. } => None,
+        | CenterTabKind::FileHtmlPreview { .. }
+        | CenterTabKind::FilePdfPreview { .. }
+        | CenterTabKind::FileStlPreview { .. }
+        | CenterTabKind::FileDiff { .. }
+        | CenterTabKind::WebBrowser { .. } => None,
     }
 }
 
@@ -793,6 +1064,9 @@ fn center_tab_display_path(kind: &CenterTabKind) -> Option<&str> {
     match kind {
         CenterTabKind::File { path }
         | CenterTabKind::FileMdPreview { path }
+        | CenterTabKind::FileHtmlPreview { path }
+        | CenterTabKind::FilePdfPreview { path }
+        | CenterTabKind::FileStlPreview { path }
         | CenterTabKind::FileDiff { path, .. } => Some(path.as_str()),
         _ => None,
     }
@@ -826,7 +1100,6 @@ fn apply_opened_project_root(
     mut active_tab: Signal<&'static str>,
     mut center_tabs: Signal<Vec<CenterTab>>,
     mut active_center_id: Signal<Option<String>>,
-    mut home_logo_menu_open: Signal<bool>,
     mut plugin_refresh_tick: Signal<u64>,
 ) {
     use std::path::Path;
@@ -840,11 +1113,13 @@ fn apply_opened_project_root(
     fs_notice.set(None);
     recent_project_dirs.set(super::files::fs_recent_project_dirs());
     active_tab.set("files");
-    home_logo_menu_open.set(false);
     center_tabs.with_mut(|tabs| {
         tabs.retain(|tab| match &tab.kind {
             CenterTabKind::File { path }
             | CenterTabKind::FileMdPreview { path }
+            | CenterTabKind::FileHtmlPreview { path }
+            | CenterTabKind::FilePdfPreview { path }
+            | CenterTabKind::FileStlPreview { path }
             | CenterTabKind::FileDiff { path, .. } => {
                 Path::new(path).starts_with(Path::new(&root))
             }
@@ -932,7 +1207,6 @@ fn apply_created_local_application(
     active_tab: Signal<&'static str>,
     center_tabs: Signal<Vec<CenterTab>>,
     active_center_id: Signal<Option<String>>,
-    home_logo_menu_open: Signal<bool>,
     mut fs_section_open: Signal<bool>,
     toast: super::toast::ToastCtx,
     mut plugin_refresh_tick: Signal<u64>,
@@ -959,7 +1233,6 @@ fn apply_created_local_application(
                 active_tab,
                 center_tabs,
                 active_center_id,
-                home_logo_menu_open,
                 plugin_refresh_tick,
             );
             fs_section_open.set(true);
@@ -1379,6 +1652,38 @@ fn persist_chat_model(model_id: &str) {
     }
 }
 
+fn initial_chat_agent_mode() -> ChatAgentMode {
+    #[cfg(all(target_arch = "wasm32", feature = "web"))]
+    {
+        if let Some(saved) = crate::web::prefs::chat_agent_mode_get() {
+            if let Some(mode) = protocol::ChatTurnMode::parse_persist(&saved) {
+                return ChatAgentMode::from_turn_mode(mode);
+            }
+        }
+    }
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        if let Some(saved) = crate::desktop::files::chat_agent_mode_get() {
+            if let Some(mode) = protocol::ChatTurnMode::parse_persist(&saved) {
+                return ChatAgentMode::from_turn_mode(mode);
+            }
+        }
+    }
+    ChatAgentMode::Agent
+}
+
+fn persist_chat_agent_mode(mode: ChatAgentMode) {
+    let raw = mode.to_turn_mode().as_str();
+    #[cfg(all(target_arch = "wasm32", feature = "web"))]
+    {
+        crate::web::prefs::chat_agent_mode_set(raw);
+    }
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        crate::desktop::files::chat_agent_mode_set(raw);
+    }
+}
+
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
 const AC_SIDEBAR_AUTO_COLLAPSE_YIELD_MS: u32 = 20;
 
@@ -1788,22 +2093,57 @@ fn spawn_delete_conversation_and_refresh(
     mut chat_title_editing_id: Signal<Option<String>>,
     mut chat_title_draft: Signal<String>,
     mut chat_history_error: Signal<Option<String>>,
+    mut chat_messages_cache: Signal<HashMap<String, Vec<UiChatMessage>>>,
+    mut chat_live_turns: Signal<HashMap<u64, ChatLiveTurn>>,
+    mut chat_busy: Signal<bool>,
+    abort_controllers: Rc<dyn Fn(String)>,
 ) {
     spawn(async move {
+        abort_controllers(id.clone());
+        chat_live_turns
+            .write()
+            .retain(|_, t| t.conversation_id != id);
+        if active_conversation_id() == id {
+            chat_busy.set(false);
+        }
+        chat_messages_cache.write().remove(&id);
         let was_active = active_conversation_id() == id;
         match delete_conversation(id).await {
             Ok(()) => match list_conversations().await {
                 Ok(list) => {
                     if was_active {
                         if let Some(first) = list.first().cloned() {
-                            active_conversation_id.set(first.id.clone());
                             conversations.set(list);
-                            match load_conversation_messages(first.id, 200).await {
-                                Ok(messages) => {
-                                    chat_messages.set(stored_messages_to_ui(messages));
+                            let live = chat_live_turns();
+                            if conversation_has_live_turn(&live, &first.id) {
+                                if let Some(msgs) =
+                                    chat_messages_cache.read().get(&first.id).cloned()
+                                {
+                                    active_conversation_id.set(first.id.clone());
+                                    chat_messages.set(msgs);
+                                    chat_busy.set(true);
                                     chat_scroll_bottom_request += 1;
+                                } else {
+                                    active_conversation_id.set(first.id.clone());
+                                    chat_busy.set(true);
+                                    match load_conversation_messages(first.id, 200).await {
+                                        Ok(messages) => {
+                                            chat_messages.set(stored_messages_to_ui(messages));
+                                            chat_scroll_bottom_request += 1;
+                                        }
+                                        Err(_) => chat_messages.set(welcome_chat_messages()),
+                                    }
                                 }
-                                Err(_) => chat_messages.set(welcome_chat_messages()),
+                            } else {
+                                active_conversation_id.set(first.id.clone());
+                                chat_busy.set(false);
+                                match load_conversation_messages(first.id, 200).await {
+                                    Ok(messages) => {
+                                        chat_messages.set(stored_messages_to_ui(messages));
+                                        chat_scroll_bottom_request += 1;
+                                    }
+                                    Err(_) => chat_messages.set(welcome_chat_messages()),
+                                }
                             }
                         } else {
                             match create_conversation().await {
@@ -1811,6 +2151,7 @@ fn spawn_delete_conversation_and_refresh(
                                     active_conversation_id.set(created.id.clone());
                                     conversations.set(vec![created]);
                                     chat_messages.set(welcome_chat_messages());
+                                    chat_busy.set(false);
                                 }
                                 Err(e) => chat_history_error.set(Some(e.to_string())),
                             }
@@ -1867,52 +2208,94 @@ where
     }
 }
 
+#[derive(Clone, PartialEq)]
+struct ChatLiveTurn {
+    conversation_id: String,
+    assistant_idx: usize,
+}
+
+fn conversation_has_live_turn(live: &HashMap<u64, ChatLiveTurn>, cid: &str) -> bool {
+    live.values().any(|t| t.conversation_id == cid)
+}
+
+fn stash_conversation_messages(
+    cid: &str,
+    messages: Vec<UiChatMessage>,
+    mut cache: Signal<HashMap<String, Vec<UiChatMessage>>>,
+) {
+    if cid.is_empty() {
+        return;
+    }
+    cache.write().insert(cid.to_string(), messages);
+}
+
+fn read_conversation_messages(
+    cid: &str,
+    active_id: &str,
+    chat_messages: Signal<Vec<UiChatMessage>>,
+    cache: Signal<HashMap<String, Vec<UiChatMessage>>>,
+) -> Vec<UiChatMessage> {
+    if cid == active_id {
+        chat_messages()
+    } else {
+        cache
+            .peek()
+            .get(cid)
+            .cloned()
+            .unwrap_or_default()
+    }
+}
+
+fn write_conversation_messages(
+    cid: &str,
+    active_id: &str,
+    msgs: Vec<UiChatMessage>,
+    mut chat_messages: Signal<Vec<UiChatMessage>>,
+    mut cache: Signal<HashMap<String, Vec<UiChatMessage>>>,
+) {
+    cache.write().insert(cid.to_string(), msgs.clone());
+    if cid == active_id {
+        chat_messages.set(msgs);
+    }
+}
+
 /// 将单条 SSE 事件应用到指定助手气泡（并行 Multitask 时不能总打最后一条）。
 fn apply_chat_sse_event(
     ev: SseEvent,
-    mut chat_messages: Signal<Vec<UiChatMessage>>,
+    msgs: &mut Vec<UiChatMessage>,
     assistant_idx: usize,
     err_text: &mut Option<String>,
 ) {
     match ev {
         SseEvent::AgentStepStart { index, .. } => {
-            let mut msgs = chat_messages();
-            with_assistant_at(&mut msgs, assistant_idx, |_, thinking| {
+            with_assistant_at(msgs, assistant_idx, |_, thinking| {
                 thinking.status = ThinkingStatus::Running;
                 thinking.expanded = true;
                 let _ = upsert_thinking_step_index(thinking, index);
             });
-            chat_messages.set(msgs);
         }
         SseEvent::AgentThinking { index } => {
-            let mut msgs = chat_messages();
-            with_assistant_at(&mut msgs, assistant_idx, |_, thinking| {
+            with_assistant_at(msgs, assistant_idx, |_, thinking| {
                 let pos = upsert_thinking_step_index(thinking, index);
                 thinking.steps[pos].phase = StepPhase::Thinking;
             });
-            chat_messages.set(msgs);
         }
         SseEvent::ThinkingDelta { step_index, text } => {
-            let mut msgs = chat_messages();
-            with_assistant_at(&mut msgs, assistant_idx, |_, thinking| {
+            with_assistant_at(msgs, assistant_idx, |_, thinking| {
                 let pos = upsert_thinking_step_index(thinking, step_index);
                 thinking.steps[pos].model_text.push_str(&text);
             });
-            chat_messages.set(msgs);
         }
         SseEvent::AnswerDelta { text } => {
-            let mut msgs = chat_messages();
-            with_assistant_at(&mut msgs, assistant_idx, |content, _thinking| {
+            with_assistant_at(msgs, assistant_idx, |content, _thinking| {
                 content.push_str(&text);
             });
-            chat_messages.set(msgs);
         }
         SseEvent::Delta { text } => {
             // Legacy Delta: phase-aware routing (never dual-write).
             // Running (thinking / observing) → thinking panel only;
             // after AgentFinalizing (status Done) → answer bubble only.
-            let mut msgs = chat_messages();
-            with_assistant_at(&mut msgs, assistant_idx, |content, thinking| {
+            with_assistant_at(msgs, assistant_idx, |content, thinking| {
                 if matches!(thinking.status, ThinkingStatus::Running) {
                     let index = thinking.steps.last().map(|s| s.index).unwrap_or(1);
                     let pos = upsert_thinking_step_index(thinking, index);
@@ -1921,15 +2304,12 @@ fn apply_chat_sse_event(
                     content.push_str(&text);
                 }
             });
-            chat_messages.set(msgs);
         }
         SseEvent::AgentObserving { index } => {
-            let mut msgs = chat_messages();
-            with_assistant_at(&mut msgs, assistant_idx, |_, thinking| {
+            with_assistant_at(msgs, assistant_idx, |_, thinking| {
                 let pos = upsert_thinking_step_index(thinking, index);
                 thinking.steps[pos].phase = StepPhase::Observing;
             });
-            chat_messages.set(msgs);
         }
         SseEvent::ToolStart {
             id,
@@ -1941,8 +2321,7 @@ fn apply_chat_sse_event(
             let id = id.clone();
             let name = name.clone();
             let args = args.clone();
-            let mut msgs = chat_messages();
-            with_assistant_at(&mut msgs, assistant_idx, |_, thinking| {
+            with_assistant_at(msgs, assistant_idx, |_, thinking| {
                 let index = step_index.unwrap_or_else(|| thinking.steps.len().max(1));
                 let pos = upsert_thinking_step_index(thinking, index);
                 let step = &mut thinking.steps[pos];
@@ -1965,12 +2344,10 @@ fn apply_chat_sse_event(
                     });
                 }
             });
-            chat_messages.set(msgs);
         }
         SseEvent::ToolResult { id, summary, .. } => {
             let id = id.clone();
-            let mut msgs = chat_messages();
-            with_assistant_at(&mut msgs, assistant_idx, |_, thinking| {
+            with_assistant_at(msgs, assistant_idx, |_, thinking| {
                 for step in thinking.steps.iter_mut() {
                     if let Some(tool) = step.tools.iter_mut().find(|t| t.id == id) {
                         tool.summary = Some(summary.clone());
@@ -1978,15 +2355,13 @@ fn apply_chat_sse_event(
                     }
                 }
             });
-            chat_messages.set(msgs);
         }
         SseEvent::AgentStepDone {
             index,
             model_output,
             duration_ms,
         } => {
-            let mut msgs = chat_messages();
-            with_assistant_at(&mut msgs, assistant_idx, |_, thinking| {
+            with_assistant_at(msgs, assistant_idx, |_, thinking| {
                 let pos = upsert_thinking_step_index(thinking, index);
                 let step = &mut thinking.steps[pos];
                 if !model_output.is_empty() {
@@ -1995,11 +2370,9 @@ fn apply_chat_sse_event(
                 step.phase = StepPhase::Done;
                 step.duration_ms = duration_ms;
             });
-            chat_messages.set(msgs);
         }
         SseEvent::AgentFinalizing => {
-            let mut msgs = chat_messages();
-            with_assistant_at(&mut msgs, assistant_idx, |_, thinking| {
+            with_assistant_at(msgs, assistant_idx, |_, thinking| {
                 thinking.status = ThinkingStatus::Done;
                 thinking.expanded = true;
                 if thinking.total_duration_ms.is_none() {
@@ -2009,7 +2382,6 @@ fn apply_chat_sse_event(
                     }
                 }
             });
-            chat_messages.set(msgs);
         }
         SseEvent::TurnPersisted {
             user_message_id,
@@ -2017,7 +2389,6 @@ fn apply_chat_sse_event(
             agent_run_id,
             ..
         } => {
-            let mut msgs = chat_messages();
             if let Some(UiChatMessage::Assistant {
                 id,
                 agent_run_id: run_id,
@@ -2039,16 +2410,13 @@ fn apply_chat_sse_event(
                     }
                 }
             }
-            chat_messages.set(msgs);
         }
         SseEvent::Error { message } => {
             *err_text = Some(crate::chat::friendly_chat_error_message(&message));
-            let mut msgs = chat_messages();
-            with_assistant_at(&mut msgs, assistant_idx, |_, thinking| {
+            with_assistant_at(msgs, assistant_idx, |_, thinking| {
                 thinking.status = ThinkingStatus::Error;
                 thinking.expanded = true;
             });
-            chat_messages.set(msgs);
         }
         SseEvent::Done => {}
     }
@@ -2322,6 +2690,7 @@ fn WebShellTitlebar(
     } else {
         "ac-web-titlebar-reveal ac-web-titlebar-reveal--dock"
     };
+    let open_browser = try_use_context::<super::browser::OpenBrowserTick>();
 
     rsx! {
         div { class: "{titlebar_reveal_class}",
@@ -2376,6 +2745,18 @@ fn WebShellTitlebar(
                                 Icon { icon: VscLayoutSidebarLeftDock, width: 14, height: 14, fill: "currentColor", class: "ac-web-titlebar-icon" }
                             } else {
                                 Icon { icon: VscLayoutSidebarRightDock, width: 14, height: 14, fill: "currentColor", class: "ac-web-titlebar-icon" }
+                            }
+                        }
+                    }
+                    if let Some(open_browser) = open_browser {
+                        div { class: "ac-web-titlebar-switch-wrap",
+                            button {
+                                r#type: "button",
+                                class: "ac-web-titlebar-switch-icon-outside",
+                                title: "打开 Pusa 浏览器",
+                                aria_label: "打开 Pusa 浏览器",
+                                onclick: move |_| open_browser.request(),
+                                Icon { icon: LdGlobe, width: 14, height: 14, fill: "currentColor", class: "ac-web-titlebar-icon" }
                             }
                         }
                     }
@@ -2447,7 +2828,7 @@ fn WebShellTitlebar(
                                         show_titlebar_settings_menu.set(false);
                                         show_settings_modal.set(true);
                                     },
-                                    "API Key"
+                                    "AI大模型"
                                 }
                                 crate::shell::theme::TitlebarThemeToggle {
                                     ui_theme,
@@ -2579,7 +2960,8 @@ pub fn Console(
     let fs_create_parent = use_signal(|| None::<String>);
     let mut fs_notice = use_signal(|| None::<String>);
     let mut recent_project_dirs = use_signal(super::files::fs_recent_project_dirs);
-    let mut home_logo_menu_open = use_signal(|| false);
+    // 中间栏标签栏右键菜单：视口坐标（position: fixed），None = 关闭。
+    let mut center_tabs_ctx_menu = use_signal(|| None::<(f64, f64)>);
     let mut fs_drafts = use_signal(HashMap::<String, String>::new);
     let mut fs_baselines = use_signal(HashMap::<String, String>::new);
     let mut fs_dirty = use_signal(HashSet::<String>::new);
@@ -2654,6 +3036,33 @@ pub fn Console(
     let mut chat_history_error = use_signal(|| None::<String>);
     // 会话历史右键菜单（展开/收起栏共用）
     let mut chat_history_ctx_menu = use_signal(|| None::<ChatHistoryCtxMenu>);
+    // 中间栏标签栏 / 空页右键菜单动作（DOM 自绘菜单共用）。
+    let mut run_tab_strip_action = move |action: super::browser::TabStripMenuAction| match action {
+        super::browser::TabStripMenuAction::OpenBrowser => {
+            // 总是新开一个浏览器标签（已开着浏览器时再点 = 再开一个）。
+            center_tabs.with_mut(|tabs| {
+                active_center_id.with_mut(|active| {
+                    let tab = CenterTab::web_browser(tabs);
+                    center_open_or_focus(tabs, active, tab);
+                });
+            });
+            show_center.set(true);
+        }
+    };
+    // 标题栏地球图标等：外壳递增 OpenBrowserTick → 这里开新标签。
+    let open_browser_tick = try_use_context::<super::browser::OpenBrowserTick>();
+    let mut last_open_browser_tick = use_signal(|| 0u64);
+    use_effect(move || {
+        let Some(super::browser::OpenBrowserTick(tick)) = open_browser_tick else {
+            return;
+        };
+        let n = tick();
+        if n == 0 || n == last_open_browser_tick() {
+            return;
+        }
+        last_open_browser_tick.set(n);
+        run_tab_strip_action(super::browser::TabStripMenuAction::OpenBrowser);
+    });
     let mut chat_title_editing = use_signal(|| false);
     let mut chat_title_editing_id = use_signal(|| None::<String>);
     let mut chat_title_draft = use_signal(String::new);
@@ -2675,9 +3084,10 @@ pub fn Console(
     let mut chat_composer_epoch = use_signal(|| 0_u64);
     let mut chat_composer_seed = use_signal(String::new);
     let mut chat_busy = use_signal(|| false);
-    // 进行中回合 id：切走会话 / 停止时从集合移除，旧 spawn 不再改 messages / busy。
+    // 进行中回合：按会话缓存，切走不中止；停止 / 删除该会话才 abort。
     let mut chat_turn_gen = use_signal(|| 0_u64);
-    let mut chat_live_turns = use_signal(HashSet::<u64>::new);
+    let mut chat_live_turns = use_signal(HashMap::<u64, ChatLiveTurn>::new);
+    let chat_messages_cache = use_signal(HashMap::<String, Vec<UiChatMessage>>::new);
     let mut composer_allow_parallel = use_signal(|| false);
     let mut chat_model = use_signal(initial_chat_model);
     let mut chat_attachment_seq = use_signal(|| 1_u64);
@@ -2820,7 +3230,7 @@ pub fn Console(
         });
     });
     let mut chat_model_sheet_open = use_signal(|| false);
-    let mut chat_agent_mode = use_signal(|| ChatAgentMode::Agent);
+    let mut chat_agent_mode = use_signal(initial_chat_agent_mode);
     let mut chat_agent_mode_sheet_open = use_signal(|| false);
     use_effect(move || {
         composer_allow_parallel.set(chat_agent_mode().allows_parallel());
@@ -2829,30 +3239,46 @@ pub fn Console(
     let mut chat_models = use_signal(custom_chat_model_entries);
     let mut chat_models_load_hint = use_signal(|| None::<String>);
     let mut custom_model_draft = use_signal(String::new);
-    use_hook(|| {
+    let mut editing_custom_id = use_signal(|| None::<String>);
+    let mut edit_custom_name = use_signal(String::new);
+    let mut edit_custom_cred = use_signal(String::new);
+    let mut saved_llm_keys = use_signal(Vec::<SavedLlmKey>::new);
+    let llm_models_refresh = use_context::<crate::shell::LlmModelsRefresh>();
+    use_effect(move || {
+        let _tick = llm_models_refresh.0();
         spawn(async move {
-            match list_chat_models().await {
-                Ok(dtos) if !dtos.is_empty() => {
-                    let remote: Vec<ChatModelEntry> = dtos
-                        .into_iter()
-                        .map(|m| ChatModelEntry {
-                            id: m.id,
-                            display_name: m.display_name,
-                            custom: false,
-                        })
-                        .collect();
-                    let merged = merge_chat_models(remote, custom_chat_model_entries());
-                    chat_models.set(merged);
-                    chat_models_load_hint.set(None);
-                }
-                Ok(_) => {
-                    chat_models.set(custom_chat_model_entries());
-                    chat_models_load_hint.set(Some("服务未返回模型，仅显示自定义".into()));
-                }
-                Err(_) => {
-                    chat_models.set(custom_chat_model_entries());
-                    chat_models_load_hint.set(Some("无法获取模型列表，仅显示自定义".into()));
-                }
+            let sources = load_llm_picker_sources().await;
+            saved_llm_keys.set(sources.saved.clone());
+            let relay = match list_chat_models().await {
+                Ok(dtos) => dtos
+                    .into_iter()
+                    .map(|m| ChatModelEntry {
+                        id: m.id,
+                        display_name: m.display_name,
+                        custom: false,
+                        source_credential_id: None,
+                    })
+                    .collect::<Vec<_>>(),
+                Err(_) => Vec::new(),
+            };
+            let sourced = list_chat_models_from_credentials(sources.endpoints).await;
+            let mut remote: Vec<ChatModelEntry> = sourced
+                .into_iter()
+                .map(|(cred_id, m)| ChatModelEntry {
+                    id: m.id,
+                    display_name: m.display_name,
+                    custom: false,
+                    source_credential_id: Some(cred_id),
+                })
+                .collect();
+            push_unique_models(&mut remote, relay);
+            if remote.is_empty() {
+                chat_models.set(custom_chat_model_entries());
+                chat_models_load_hint.set(Some("未获取到模型，仅显示自定义".into()));
+            } else {
+                let merged = merge_chat_models(remote, custom_chat_model_entries());
+                chat_models.set(merged);
+                chat_models_load_hint.set(None);
             }
         });
     });
@@ -3197,10 +3623,33 @@ pub fn Console(
             if send_text.trim().is_empty() && pending.is_empty() {
                 return;
             }
+            let model_for_turn = chat_model().trim().to_string();
+            if model_for_turn.is_empty() {
+                toast.warning("请先选择模型。");
+                return;
+            }
+            let selected_model = chat_models()
+                .iter()
+                .find(|m| m.id == model_for_turn)
+                .cloned();
+            let cred_for_turn = selected_model
+                .as_ref()
+                .and_then(|m| m.source_credential_id.clone())
+                .filter(|s| !s.trim().is_empty())
+                .filter(|id| saved_llm_keys().iter().any(|k| k.id == *id));
+            if selected_model
+                .as_ref()
+                .map(|m| m.custom)
+                .unwrap_or(false)
+                && cred_for_turn.is_none()
+            {
+                toast.warning("请先编辑该自定义模型并绑定密钥");
+                return;
+            }
             let turn_mode = chat_agent_mode().to_turn_mode();
             chat_turn_gen += 1;
             let my_gen = chat_turn_gen();
-            chat_live_turns.write().insert(my_gen);
+            let conversation_id = active_conversation_id();
             chat_busy.set(true);
             if is_composer {
                 ce_clear(COMPOSER_ROOT_MAIN);
@@ -3276,28 +3725,79 @@ pub fn Console(
                 agent_run_id: None,
                 thinking: UiAgentThinking::running(),
             });
-            chat_messages.set(ui_msgs);
+            chat_messages.set(ui_msgs.clone());
+            stash_conversation_messages(&conversation_id, ui_msgs, chat_messages_cache);
             chat_scroll_bottom_request += 1;
             let assistant_idx = chat_messages().len().saturating_sub(1);
+            chat_live_turns.write().insert(
+                my_gen,
+                ChatLiveTurn {
+                    conversation_id: conversation_id.clone(),
+                    assistant_idx,
+                },
+            );
 
             let model_for_turn = chat_model().trim().to_string();
             if model_for_turn.is_empty() {
                 chat_live_turns.write().remove(&my_gen);
-                chat_busy.set(!chat_live_turns.read().is_empty());
+                chat_busy.set(conversation_has_live_turn(
+                    &chat_live_turns(),
+                    &active_conversation_id(),
+                ));
                 return;
             }
+            if let Some(cred_id) = cred_for_turn.as_deref() {
+                #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+                {
+                    let _ = async {
+                        crate::desktop::agent::runtime_ctx()?
+                            .llm_credential_activate(&cred_id)
+                            .await
+                    }
+                    .await;
+                }
+                #[cfg(all(target_arch = "wasm32", feature = "web"))]
+                {
+                    let _ = llm_config::activate_llm_credential(&cred_id).await;
+                }
+            }
             let system = persona_prompt();
-            let conversation_id = active_conversation_id();
             let req = ChatTurnRequest {
-                conversation_id: Some(conversation_id),
+                conversation_id: Some(conversation_id.clone()),
                 messages: dto,
                 system: Some(system),
                 model: model_for_turn,
                 max_agent_steps: Some(DEFAULT_CHAT_MAX_AGENT_STEPS),
                 mode: turn_mode,
+                disable_tools: turn_mode.is_ask(),
             };
 
             let mut err_text: Option<String> = None;
+            let apply_turn_event = |ev: SseEvent, err_text: &mut Option<String>| {
+                if !chat_live_turns.read().contains_key(&my_gen) {
+                    return;
+                }
+                let active = active_conversation_id();
+                if conversation_id != active
+                    && !chat_messages_cache.peek().contains_key(&conversation_id)
+                {
+                    return;
+                }
+                let mut msgs = read_conversation_messages(
+                    &conversation_id,
+                    &active,
+                    chat_messages,
+                    chat_messages_cache,
+                );
+                apply_chat_sse_event(ev, &mut msgs, assistant_idx, err_text);
+                write_conversation_messages(
+                    &conversation_id,
+                    &active,
+                    msgs,
+                    chat_messages,
+                    chat_messages_cache,
+                );
+            };
 
             #[cfg(target_arch = "wasm32")]
             let (run_result, user_aborted) = {
@@ -3305,17 +3805,17 @@ pub fn Console(
                     Ok(c) => c,
                     Err(_) => {
                         chat_live_turns.write().remove(&my_gen);
-                        chat_busy.set(!chat_live_turns.read().is_empty());
+                        chat_busy.set(conversation_has_live_turn(
+                            &chat_live_turns(),
+                            &active_conversation_id(),
+                        ));
                         return;
                     }
                 };
                 chat_stream_abort().borrow_mut().insert(my_gen, ac.clone());
                 let sig = ac.signal();
                 let r = run_chat_turn(req, Some(&sig), |ev| {
-                    if !chat_live_turns.read().contains(&my_gen) {
-                        return;
-                    }
-                    apply_chat_sse_event(ev, chat_messages, assistant_idx, &mut err_text);
+                    apply_turn_event(ev, &mut err_text);
                 })
                 .await;
                 let aborted = sig.aborted();
@@ -3328,10 +3828,7 @@ pub fn Console(
                 let ac = crate::desktop::agent::ChatAbort::new();
                 chat_stream_abort().borrow_mut().insert(my_gen, ac.clone());
                 let r = run_chat_turn(req, ac.clone(), |ev| {
-                    if !chat_live_turns.read().contains(&my_gen) {
-                        return;
-                    }
-                    apply_chat_sse_event(ev, chat_messages, assistant_idx, &mut err_text);
+                    apply_turn_event(ev, &mut err_text);
                 })
                 .await;
                 let aborted = ac.is_aborted();
@@ -3342,19 +3839,22 @@ pub fn Console(
             #[cfg(all(not(target_arch = "wasm32"), not(feature = "native")))]
             let (run_result, user_aborted) = {
                 let r = run_chat_turn(req, |ev| {
-                    if !chat_live_turns.read().contains(&my_gen) {
-                        return;
-                    }
-                    apply_chat_sse_event(ev, chat_messages, assistant_idx, &mut err_text);
+                    apply_turn_event(ev, &mut err_text);
                 })
                 .await;
                 (r, false)
             };
 
-            let still_this_turn = chat_live_turns.read().contains(&my_gen);
+            let still_this_turn = chat_live_turns.read().contains_key(&my_gen);
 
             if user_aborted && still_this_turn {
-                let mut msgs = chat_messages();
+                let active = active_conversation_id();
+                let mut msgs = read_conversation_messages(
+                    &conversation_id,
+                    &active,
+                    chat_messages,
+                    chat_messages_cache,
+                );
                 if assistant_idx < msgs.len()
                     && matches!(
                         msgs.get(assistant_idx),
@@ -3363,7 +3863,13 @@ pub fn Console(
                 {
                     msgs.remove(assistant_idx);
                 }
-                chat_messages.set(msgs);
+                write_conversation_messages(
+                    &conversation_id,
+                    &active,
+                    msgs,
+                    chat_messages,
+                    chat_messages_cache,
+                );
             }
 
             if let Err(e) = run_result {
@@ -3373,7 +3879,13 @@ pub fn Console(
             }
             if still_this_turn {
                 if let Some(msg) = err_text {
-                    let mut msgs = chat_messages();
+                    let active = active_conversation_id();
+                    let mut msgs = read_conversation_messages(
+                        &conversation_id,
+                        &active,
+                        chat_messages,
+                        chat_messages_cache,
+                    );
                     if let Some(UiChatMessage::Assistant {
                         content, thinking, ..
                     }) = msgs.get_mut(assistant_idx)
@@ -3385,7 +3897,13 @@ pub fn Console(
                         }
                         thinking.dismissed = true;
                     }
-                    chat_messages.set(msgs);
+                    write_conversation_messages(
+                        &conversation_id,
+                        &active,
+                        msgs,
+                        chat_messages,
+                        chat_messages_cache,
+                    );
                 }
             }
 
@@ -3393,7 +3911,10 @@ pub fn Console(
                 conversations.set(list);
             }
             chat_live_turns.write().remove(&my_gen);
-            chat_busy.set(!chat_live_turns.read().is_empty());
+            chat_busy.set(conversation_has_live_turn(
+                &chat_live_turns(),
+                &active_conversation_id(),
+            ));
         });
     }));
 
@@ -3425,39 +3946,96 @@ pub fn Console(
     let _ = chat_paste_tick;
     let _ = chat_edit_paste_tick;
 
-    let abort_chat_stream = Rc::new(move || {
+    let abort_stream_controllers_for: Rc<dyn Fn(String)> = Rc::new(move |cid: String| {
+        let gens: Vec<u64> = chat_live_turns
+            .peek()
+            .iter()
+            .filter(|(_, t)| t.conversation_id == cid)
+            .map(|(g, _)| *g)
+            .collect();
         #[cfg(target_arch = "wasm32")]
         {
-            for c in chat_stream_abort().borrow().values() {
-                c.abort();
+            let controllers = chat_stream_abort();
+            let map = controllers.borrow();
+            for g in &gens {
+                if let Some(c) = map.get(g) {
+                    c.abort();
+                }
             }
         }
         #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
         {
-            for c in chat_stream_abort().borrow().values() {
-                c.abort();
+            let controllers = chat_stream_abort();
+            let map = controllers.borrow();
+            for g in &gens {
+                if let Some(c) = map.get(g) {
+                    c.abort();
+                }
             }
         }
+        let _ = gens;
     });
 
-    // 切走当前会话：中止流并立刻解锁 composer，旧回合不得再改 busy / messages。
-    let detach_busy_chat = {
-        let abort_chat_stream = abort_chat_stream.clone();
-        Rc::new(RefCell::new(move || {
-            if !chat_busy() {
+    let switch_to_conversation = {
+        Rc::new(RefCell::new(move |id: String| {
+            let current = active_conversation_id();
+            if current == id {
                 return;
             }
-            abort_chat_stream();
-            chat_live_turns.write().clear();
+            stash_conversation_messages(&current, chat_messages(), chat_messages_cache);
+            let live = chat_live_turns();
+            if conversation_has_live_turn(&live, &id) {
+                if let Some(msgs) = chat_messages_cache.read().get(&id).cloned() {
+                    active_conversation_id.set(id);
+                    chat_messages.set(msgs);
+                    chat_busy.set(true);
+                    chat_title_editing.set(false);
+                    chat_title_editing_id.set(None);
+                    chat_title_draft.set(String::new());
+                    chat_history_error.set(None);
+                    chat_scroll_bottom_request += 1;
+                    return;
+                }
+            }
+            active_conversation_id.set(id.clone());
             chat_busy.set(false);
+            spawn(async move {
+                match load_conversation_messages(id.clone(), 200).await {
+                    Ok(messages) => {
+                        if active_conversation_id() != id {
+                            return;
+                        }
+                        if conversation_has_live_turn(&chat_live_turns(), &id) {
+                            if let Some(msgs) = chat_messages_cache.read().get(&id).cloned() {
+                                chat_messages.set(msgs);
+                                chat_busy.set(true);
+                                chat_title_editing.set(false);
+                                chat_title_editing_id.set(None);
+                                chat_title_draft.set(String::new());
+                                chat_history_error.set(None);
+                                chat_scroll_bottom_request += 1;
+                                return;
+                            }
+                        }
+                        chat_messages.set(stored_messages_to_ui(messages));
+                        chat_title_editing.set(false);
+                        chat_title_editing_id.set(None);
+                        chat_title_draft.set(String::new());
+                        chat_history_error.set(None);
+                        chat_scroll_bottom_request += 1;
+                    }
+                    Err(e) => chat_history_error.set(Some(e.to_string())),
+                }
+            });
         }))
     };
 
     let send_or_pause_chat = {
         let submit_chat = submit_chat.clone();
+        let abort_stream_controllers_for = abort_stream_controllers_for.clone();
         move |_| {
             if chat_busy() {
-                abort_chat_stream();
+                abort_stream_controllers_for(active_conversation_id());
             } else {
                 (*submit_chat.borrow_mut())(ChatSubmitFrom::Composer);
             }
@@ -3590,7 +4168,6 @@ pub fn Console(
                                 active_tab,
                                 center_tabs,
                                 active_center_id,
-                                home_logo_menu_open,
                                 plugin_refresh_tick,
                             );
                         }
@@ -4293,9 +4870,68 @@ pub fn Console(
                                         center_shutting_down.set(false);
                                     }
                                     show_center.set(true);
+                                    // PDF / STL 没有文本编辑器可看，单击直接进内置预览。
+                                    let tab = if super::files::fs_is_pdf_path(&path) {
+                                        CenterTab::file_pdf_preview(path)
+                                    } else if super::files::fs_is_stl_path(&path) {
+                                        CenterTab::file_stl_preview(path)
+                                    } else {
+                                        CenterTab::file(path)
+                                    };
                                     center_tabs.with_mut(|tabs| {
                                         active_center_id.with_mut(|active| {
-                                            center_open_or_focus(tabs, active, CenterTab::file(path));
+                                            center_open_or_focus(tabs, active, tab);
+                                        });
+                                    });
+                                },
+                                on_open_pdf_preview: move |path: String| {
+                                    fs_selected_path.set(Some(path.clone()));
+                                    fs_save_notice.set(None);
+                                    if center_shutting_down() {
+                                        center_shutting_down.set(false);
+                                    }
+                                    show_center.set(true);
+                                    center_tabs.with_mut(|tabs| {
+                                        active_center_id.with_mut(|active| {
+                                            center_open_or_focus(
+                                                tabs,
+                                                active,
+                                                CenterTab::file_pdf_preview(path),
+                                            );
+                                        });
+                                    });
+                                },
+                                on_open_stl_preview: move |path: String| {
+                                    fs_selected_path.set(Some(path.clone()));
+                                    fs_save_notice.set(None);
+                                    if center_shutting_down() {
+                                        center_shutting_down.set(false);
+                                    }
+                                    show_center.set(true);
+                                    center_tabs.with_mut(|tabs| {
+                                        active_center_id.with_mut(|active| {
+                                            center_open_or_focus(
+                                                tabs,
+                                                active,
+                                                CenterTab::file_stl_preview(path),
+                                            );
+                                        });
+                                    });
+                                },
+                                on_open_html_preview: move |path: String| {
+                                    fs_selected_path.set(Some(path.clone()));
+                                    fs_save_notice.set(None);
+                                    if center_shutting_down() {
+                                        center_shutting_down.set(false);
+                                    }
+                                    show_center.set(true);
+                                    center_tabs.with_mut(|tabs| {
+                                        active_center_id.with_mut(|active| {
+                                            center_open_or_focus(
+                                                tabs,
+                                                active,
+                                                CenterTab::file_html_preview(path),
+                                            );
                                         });
                                     });
                                 },
@@ -4321,9 +4957,12 @@ pub fn Console(
                                     show_chat.set(true);
                                 },
                                 on_add_to_new_chat: {
-                                    let detach_busy_chat = detach_busy_chat.clone();
                                     move |paths: Vec<String>| {
-                                        detach_busy_chat.borrow_mut()();
+                                        stash_conversation_messages(
+                                            &active_conversation_id(),
+                                            chat_messages(),
+                                            chat_messages_cache,
+                                        );
                                         show_chat.set(true);
                                         spawn(async move {
                                             match create_conversation().await {
@@ -4335,6 +4974,7 @@ pub fn Console(
                                                     conversations.set(list);
                                                     active_conversation_id.set(id);
                                                     chat_messages.set(welcome_chat_messages());
+                                                    chat_busy.set(false);
                                                     chat_title_editing.set(false);
                                                     chat_title_editing_id.set(None);
                                                     chat_title_draft.set(String::new());
@@ -4558,7 +5198,14 @@ pub fn Console(
                             _ => None,
                         });
                         rsx! {
-                            div { class: "ac-center-tabs", role: "tablist",
+                            div {
+                                class: "ac-center-tabs",
+                                role: "tablist",
+                                oncontextmenu: move |evt| {
+                                    evt.prevent_default();
+                                    let coords = evt.data.client_coordinates();
+                                    center_tabs_ctx_menu.set(Some((coords.x, coords.y)));
+                                },
                                 div { class: "ac-center-tabs-scroll",
                                     for tab in center_tabs() {
                                         {
@@ -5007,6 +5654,44 @@ pub fn Console(
                                     load_errors: fs_load_errors,
                                 }
                             },
+                            Some(CenterTabKind::FileHtmlPreview { path }) => rsx! {
+                                super::files::FileHtmlPreviewPane {
+                                    key: "html-preview:{path}",
+                                    path,
+                                }
+                            },
+                            Some(CenterTabKind::FilePdfPreview { path }) => rsx! {
+                                super::files::FilePdfPreviewPane {
+                                    key: "pdf-preview:{path}",
+                                    path,
+                                }
+                            },
+                            Some(CenterTabKind::FileStlPreview { path }) => rsx! {
+                                super::files::FileStlPreviewPane {
+                                    key: "stl-preview:{path}",
+                                    path,
+                                }
+                            },
+                            Some(CenterTabKind::WebBrowser { url }) => {
+                                // 多个浏览器标签共用同一渲染位：按标签 id 加 key，
+                                // 切换标签时重建面板（地址栏草稿、iframe 不串到别的标签）。
+                                let tab_id = active_center_id().unwrap_or_default();
+                                let tab_id_nav = tab_id.clone();
+                                rsx! {
+                                    super::browser::WebBrowserPane {
+                                        key: "{tab_id}",
+                                        url,
+                                        on_navigate: move |next: String| {
+                                            center_tabs.with_mut(|tabs| {
+                                                if let Some(tab) = tabs.iter_mut().find(|t| t.id == tab_id_nav) {
+                                                    tab.title = super::browser::browser_tab_title(&next);
+                                                    tab.kind = CenterTabKind::WebBrowser { url: next.clone() };
+                                                }
+                                            });
+                                        },
+                                    }
+                                }
+                            },
                             Some(CenterTabKind::FileDiff {
                                 path,
                                 old_text,
@@ -5236,109 +5921,13 @@ pub fn Console(
                         }
                             },
                             None => rsx! {
-                                div { class: "ac-center-empty",
+                                div {
+                                    class: "ac-center-empty",
                                     div { class: "ac-center-empty-logo-wrap",
                                         img {
                                             src: LOGO_PNG,
                                             alt: "Pusa",
                                             class: "ac-center-empty-logo",
-                                            oncontextmenu: move |evt| {
-                                                evt.prevent_default();
-                                                if super::files::fs_available() {
-                                                    home_logo_menu_open.set(true);
-                                                }
-                                            },
-                                        }
-                                        if home_logo_menu_open() && super::files::fs_available() {
-                                            div {
-                                                class: "ac-center-empty-logo-menu-backdrop",
-                                                onclick: move |_| home_logo_menu_open.set(false),
-                                            }
-                                            div {
-                                                class: "ac-center-empty-logo-menu",
-                                                role: "menu",
-                                                button {
-                                                    r#type: "button",
-                                                    class: "ac-center-empty-logo-menu-item",
-                                                    role: "menuitem",
-                                                    onclick: move |_| {
-                                                        home_logo_menu_open.set(false);
-                                                        match super::files::fs_open_project_directory_dialog() {
-                                                            Ok(Some(root)) => {
-                                                                apply_opened_project_root(
-                                                                    root,
-                                                                    fs_root_path,
-                                                                    fs_expanded,
-                                                                    fs_children_cache,
-                                                                    fs_selected_path,
-                                                                    fs_create_mode,
-                                                                    fs_create_name,
-                                                                    fs_create_parent,
-                                                                    fs_notice,
-                                                                    recent_project_dirs,
-                                                                    active_tab,
-                                                                    center_tabs,
-                                                                    active_center_id,
-                                                                    home_logo_menu_open,
-                                                                    plugin_refresh_tick,
-                                                                );
-                                                            }
-                                                            Ok(None) => {}
-                                                            Err(e) => fs_notice.set(Some(e)),
-                                                        }
-                                                    },
-                                                    "打开项目"
-                                                }
-                                                if !recent_project_dirs().is_empty() {
-                                                    div { class: "ac-center-empty-logo-menu-sep", role: "separator" }
-                                                    for dir in recent_project_dirs() {
-                                                        {
-                                                            let dir_path = dir.clone();
-                                                            let dir_label = super::files::fs_root_display_name(&dir);
-                                                            let dir_title = dir.clone();
-                                                            rsx! {
-                                                                button {
-                                                                    r#type: "button",
-                                                                    class: "ac-center-empty-logo-menu-item",
-                                                                    role: "menuitem",
-                                                                    title: "{dir_title}",
-                                                                    onclick: move |_| {
-                                                                        home_logo_menu_open.set(false);
-                                                                        match super::files::fs_set_workspace_root(&dir_path) {
-                                                                            Ok(root) => {
-                                                                                apply_opened_project_root(
-                                                                                    root,
-                                                                                    fs_root_path,
-                                                                                    fs_expanded,
-                                                                                    fs_children_cache,
-                                                                                    fs_selected_path,
-                                                                                    fs_create_mode,
-                                                                                    fs_create_name,
-                                                                                    fs_create_parent,
-                                                                                    fs_notice,
-                                                                                    recent_project_dirs,
-                                                                                    active_tab,
-                                                                                    center_tabs,
-                                                                                    active_center_id,
-                                                                                    home_logo_menu_open,
-                                                                                    plugin_refresh_tick,
-                                                                                );
-                                                                            }
-                                                                            Err(e) => {
-                                                                                recent_project_dirs.set(
-                                                                                    super::files::fs_recent_project_dirs(),
-                                                                                );
-                                                                                fs_notice.set(Some(e));
-                                                                            }
-                                                                        }
-                                                                    },
-                                                                    "{dir_label}"
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
                                         }
                                     }
                                     p { class: "ac-center-empty-intro", "万千世界，皆为梦幻泡影" }
@@ -5368,7 +5957,6 @@ pub fn Console(
                                                                 active_tab,
                                                                 center_tabs,
                                                                 active_center_id,
-                                                                home_logo_menu_open,
                                                                 plugin_refresh_tick,
                                                             );
                                                         }
@@ -5408,7 +5996,6 @@ pub fn Console(
                                                                 active_tab,
                                                                 center_tabs,
                                                                 active_center_id,
-                                                                home_logo_menu_open,
                                                                 plugin_refresh_tick,
                                                             );
                                                         }
@@ -5903,7 +6490,8 @@ pub fn Console(
                                                     thinking: thinking.clone(),
                                                     busy: thinking_busy,
                                                     on_open_trace_file: {
-                                                        let detach_busy_chat = detach_busy_chat.clone();
+                                                        let switch_to_conversation =
+                                                            switch_to_conversation.clone();
                                                         move |action: TraceFileOpen| {
                                                         match action {
                                                             TraceFileOpen::File { path } => {
@@ -6005,29 +6593,8 @@ pub fn Console(
                                                                 });
                                                             }
                                                             TraceFileOpen::Conversation { id } => {
-                                                                let detach_busy_chat = detach_busy_chat.clone();
+                                                                switch_to_conversation.borrow_mut()(id);
                                                                 spawn(async move {
-                                                                    detach_busy_chat.borrow_mut()();
-                                                                    match load_conversation_messages(
-                                                                        id.clone(),
-                                                                        200,
-                                                                    )
-                                                                    .await
-                                                                    {
-                                                                        Ok(messages) => {
-                                                                            active_conversation_id.set(id);
-                                                                            chat_messages.set(
-                                                                                stored_messages_to_ui(messages),
-                                                                            );
-                                                                            chat_title_editing.set(false);
-                                                                            chat_title_editing_id.set(None);
-                                                                            chat_title_draft.set(String::new());
-                                                                            chat_history_error.set(None);
-                                                                            chat_scroll_bottom_request += 1;
-                                                                        }
-                                                                        Err(e) => chat_history_error
-                                                                            .set(Some(e.to_string())),
-                                                                    }
                                                                     if let Ok(list) =
                                                                         list_conversations().await
                                                                     {
@@ -6308,6 +6875,7 @@ pub fn Console(
                                                                 "ac-chat-agent-mode-opt"
                                                             },
                                                             onclick: move |_| {
+                                                                persist_chat_agent_mode(mode);
                                                                 chat_agent_mode.set(mode);
                                                                 chat_agent_mode_sheet_open.set(false);
                                                             },
@@ -6446,11 +7014,34 @@ pub fn Console(
                                                     let id = m.id.clone();
                                                     let id_for_click = id.clone();
                                                     let id_for_class = id.clone();
-                                                    let id_for_check = id.clone();
                                                     let id_for_delete = id.clone();
+                                                    let id_for_edit = id.clone();
+                                                    let id_for_save = id.clone();
                                                     let is_custom = m.custom;
-                                                    let title = id.to_uppercase();
-                                                    let sub = m.display_name.clone().unwrap_or_default();
+                                                    let is_editing = is_custom
+                                                        && editing_custom_id().as_deref() == Some(id.as_str());
+                                                    let custom_name = m.display_name.clone().unwrap_or_default();
+                                                    let title = if is_custom && !custom_name.trim().is_empty() {
+                                                        custom_name.clone()
+                                                    } else {
+                                                        id.to_uppercase()
+                                                    };
+                                                    let sub = if is_custom {
+                                                        if custom_name.trim().is_empty() {
+                                                            String::new()
+                                                        } else {
+                                                            id.clone()
+                                                        }
+                                                    } else {
+                                                        m.display_name.clone().unwrap_or_default()
+                                                    };
+                                                    let bound_cred = m
+                                                        .source_credential_id
+                                                        .clone()
+                                                        .unwrap_or_default();
+                                                    let name_for_edit = custom_name.clone();
+                                                    let cred_for_edit = bound_cred.clone();
+                                                    let keys_for_row = saved_llm_keys();
                                                     rsx! {
                                                         div {
                                                             key: "{id}",
@@ -6465,61 +7056,125 @@ pub fn Console(
                                                             } else {
                                                                 "ac-chat-mode-sheet__opt-row"
                                                             },
-                                                            button {
-                                                                r#type: "button",
-                                                                role: "menuitem",
-                                                                class: if chat_model() == id_for_class {
-                                                                    "ac-chat-mode-sheet__opt is-active"
-                                                                } else {
-                                                                    "ac-chat-mode-sheet__opt"
-                                                                },
-                                                                onclick: move |_| {
-                                                                    persist_chat_model(&id_for_click);
-                                                                    chat_model.set(id_for_click.clone());
-                                                                    chat_model_sheet_open.set(false);
-                                                                },
-                                                                span { class: "ac-chat-mode-sheet__title", "{title}" }
-                                                                if !sub.is_empty() {
-                                                                    span { class: "ac-chat-mode-sheet__sub", "{sub}" }
+                                                            div { class: "ac-chat-mode-sheet__opt-main",
+                                                                button {
+                                                                    r#type: "button",
+                                                                    role: "menuitem",
+                                                                    class: if chat_model() == id_for_class {
+                                                                        "ac-chat-mode-sheet__opt is-active"
+                                                                    } else {
+                                                                        "ac-chat-mode-sheet__opt"
+                                                                    },
+                                                                    onclick: move |_| {
+                                                                        persist_chat_model(&id_for_click);
+                                                                        chat_model.set(id_for_click.clone());
+                                                                        chat_model_sheet_open.set(false);
+                                                                    },
+                                                                    span { class: "ac-chat-mode-sheet__title", "{title}" }
+                                                                    if !sub.is_empty() {
+                                                                        span { class: "ac-chat-mode-sheet__sub", "{sub}" }
+                                                                    }
                                                                 }
-                                                                if chat_model() == id_for_check {
-                                                                    Icon {
-                                                                        icon: LdCheck,
-                                                                        width: 18,
-                                                                        height: 18,
-                                                                        fill: "currentColor",
-                                                                        class: "ac-chat-mode-sheet__check",
+                                                                if is_custom {
+                                                                    button {
+                                                                        r#type: "button",
+                                                                        class: "ac-chat-mode-sheet__edit",
+                                                                        title: "编辑自定义模型",
+                                                                        aria_label: "编辑自定义模型",
+                                                                        onclick: move |e| {
+                                                                            e.stop_propagation();
+                                                                            edit_custom_name.set(name_for_edit.clone());
+                                                                            edit_custom_cred.set(cred_for_edit.clone());
+                                                                            editing_custom_id.set(Some(id_for_edit.clone()));
+                                                                        },
+                                                                        Icon {
+                                                                            icon: LdPencil,
+                                                                            width: 14,
+                                                                            height: 14,
+                                                                            fill: "currentColor",
+                                                                        }
+                                                                    }
+                                                                    button {
+                                                                        r#type: "button",
+                                                                        class: "ac-chat-mode-sheet__delete",
+                                                                        title: "删除自定义模型",
+                                                                        aria_label: "删除自定义模型",
+                                                                        onclick: move |e| {
+                                                                            e.stop_propagation();
+                                                                            let remove_id = id_for_delete.clone();
+                                                                            if editing_custom_id().as_deref() == Some(remove_id.as_str()) {
+                                                                                editing_custom_id.set(None);
+                                                                            }
+                                                                            chat_models.with_mut(|list| {
+                                                                                list.retain(|m| m.id != remove_id);
+                                                                            });
+                                                                            persist_custom_from_models(&chat_models());
+                                                                            if chat_model() == remove_id {
+                                                                                let next = chat_models()
+                                                                                    .first()
+                                                                                    .map(|m| m.id.clone())
+                                                                                    .unwrap_or_default();
+                                                                                persist_chat_model(&next);
+                                                                                chat_model.set(next);
+                                                                            }
+                                                                        },
+                                                                        Icon {
+                                                                            icon: LdTrash2,
+                                                                            width: 14,
+                                                                            height: 14,
+                                                                            fill: "currentColor",
+                                                                        }
                                                                     }
                                                                 }
                                                             }
-                                                            if is_custom {
-                                                                button {
-                                                                    r#type: "button",
-                                                                    class: "ac-chat-mode-sheet__delete",
-                                                                    title: "删除自定义模型",
-                                                                    aria_label: "删除自定义模型",
-                                                                    onclick: move |e| {
-                                                                        e.stop_propagation();
-                                                                        let remove_id = id_for_delete.clone();
-                                                                        chat_models.with_mut(|list| {
-                                                                            list.retain(|m| m.id != remove_id);
-                                                                        });
-                                                                        let customs = custom_ids_from_models(&chat_models());
-                                                                        persist_custom_chat_model_ids(&customs);
-                                                                        if chat_model() == remove_id {
-                                                                            let next = chat_models()
-                                                                                .first()
-                                                                                .map(|m| m.id.clone())
-                                                                                .unwrap_or_default();
-                                                                            persist_chat_model(&next);
-                                                                            chat_model.set(next);
+                                                            if is_editing {
+                                                                div {
+                                                                    class: "ac-chat-mode-sheet__edit-panel",
+                                                                    onclick: move |e| e.stop_propagation(),
+                                                                    input {
+                                                                        r#type: "text",
+                                                                        class: "ac-chat-mode-sheet__custom-input",
+                                                                        placeholder: "显示名称（可选）",
+                                                                        value: "{edit_custom_name()}",
+                                                                        aria_label: "自定义模型名称",
+                                                                        oninput: move |e| edit_custom_name.set(e.value()),
+                                                                    }
+                                                                    select {
+                                                                        class: "ac-chat-mode-sheet__custom-key",
+                                                                        value: "{edit_custom_cred()}",
+                                                                        title: "绑定密钥",
+                                                                        aria_label: "绑定密钥",
+                                                                        onchange: move |e| edit_custom_cred.set(e.value()),
+                                                                        option { value: "", "不绑定密钥" }
+                                                                        for k in keys_for_row {
+                                                                            option {
+                                                                                value: "{k.id}",
+                                                                                "{saved_key_option_label(&k)}"
+                                                                            }
                                                                         }
-                                                                    },
-                                                                    Icon {
-                                                                        icon: LdTrash2,
-                                                                        width: 14,
-                                                                        height: 14,
-                                                                        fill: "currentColor",
+                                                                    }
+                                                                    div { class: "ac-chat-mode-sheet__edit-actions",
+                                                                        button {
+                                                                            r#type: "button",
+                                                                            class: "ac-chat-mode-sheet__edit-cancel",
+                                                                            onclick: move |_| editing_custom_id.set(None),
+                                                                            "取消"
+                                                                        }
+                                                                        button {
+                                                                            r#type: "button",
+                                                                            class: "ac-chat-mode-sheet__edit-save",
+                                                                            onclick: move |_| {
+                                                                                apply_custom_chat_model_edit(
+                                                                                    &id_for_save,
+                                                                                    &edit_custom_name(),
+                                                                                    &edit_custom_cred(),
+                                                                                    &saved_llm_keys(),
+                                                                                    chat_models,
+                                                                                    editing_custom_id,
+                                                                                );
+                                                                            },
+                                                                            "保存"
+                                                                        }
                                                                     }
                                                                 }
                                                             }
@@ -6540,26 +7195,13 @@ pub fn Console(
                                                         if e.key() != Key::Enter {
                                                             return;
                                                         }
-                                                        let id = custom_model_draft().trim().to_string();
-                                                        if id.is_empty() {
-                                                            return;
-                                                        }
-                                                        let exists = chat_models().iter().any(|m| m.id == id);
-                                                        if !exists {
-                                                            chat_models.with_mut(|list| {
-                                                                list.push(ChatModelEntry {
-                                                                    id: id.clone(),
-                                                                    display_name: None,
-                                                                    custom: true,
-                                                                });
-                                                            });
-                                                            let customs = custom_ids_from_models(&chat_models());
-                                                            persist_custom_chat_model_ids(&customs);
-                                                        }
-                                                        persist_chat_model(&id);
-                                                        chat_model.set(id);
-                                                        custom_model_draft.set(String::new());
-                                                        chat_model_sheet_open.set(false);
+                                                        try_add_custom_chat_model(
+                                                            &custom_model_draft(),
+                                                            chat_models,
+                                                            chat_model,
+                                                            custom_model_draft,
+                                                            chat_model_sheet_open,
+                                                        );
                                                     },
                                                 }
                                                 button {
@@ -6568,26 +7210,13 @@ pub fn Console(
                                                     title: "添加自定义模型",
                                                     aria_label: "添加自定义模型",
                                                     onclick: move |_| {
-                                                        let id = custom_model_draft().trim().to_string();
-                                                        if id.is_empty() {
-                                                            return;
-                                                        }
-                                                        let exists = chat_models().iter().any(|m| m.id == id);
-                                                        if !exists {
-                                                            chat_models.with_mut(|list| {
-                                                                list.push(ChatModelEntry {
-                                                                    id: id.clone(),
-                                                                    display_name: None,
-                                                                    custom: true,
-                                                                });
-                                                            });
-                                                            let customs = custom_ids_from_models(&chat_models());
-                                                            persist_custom_chat_model_ids(&customs);
-                                                        }
-                                                        persist_chat_model(&id);
-                                                        chat_model.set(id);
-                                                        custom_model_draft.set(String::new());
-                                                        chat_model_sheet_open.set(false);
+                                                        try_add_custom_chat_model(
+                                                            &custom_model_draft(),
+                                                            chat_models,
+                                                            chat_model,
+                                                            custom_model_draft,
+                                                            chat_model_sheet_open,
+                                                        );
                                                     },
                                                     Icon {
                                                         icon: LdPlus,
@@ -6689,9 +7318,12 @@ pub fn Console(
                                 title: "开启新对话",
                                 aria_label: "开启新对话",
                                 onclick: {
-                                    let detach_busy_chat = detach_busy_chat.clone();
                                     move |_| {
-                                        detach_busy_chat.borrow_mut()();
+                                        stash_conversation_messages(
+                                            &active_conversation_id(),
+                                            chat_messages(),
+                                            chat_messages_cache,
+                                        );
                                         spawn(async move {
                                             match create_conversation().await {
                                                 Ok(conversation) => {
@@ -6702,6 +7334,7 @@ pub fn Console(
                                                     conversations.set(list);
                                                     active_conversation_id.set(id);
                                                     chat_messages.set(welcome_chat_messages());
+                                                    chat_busy.set(false);
                                                     chat_title_editing.set(false);
                                                     chat_title_editing_id.set(None);
                                                     chat_title_draft.set(String::new());
@@ -6726,6 +7359,8 @@ pub fn Console(
                                 {
                                     let conv_id = conversation.id.clone();
                                     let is_active = conv_id == active_conversation_id();
+                                    let conv_running =
+                                        conversation_has_live_turn(&chat_live_turns(), &conv_id);
                                     let display_title = visible_conversation_title(&conversation.title);
                                     let is_editing = chat_title_editing_id()
                                         .as_deref()
@@ -6842,11 +7477,11 @@ pub fn Console(
                                                 }
                                             } else {
                                                 div {
-                                                    class: if is_active {
-                                                        "ac-chat-history-item is-active"
-                                                    } else {
-                                                        "ac-chat-history-item"
-                                                    },
+                                                    class: format!(
+                                                        "ac-chat-history-item{}{}",
+                                                        if is_active { " is-active" } else { "" },
+                                                        if conv_running { " is-running" } else { "" },
+                                                    ),
                                                     title: if let Some(title) = display_title.clone() {
                                                         title
                                                     } else if conversation.last_message_preview.trim().is_empty() {
@@ -6856,31 +7491,37 @@ pub fn Console(
                                                     },
                                                     onclick: {
                                                         let conv_id = conv_id.clone();
-                                                        let detach_busy_chat = detach_busy_chat.clone();
+                                                        let switch_to_conversation =
+                                                            switch_to_conversation.clone();
                                                         move |_| {
                                                             chat_history_ctx_menu.set(None);
                                                             if is_active {
-                                                                if chat_busy() {
+                                                                if conversation_has_live_turn(
+                                                                    &chat_live_turns(),
+                                                                    &conv_id,
+                                                                ) {
                                                                     return;
                                                                 }
-                                                            } else {
-                                                                detach_busy_chat.borrow_mut()();
-                                                            }
-                                                            let id = conv_id.clone();
-                                                            spawn(async move {
-                                                                match load_conversation_messages(id.clone(), 200).await {
-                                                                    Ok(messages) => {
-                                                                        active_conversation_id.set(id);
-                                                                        chat_messages.set(stored_messages_to_ui(messages));
-                                                                        chat_title_editing.set(false);
-                                                                        chat_title_editing_id.set(None);
-                                                                        chat_title_draft.set(String::new());
-                                                                        chat_history_error.set(None);
-                                                                        chat_scroll_bottom_request += 1;
+                                                                let id = conv_id.clone();
+                                                                spawn(async move {
+                                                                    match load_conversation_messages(id.clone(), 200).await {
+                                                                        Ok(messages) => {
+                                                                            if active_conversation_id() != id {
+                                                                                return;
+                                                                            }
+                                                                            chat_messages.set(stored_messages_to_ui(messages));
+                                                                            chat_title_editing.set(false);
+                                                                            chat_title_editing_id.set(None);
+                                                                            chat_title_draft.set(String::new());
+                                                                            chat_history_error.set(None);
+                                                                            chat_scroll_bottom_request += 1;
+                                                                        }
+                                                                        Err(e) => chat_history_error.set(Some(e.to_string())),
                                                                     }
-                                                                    Err(e) => chat_history_error.set(Some(e.to_string())),
-                                                                }
-                                                            });
+                                                                });
+                                                            } else {
+                                                                switch_to_conversation.borrow_mut()(conv_id.clone());
+                                                            }
                                                         }
                                                     },
                                                     oncontextmenu: {
@@ -6943,6 +7584,9 @@ pub fn Console(
                                                                         "{conversation.last_message_preview}"
                                                                     }
                                                                 }
+                                                            }
+                                                            if conv_running {
+                                                                span { class: "ac-chat-history-item-running", "执行中" }
                                                             }
                                                         }
                                                     }
@@ -7211,7 +7855,6 @@ pub fn Console(
                                                     active_tab,
                                                     center_tabs,
                                                     active_center_id,
-                                                    home_logo_menu_open,
                                                     fs_section_open,
                                                     toast,
                                                     plugin_refresh_tick,
@@ -7259,7 +7902,6 @@ pub fn Console(
                                                 active_tab,
                                                 center_tabs,
                                                 active_center_id,
-                                                home_logo_menu_open,
                                                 fs_section_open,
                                                 toast,
                                                 plugin_refresh_tick,
@@ -7269,6 +7911,45 @@ pub fn Console(
                                     }
                                 },
                                 "创建"
+                            }
+                        }
+                    }
+                }
+            }
+
+            if let Some((ctx_x, ctx_y)) = center_tabs_ctx_menu() {
+                {
+                    let menu_style = format!("left: {ctx_x:.0}px; top: {ctx_y:.0}px;");
+                    rsx! {
+                        div {
+                            class: "ac-chat-history-ctx-backdrop",
+                            onclick: move |_| center_tabs_ctx_menu.set(None),
+                            oncontextmenu: move |evt| {
+                                evt.prevent_default();
+                                center_tabs_ctx_menu.set(None);
+                            },
+                        }
+                        div {
+                            class: "ac-chat-history-ctx-menu",
+                            role: "menu",
+                            style: "{menu_style}",
+                            onclick: move |evt| evt.stop_propagation(),
+                            button {
+                                r#type: "button",
+                                class: "ac-chat-history-ctx-menu__item",
+                                role: "menuitem",
+                                onclick: move |_| {
+                                    center_tabs_ctx_menu.set(None);
+                                    run_tab_strip_action(super::browser::TabStripMenuAction::OpenBrowser);
+                                },
+                                Icon {
+                                    icon: LdGlobe,
+                                    width: 14,
+                                    height: 14,
+                                    fill: "currentColor",
+                                    class: "ac-chat-header-icon",
+                                }
+                                "打开 Pusa 浏览器"
                             }
                         }
                     }
@@ -7336,12 +8017,9 @@ pub fn Console(
                                 r#type: "button",
                                 class: "ac-chat-history-ctx-menu__item is-danger",
                                 role: "menuitem",
-                                disabled: chat_busy(),
+                                disabled: false,
                                 onclick: move |_| {
                                     chat_history_ctx_menu.set(None);
-                                    if chat_busy() {
-                                        return;
-                                    }
                                     spawn_delete_conversation_and_refresh(
                                         target_id.clone(),
                                         conversations,
@@ -7352,6 +8030,10 @@ pub fn Console(
                                         chat_title_editing_id,
                                         chat_title_draft,
                                         chat_history_error,
+                                        chat_messages_cache,
+                                        chat_live_turns,
+                                        chat_busy,
+                                        abort_stream_controllers_for.clone(),
                                     );
                                 },
                                 Icon {

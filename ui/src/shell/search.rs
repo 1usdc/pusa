@@ -72,6 +72,7 @@ pub fn SidebarSearchPanel(
     let mut preserve_case = use_signal(|| false);
     let mut include_glob = use_signal(String::new);
     let mut exclude_glob = use_signal(String::new);
+    let mut exclude_open = use_signal(|| false);
     let mut outcome = use_signal(SearchOutcome::default);
     let mut loading = use_signal(|| false);
     let mut search_epoch = use_signal(|| 0_u64);
@@ -468,100 +469,121 @@ pub fn SidebarSearchPanel(
                     }
                 }
 
-                label { class: "ac-search-filter",
-                    span { class: "ac-search-filter-label", "要包含的文件" }
-                    input {
-                        r#type: "text",
-                        class: "ac-search-filter-input",
-                        value: "{include_glob}",
-                        placeholder: "例如：*.rs, src/**/*.ts",
-                        spellcheck: false,
-                        oninput: move |e| {
-                            include_glob.set(e.value());
-                            if query().trim().is_empty() {
-                                return;
-                            }
-                            kick_search(
-                                query(),
-                                case_sensitive(),
-                                whole_word(),
-                                use_regex(),
-                                e.value(),
-                                exclude_glob(),
-                                SEARCH_DEBOUNCE_MS,
-                                search_epoch,
-                                loading,
-                                outcome,
-                                expanded,
-                            );
+                div { class: "ac-search-pair ac-search-pair--filters",
+                    button {
+                        r#type: "button",
+                        class: "ac-search-pair-toggle",
+                        title: if exclude_open() { "收起排除文件" } else { "展开排除文件" },
+                        aria_label: if exclude_open() { "收起排除文件" } else { "展开排除文件" },
+                        aria_expanded: exclude_open(),
+                        onclick: move |_| {
+                            exclude_open.with_mut(|v| *v = !*v);
                         },
-                        onkeydown: move |e: KeyboardEvent| {
-                            if e.key() != Key::Enter {
-                                return;
-                            }
-                            e.prevent_default();
-                            kick_search(
-                                query(),
-                                case_sensitive(),
-                                whole_word(),
-                                use_regex(),
-                                include_glob(),
-                                exclude_glob(),
-                                0,
-                                search_epoch,
-                                loading,
-                                outcome,
-                                expanded,
-                            );
-                        },
+                        if exclude_open() {
+                            Icon { icon: LdChevronDown, width: 14, height: 14, fill: "currentColor" }
+                        } else {
+                            Icon { icon: LdChevronRight, width: 14, height: 14, fill: "currentColor" }
+                        }
                     }
-                }
-                label { class: "ac-search-filter",
-                    span { class: "ac-search-filter-label", "要排除的文件" }
-                    input {
-                        r#type: "text",
-                        class: "ac-search-filter-input",
-                        value: "{exclude_glob}",
-                        placeholder: "例如：*.lock, dist",
-                        spellcheck: false,
-                        oninput: move |e| {
-                            exclude_glob.set(e.value());
-                            if query().trim().is_empty() {
-                                return;
+                    div { class: "ac-search-pair-inputs",
+                        label { class: "ac-search-filter",
+                            span { class: "ac-search-filter-label", "包含文件" }
+                            input {
+                                r#type: "text",
+                                class: "ac-search-filter-input",
+                                value: "{include_glob}",
+                                placeholder: "例如：*.rs, src/**/*.ts",
+                                spellcheck: false,
+                                oninput: move |e| {
+                                    include_glob.set(e.value());
+                                    if query().trim().is_empty() {
+                                        return;
+                                    }
+                                    kick_search(
+                                        query(),
+                                        case_sensitive(),
+                                        whole_word(),
+                                        use_regex(),
+                                        e.value(),
+                                        exclude_glob(),
+                                        SEARCH_DEBOUNCE_MS,
+                                        search_epoch,
+                                        loading,
+                                        outcome,
+                                        expanded,
+                                    );
+                                },
+                                onkeydown: move |e: KeyboardEvent| {
+                                    if e.key() != Key::Enter {
+                                        return;
+                                    }
+                                    e.prevent_default();
+                                    kick_search(
+                                        query(),
+                                        case_sensitive(),
+                                        whole_word(),
+                                        use_regex(),
+                                        include_glob(),
+                                        exclude_glob(),
+                                        0,
+                                        search_epoch,
+                                        loading,
+                                        outcome,
+                                        expanded,
+                                    );
+                                },
                             }
-                            kick_search(
-                                query(),
-                                case_sensitive(),
-                                whole_word(),
-                                use_regex(),
-                                include_glob(),
-                                e.value(),
-                                SEARCH_DEBOUNCE_MS,
-                                search_epoch,
-                                loading,
-                                outcome,
-                                expanded,
-                            );
-                        },
-                        onkeydown: move |e: KeyboardEvent| {
-                            if e.key() != Key::Enter {
-                                return;
+                        }
+                        if exclude_open() {
+                            label { class: "ac-search-filter",
+                                span { class: "ac-search-filter-label", "排除文件" }
+                                input {
+                                    r#type: "text",
+                                    class: "ac-search-filter-input",
+                                    value: "{exclude_glob}",
+                                    placeholder: "例如：*.lock, dist",
+                                    spellcheck: false,
+                                    oninput: move |e| {
+                                        exclude_glob.set(e.value());
+                                        if query().trim().is_empty() {
+                                            return;
+                                        }
+                                        kick_search(
+                                            query(),
+                                            case_sensitive(),
+                                            whole_word(),
+                                            use_regex(),
+                                            include_glob(),
+                                            e.value(),
+                                            SEARCH_DEBOUNCE_MS,
+                                            search_epoch,
+                                            loading,
+                                            outcome,
+                                            expanded,
+                                        );
+                                    },
+                                    onkeydown: move |e: KeyboardEvent| {
+                                        if e.key() != Key::Enter {
+                                            return;
+                                        }
+                                        e.prevent_default();
+                                        kick_search(
+                                            query(),
+                                            case_sensitive(),
+                                            whole_word(),
+                                            use_regex(),
+                                            include_glob(),
+                                            exclude_glob(),
+                                            0,
+                                            search_epoch,
+                                            loading,
+                                            outcome,
+                                            expanded,
+                                        );
+                                    },
+                                }
                             }
-                            e.prevent_default();
-                            kick_search(
-                                query(),
-                                case_sensitive(),
-                                whole_word(),
-                                use_regex(),
-                                include_glob(),
-                                exclude_glob(),
-                                0,
-                                search_epoch,
-                                loading,
-                                outcome,
-                                expanded,
-                            );
-                        },
+                        }
                     }
                 }
             }

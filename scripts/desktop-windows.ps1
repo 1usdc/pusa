@@ -1,10 +1,12 @@
-﻿# 本机 Windows 打包：嵌入 pusa_core.dll → dx bundle --release → desktop/dist/Pusa_*-setup.exe（默认不签名）
+﻿# 本机 Windows 打包：嵌入 pusa_core.dll → dx bundle --release → Velopack（vpk pack）
+#   → desktop/dist/velopack/（Setup.exe / Portable.zip / full+delta .nupkg / releases.win-x64.json）
 #
 # 安装后 DLL 与 exe 同目录（shared/src/ffi.rs 从 current_exe 父目录加载）。
 #
 # 用法：
 #   just desktop-windows
-#   SIGN=1 just desktop-windows    # 打包后走 Azure Artifact Signing（见 scripts/windows-sign.ps1）
+#   SIGN=1 just desktop-windows      # vpk 用 Azure Trusted Signing 签 exe / 安装器（凭证 .env.signing）
+#   VELOPACK=0 just desktop-windows  # 旧流程：只出 NSIS *-setup.exe（无应用内更新）
 #   ANOTHERME_BASE_URL=... just desktop-windows
 $ErrorActionPreference = 'Stop'
 
@@ -67,6 +69,16 @@ if ($env:SKIP_CORE_CHECK -ne '1') {
         throw 'NSIS _staging 里没有 pusa_core.dll：安装器不会带上核心库。检查 Dioxus.toml [bundle].resources 与 embed-pusa-core-windows.ps1'
     }
     Write-Host "已打进安装器: $($stagedDll[0].FullName)"
+}
+
+if ($env:VELOPACK -ne '0') {
+    # Velopack：Setup.exe / Portable.zip / full+delta 包 / releases.win-x64.json → desktop\dist\velopack
+    # 签名交给 vpk（SIGN=1 时 --azureTrustedSignFile），不再单独给 NSIS 安装器签名。
+    Write-Host '== 5) Velopack 打包（vpk pack，含增量包）=='
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root 'scripts\velopack-pack-windows.ps1')
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    Write-Host "✓ 本机 Windows Velopack 包已就绪：$(Join-Path $Dist 'velopack')"
+    exit 0
 }
 
 if ($DoSign) {

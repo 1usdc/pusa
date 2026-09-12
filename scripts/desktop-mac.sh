@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# 本机 macOS 打包发版：dx bundle --release → Developer ID 签名 + 公证 → desktop/dist/*.dmg
+# 本机 macOS 打包发版：dx bundle --release → 嵌入 dylib → Velopack（vpk 签名 + 公证 + 增量包）
+#   → desktop/dist/velopack/（.dmg / full+delta .nupkg / releases.<channel>.json；始终 --noInst 不出 .pkg）
 #
 # 用法：
 #   just desktop-mac                         # 先把 desktop/Cargo.toml patch 位 +1
 #   BUMP=0 just desktop-mac                  # 不改版号，按当前 version 打包
 #   NOTARIZE=0 just desktop-mac              # 只签名，跳过 Apple 公证
+#   VELOPACK=0 just desktop-mac              # 旧流程：codesign + DMG（无应用内更新）
 #   ANOTHERME_BASE_URL=... just desktop-mac
 #
 # 凭证：.env.signing（MACOS_SIGNING_IDENTITY / APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID）
@@ -75,8 +77,13 @@ echo "== 2) dx bundle --release（desktop/）=="
 echo "== 3) 嵌入 libpusa_core.dylib =="
 bash "${ROOT}/scripts/embed-pusa-core-macos.sh"
 
-echo "== 4) 签名 + 公证 =="
-bash "${ROOT}/scripts/macos-sign-notarize.sh"
-
-echo "✓ 本机 macOS 包已就绪：${ROOT}/desktop/dist/"
-ls -lh "${ROOT}/desktop/dist/"*.dmg 2>/dev/null || ls -lh "${ROOT}/desktop/dist/"
+if [[ "${VELOPACK:-1}" == "1" ]]; then
+	echo "== 4) Velopack 打包（vpk 签名 + 公证 + 增量包）=="
+	bash "${ROOT}/scripts/velopack-pack-mac.sh"
+	echo "✓ 本机 macOS Velopack 包已就绪：${ROOT}/desktop/dist/velopack/"
+else
+	echo "== 4) 签名 + 公证（VELOPACK=0：旧 DMG 流程，不支持应用内更新）=="
+	bash "${ROOT}/scripts/macos-sign-notarize.sh"
+	echo "✓ 本机 macOS 包已就绪：${ROOT}/desktop/dist/"
+	ls -lh "${ROOT}/desktop/dist/"*.dmg 2>/dev/null || ls -lh "${ROOT}/desktop/dist/"
+fi

@@ -66,6 +66,7 @@ reqwest = { version = "0.12", optional = true, default-features = false, feature
 webbrowser = { version = "1", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
+velopack = { version = "1.2", optional = true }
 
 # 仅 macOS：objc2 系列在非 Apple 平台用 `compile_error!` 拒绝编译，
 # 必须放在 `target_os = "macos"` 守卫下；这样 `native` feature 即使在 Windows / Linux
@@ -136,6 +137,7 @@ native = [
     "dep:rfd",
     "dep:serde",
     "dep:serde_json",
+    "dep:velopack",
 ]
 mobile = [
     "dioxus/launch",

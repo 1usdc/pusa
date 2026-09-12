@@ -9,6 +9,7 @@ pub use shell::{Console, StatusBar};
 mod version;
 mod icons;
 mod chat;
+mod custom_chat_models;
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
 pub mod components;
 mod persona;
@@ -17,6 +18,15 @@ mod web;
 
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 mod desktop;
+
+/// 桌面端 `pusapreview://` 自定义协议：给 HTML 文件夹内置预览加载相对资源。
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+pub fn serve_html_preview(uri: &str) -> Result<(&'static str, Vec<u8>), u16> {
+    desktop::html_preview::serve_request(uri)
+}
+
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+pub const HTML_PREVIEW_PROTOCOL: &str = desktop::html_preview::PROTOCOL_NAME;
 
 // favicon：浏览器原生 .ico（多尺寸打包，桌面浏览器最兼容）
 #[cfg(any(all(target_arch = "wasm32", feature = "web"), all(not(target_arch = "wasm32"), feature = "native")))]
@@ -99,6 +109,8 @@ fn WebAppShell() -> Element {
     let developer_mode = use_signal(|| crate::web::dev_mode::get());
     // 必须在子组件首次 `use_toast()` 之前调用：把全局 toast ctx 注入到 Dioxus context。
     let _toast_ctx = use_init_toast_ctx();
+    let llm_models_refresh = use_signal(|| 0u32);
+    use_context_provider(|| crate::shell::LlmModelsRefresh(llm_models_refresh));
 
     use_effect(move || {
         crate::web::dev_mode::sync_body_to(developer_mode());
@@ -114,6 +126,8 @@ fn WebAppShell() -> Element {
         show_titlebar_settings_menu,
         developer_mode,
     });
+    let open_browser_tick = use_signal(|| 0u64);
+    use_context_provider(|| crate::shell::browser::OpenBrowserTick(open_browser_tick));
 
     rsx! {
         document::Title { "Pusa" }

@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STL 预览</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f8fafc;
+    --fg: #334155;
+    --muted: #64748b;
+    --panel: rgba(255, 255, 255, 0.82);
+    --border: rgba(15, 23, 42, 0.08);
+    --error: #dc2626;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1c20;
+      --fg: #e2e8f0;
+      --muted: #94a3b8;
+      --panel: rgba(28, 28, 32, 0.82);
+      --border: rgba(255, 255, 255, 0.1);
+      --error: #f87171;
+    }
+  }
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--fg);
+    font: 12px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+    cursor: grab;
+    outline: none;
+  }
+  canvas.is-dragging { cursor: grabbing; }
+  #info {
+    position: absolute;
+    left: 12px;
+    top: 12px;
+    max-width: calc(100% - 24px);
+    box-sizing: border-box;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    pointer-events: none;
+  }
+  #info[hidden] { display: none; }
+  #info b {
+    display: block;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #info span { color: var(--muted); }
+  #msg {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    text-align: center;
+    color: var(--muted);
+    pointer-events: none;
+    word-break: break-all;
+  }
+  #msg.is-error { color: var(--error); }
+  #msg:empty { display: none; }
+  #hint {
+    position: absolute;
+    right: 12px;
+    bottom: 10px;
+    color: var(--muted);
+    opacity: 0.7;
+    pointer-events: none;
+    user-select: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="c" tabindex="0"></canvas>
+<div id="info" hidden><b id="name"></b><span id="meta"></span></div>
+<div id="msg">正在加载…</div>
+<div id="hint">左键拖动旋转 · 滚轮缩放 · 右键 / Shift+左键平移 · 双击复位</div>
+<script>
+(function () {
+  'use strict';
+
+  // ---------- 入参：优先宿主注入（Windows srcdoc），否则读 URL query ----------
+  var cfg = window.__PUSA_STL__ || (function () {
+    var q = new URLSearchParams(location.search);
+    return { src: q.get('src') || '', name: q.get('name') || '' };
+  })();
+  if (!cfg.name) {
+    var tail = (cfg.src || '').split('#')[0].split('?')[0].split('/').pop() || 'model.stl';
+    try { cfg.name = decodeURIComponent(tail); } catch (_) { cfg.name = tail; }
+  }
+
+  var canvas = document.getElementById('c');
+  var msgEl = document.getElementById('msg');
+  var infoEl = document.getElementById('info');
+  var nameEl = document.getElementById('name');
+  var metaEl = document.getElementById('meta');
+
+  function fail(text) {
+    msgEl.textContent = text;
+    msgEl.classList.add('is-error');
+    infoEl.hidden = true;
+  }
+
+  // ---------- STL 解析 ----------
+  function looksAscii(bytes) {
+    var n = Math.min(bytes.length, 5), s = '';
+    for (var i = 0; i < n; i++) s += String.fromCharCode(bytes[i]);
+    return s.toLowerCase() === 'solid';
+  }
+
+  function parseSTL(buf) {
+    var bytes = new Uint8Array(buf);
+    if (bytes.length >= 84) {
+      var count = new DataView(buf).getUint32(80, true);
+      if (84 + count * 50 === bytes.length) return parseBinary(buf, count);
+      if (!looksAscii(bytes) && 84 + count * 50 <= bytes.length) return parseBinary(buf, count);
+    }
+    return parseAscii(new TextDecoder('utf-8').decode(bytes));
+  }
+
+  // 法线为零 / 非法时用三角形叉积补算，然后归一化写入三个顶点。
+  function fillNormal(pos, nrm, b, nx, ny, nz) {
+    var len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+    if (!(len > 1e-12) || !isFinite(len)) {
+      var ax = pos[b + 3] - pos[b], ay = pos[b + 4] - pos[b + 1], az = pos[b + 5] - pos[b + 2];
+      var bx = pos[b + 6] - pos[b], by = pos[b + 7] - pos[b + 1], bz = pos[b + 8] - pos[b + 2];
+      nx = ay * bz - az * by;
+      ny = az * bx - ax * bz;
+      nz = ax * by - ay * bx;
+      len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+    }
+    nx /= len; ny /= len; nz /= len;
+    for (var v = 0; v < 3; v++) {
+      nrm[b + v * 3] = nx; nrm[b + v * 3 + 1] = ny; nrm[b + v * 3 + 2] = nz;
+    }
+  }
+
+  function parseBinary(buf, count) {
+    var dv = new DataView(buf);
+    var pos = new Float32Array(count * 9);
+    var nrm = new Float32Array(count * 9);
+    var off = 84;
+    for (var i = 0; i < count; i++, off += 50) {
+      var b = i * 9;
+      for (var v = 0; v < 3; v++) {
+        var o = off + 12 + v * 12;
+        pos[b + v * 3] = dv.getFloat32(o, true);
+        pos[b + v * 3 + 1] = dv.getFloat32(o + 4, true);
+        pos[b + v * 3 + 2] = dv.getFloat32(o + 8, true);
+      }
+      fillNormal(pos, nrm, b,
+        dv.getFloat32(off, true), dv.getFloat32(off + 4, true), dv.getFloat32(off + 8, true));
+    }
+    return { positions: pos, normals: nrm, triangles: count, binary: true };
+  }
+
+  function parseAscii(text) {
+    var lines = text.split(/\r?\n/);
+    var pos = [], facetNormals = [];
+    var n = [0, 0, 0], vcount = 0, tri = 0;
+    for (var i = 0; i < lines.length; i++) {
+      var t = lines[i].trim();
+      if (!t) continue;
+      var lower = t.toLowerCase();
+      if (lower.indexOf('facet normal') === 0) {
+        var p = t.split(/\s+/);
+        n = [+p[2], +p[3], +p[4]];
+        vcount = 0;
+      } else if (lower.indexOf('vertex') === 0) {
+        var q = t.split(/\s+/);
+        pos.push(+q[1], +q[2], +q[3]);
+        if (++vcount === 3) {
+          facetNormals.push(n[0], n[1], n[2]);
+          tri++;
+          vcount = 0;
+        }
+      }
+    }
+    // 丢弃不完整的最后一个 facet。
+    pos.length = tri * 9;
+    var positions = new Float32Array(pos);
+    var normals = new Float32Array(positions.length);
+    for (var k = 0; k < tri; k++) {
+      fillNormal(positions, normals, k * 9,
+        facetNormals[k * 3], facetNormals[k * 3 + 1], facetNormals[k * 3 + 2]);
+    }
+    return { positions: positions, normals: normals, triangles: tri, binary: false };
+  }
+
+  function bounds(pos) {
+    var min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+    for (var i = 0; i < pos.length; i += 3) {
+      for (var a = 0; a < 3; a++) {
+        var v = pos[i + a];
+        if (v < min[a]) min[a] = v;
+        if (v > max[a]) max[a] = v;
+      }
+    }
+    var size = [max[0] - min[0], max[1] - min[1], max[2] - min[2]];
+    var center = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
+    var maxDim = Math.max(size[0], size[1], size[2]);
+    if (!(maxDim > 0) || !isFinite(maxDim)) maxDim = 1;
+    return { min: min, max: max, size: size, center: center, maxDim: maxDim };
+  }
+
+  // 调试 / 测试钩子：控制台可直接调用解析与包围盒。
+  window.__pusaStl = { parseSTL: parseSTL, bounds: bounds };
+
+  // ---------- 矩阵（列主序 mat4） ----------
+  function m4identity() {
+    return new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+  }
+  function m4mul(a, b) {
+    var o = new Float32Array(16);
+    for (var c = 0; c < 4; c++) {
+      for (var r = 0; r < 4; r++) {
+        o[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3];
+      }
+    }
+    return o;
+  }
+  function m4translate(x, y, z) {
+    var m = m4identity(); m[12] = x; m[13] = y; m[14] = z; return m;
+  }
+  function m4scale(s) {
+    var m = m4identity(); m[0] = s; m[5] = s; m[10] = s; return m;
+  }
+  function m4rotX(a) {
+    var c = Math.cos(a), s = Math.sin(a), m = m4identity();
+    m[5] = c; m[6] = s; m[9] = -s; m[10] = c; return m;
+  }
+  function m4rotY(a) {
+    var c = Math.cos(a), s = Math.sin(a), m = m4identity();
+    m[0] = c; m[2] = -s; m[8] = s; m[10] = c; return m;
+  }
+  function m4perspective(fovy, aspect, near, far) {
+    var f = 1 / Math.tan(fovy / 2), m = new Float32Array(16);
+    m[0] = f / aspect; m[5] = f;
+    m[10] = (far + near) / (near - far); m[11] = -1;
+    m[14] = (2 * far * near) / (near - far);
+    return m;
+  }
+  // 取模型视图矩阵左上 3x3（本查看器只含旋转 + 均匀缩放，法线矩阵直接用旋转部分即可）。
+  function normalMat(mv) {
+    return new Float32Array([mv[0], mv[1], mv[2], mv[4], mv[5], mv[6], mv[8], mv[9], mv[10]]);
+  }
+
+  // ---------- WebGL ----------
+  var gl = canvas.getContext('webgl', { antialias: true, alpha: false, preserveDrawingBuffer: false })
+    || canvas.getContext('experimental-webgl');
+  if (!gl) { fail('当前环境不支持 WebGL，无法渲染 3D 模型。'); return; }
+
+  var VS = [
+    'attribute vec3 aPos;',
+    'attribute vec3 aNrm;',
+    'uniform mat4 uMVP;',
+    'uniform mat3 uNormal;',
+    'varying vec3 vN;',
+    'void main() {',
+    '  vN = uNormal * aNrm;',
+    '  gl_Position = uMVP * vec4(aPos, 1.0);',
+    '}'
+  ].join('\n');
+  var FS = [
+    'precision mediump float;',
+    'varying vec3 vN;',
+    'uniform vec3 uColor;',
+    'uniform vec3 uLight;',
+    'uniform vec3 uFill;',
+    'void main() {',
+    '  vec3 n = normalize(vN);',
+    // STL 法线方向可能不一致，用 abs 做双面 Lambert。
+    '  float key = abs(dot(n, normalize(uLight)));',
+    '  float fill = abs(dot(n, normalize(uFill)));',
+    '  float l = 0.30 + 0.58 * key + 0.18 * fill;',
+    '  gl_FragColor = vec4(uColor * min(l, 1.0), 1.0);',
+    '}'
+  ].join('\n');
+
+  function compile(type, src) {
+    var s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+      throw new Error('着色器编译失败：' + gl.getShaderInfoLog(s));
+    }
+    return s;
+  }
+  var prog = gl.createProgram();
+  try {
+    gl.attachShader(prog, compile(gl.VERTEX_SHADER, VS));
+    gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FS));
+  } catch (e) { fail(String(e.message || e)); return; }
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+    fail('着色器链接失败：' + gl.getProgramInfoLog(prog)); return;
+  }
+  gl.useProgram(prog);
+  var aPos = gl.getAttribLocation(prog, 'aPos');
+  var aNrm = gl.getAttribLocation(prog, 'aNrm');
+  var uMVP = gl.getUniformLocation(prog, 'uMVP');
+  var uNormal = gl.getUniformLocation(prog, 'uNormal');
+  var uColor = gl.getUniformLocation(prog, 'uColor');
+  var uLight = gl.getUniformLocation(prog, 'uLight');
+  var uFill = gl.getUniformLocation(prog, 'uFill');
+  gl.enable(gl.DEPTH_TEST);
+  gl.disable(gl.CULL_FACE);
+  gl.uniform3f(uLight, 0.45, 0.65, 1.0);
+  gl.uniform3f(uFill, -0.6, -0.2, 0.4);
+
+  var darkMq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  function applyPalette() {
+    var dark = !!(darkMq && darkMq.matches);
+    if (dark) {
+      gl.clearColor(0x1c / 255, 0x1c / 255, 0x20 / 255, 1);
+      gl.uniform3f(uColor, 0xb4 / 255, 0xbe / 255, 0xcc / 255);
+    } else {
+      gl.clearColor(0xf8 / 255, 0xfa / 255, 0xfc / 255, 1);
+      gl.uniform3f(uColor, 0x9a / 255, 0xa7 / 255, 0xb8 / 255);
+    }
+  }
+  applyPalette();
+  if (darkMq) {
+    var onScheme = function () { applyPalette(); requestRender(); };
+    if (darkMq.addEventListener) darkMq.addEventListener('change', onScheme);
+    else if (darkMq.addListener) darkMq.addListener(onScheme);
+  }
+
+  var posBuf = gl.createBuffer(), nrmBuf = gl.createBuffer();
+  var vertexCount = 0;
+  var model = null;
+
+  // ---------- 相机状态 ----------
+  var FOV = 40 * Math.PI / 180;
+  var DEFAULT_DIST = 2.7;
+  var rot, dist, pan;
+  function resetView() {
+    // STL 多为 Z 轴向上：先把 Z 转到屏幕 Y，再斜 45° 方位 + 35° 俯角。
+    rot = m4mul(m4rotX(35 * Math.PI / 180), m4mul(m4rotY(-45 * Math.PI / 180), m4rotX(-Math.PI / 2)));
+    dist = DEFAULT_DIST;
+    pan = [0, 0];
+  }
+  resetView();
+
+  var renderQueued = false;
+  function requestRender() {
+    if (renderQueued) return;
+    renderQueued = true;
+    requestAnimationFrame(function () { renderQueued = false; render(); });
+  }
+
+  function resize() {
+    var dpr = Math.min(window.devicePixelRatio || 1, 3);
+    var w = Math.max(1, Math.round(canvas.clientWidth * dpr));
+    var h = Math.max(1, Math.round(canvas.clientHeight * dpr));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w; canvas.height = h;
+    }
+  }
+
+  function render() {
+    resize();
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    if (!model || vertexCount === 0) return;
+    var aspect = canvas.width / canvas.height;
+    var proj = m4perspective(FOV, aspect, 0.01, 100);
+    // model → 居中 → 归一化 → 旋转 → 平移 / 拉远
+    var norm = m4mul(m4scale(1 / model.bounds.maxDim),
+      m4translate(-model.bounds.center[0], -model.bounds.center[1], -model.bounds.center[2]));
+    var mv = m4mul(m4translate(pan[0], pan[1], -dist), m4mul(rot, norm));
+    gl.uniformMatrix4fv(uMVP, false, m4mul(proj, mv));
+    gl.uniformMatrix3fv(uNormal, false, normalMat(mv));
+    gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
+  }
+
+  // ---------- 交互 ----------
+  var drag = null; // { mode: 'rotate' | 'pan', x, y }
+  canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  canvas.addEventListener('pointerdown', function (e) {
+    if (e.button !== 0 && e.button !== 2) return;
+    drag = { mode: (e.button === 2 || e.shiftKey) ? 'pan' : 'rotate', x: e.clientX, y: e.clientY };
+    canvas.classList.add('is-dragging');
+    try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    e.preventDefault();
+  });
+  canvas.addEventListener('pointermove', function (e) {
+    if (!drag) return;
+    var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    drag.x = e.clientX; drag.y = e.clientY;
+    if (drag.mode === 'rotate') {
+      var k = 0.008;
+      rot = m4mul(m4rotY(dx * k), m4mul(m4rotX(dy * k), rot));
+    } else {
+      // 视平面 1px 对应的世界距离（在当前 dist 下）。
+      var perPx = 2 * dist * Math.tan(FOV / 2) / Math.max(1, canvas.clientHeight);
+      pan[0] += dx * perPx;
+      pan[1] -= dy * perPx;
+    }
+    requestRender();
+  });
+  function endDrag(e) {
+    if (!drag) return;
+    drag = null;
+    canvas.classList.remove('is-dragging');
+    try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+  }
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
+  canvas.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    // 触控板双指滚动 / 捏合（ctrlKey）都走缩放；deltaMode 换算成像素量级。
+    var d = e.deltaY;
+    if (e.deltaMode === 1) d *= 16; else if (e.deltaMode === 2) d *= 400;
+    var factor = Math.exp(d * (e.ctrlKey ? 0.01 : 0.0018));
+    dist = Math.min(40, Math.max(0.2, dist * factor));
+    requestRender();
+  }, { passive: false });
+  canvas.addEventListener('dblclick', function () { resetView(); requestRender(); });
+  window.addEventListener('resize', requestRender);
+
+  // ---------- 加载 ----------
+  function fmt(v) {
+    if (!isFinite(v)) return '—';
+    var a = Math.abs(v);
+    var s = a >= 1000 ? v.toFixed(0) : a >= 10 ? v.toFixed(2) : v.toFixed(3);
+    return s.replace(/\.?0+$/, '');
+  }
+  function fmtCount(n) {
+    return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+
+  function showModel(parsed) {
+    if (!parsed.triangles) { fail('文件中没有可渲染的三角形。'); return; }
+    var b = bounds(parsed.positions);
+    model = { bounds: b };
+    vertexCount = parsed.triangles * 3;
+    gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, parsed.positions, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, nrmBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, parsed.normals, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(aNrm);
+    gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 0, 0);
+
+    nameEl.textContent = cfg.name;
+    nameEl.title = cfg.name;
+    metaEl.textContent = (parsed.binary ? '二进制' : 'ASCII') + ' · ' + fmtCount(parsed.triangles) + ' 个三角形 · 尺寸 '
+      + fmt(b.size[0]) + ' × ' + fmt(b.size[1]) + ' × ' + fmt(b.size[2]);
+    infoEl.hidden = false;
+    msgEl.textContent = '';
+    resetView();
+    requestRender();
+  }
+
+  function load() {
+    var p;
+    if (typeof window.__STL_BASE64__ === 'string') {
+      // 备用通道：宿主把文件内容直接以 base64 注入（不走 fetch）。
+      p = Promise.resolve().then(function () {
+        var bin = atob(window.__STL_BASE64__);
+        var arr = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        return arr.buffer;
+      });
+    } else if (!cfg.src) {
+      fail('缺少 STL 文件地址。');
+      return;
+    } else {
+      p = fetch(cfg.src, { cache: 'no-store' }).then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.arrayBuffer();
+      });
+    }
+    p.then(function (buf) {
+      msgEl.textContent = '正在解析…';
+      return new Promise(function (resolve) { setTimeout(function () { resolve(parseSTL(buf)); }, 0); });
+    }).then(showModel).catch(function (err) {
+      fail('无法加载 STL：' + (err && err.message ? err.message : err));
+    });
+  }
+
+  requestRender();
+  load();
+})();
+</script>
+</body>
+</html>

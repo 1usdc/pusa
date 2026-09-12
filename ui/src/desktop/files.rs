@@ -77,8 +77,16 @@ fn custom_chat_models_path() -> PathBuf {
     app_data_dir().join("custom_chat_models.json")
 }
 
+fn llm_credentials_enabled_path() -> PathBuf {
+    app_data_dir().join("llm_credentials_enabled.json")
+}
+
 fn chat_model_path() -> PathBuf {
     app_data_dir().join("chat_model.txt")
+}
+
+fn chat_agent_mode_path() -> PathBuf {
+    app_data_dir().join("chat_agent_mode.txt")
 }
 
 fn ui_theme_path() -> PathBuf {
@@ -129,35 +137,50 @@ pub fn file_tree_state_set(raw_json: &str) {
     }
 }
 
-/// 读取用户自定义聊天模型 ID 列表。
-pub fn custom_chat_models_get() -> Vec<String> {
+/// 读取用户自定义聊天模型（展示名与可选密钥绑定）。
+pub fn custom_chat_models_get() -> Vec<crate::custom_chat_models::CustomChatModelPref> {
     let Ok(raw) = fs::read_to_string(custom_chat_models_path()) else {
         return Vec::new();
     };
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Vec::new();
-    }
-    serde_json::from_str::<Vec<String>>(trimmed)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect()
+    crate::custom_chat_models::parse_custom_chat_models_json(&raw)
 }
 
-/// 写入用户自定义聊天模型 ID 列表；空列表删除文件。
-pub fn custom_chat_models_set(ids: &[String]) {
+/// 写入用户自定义聊天模型；空列表删除文件。
+pub fn custom_chat_models_set(items: &[crate::custom_chat_models::CustomChatModelPref]) {
     let path = custom_chat_models_path();
+    match crate::custom_chat_models::serialize_custom_chat_models_json(items) {
+        None => {
+            let _ = fs::remove_file(path);
+        }
+        Some(json) => {
+            let _ = fs::write(path, json);
+        }
+    }
+}
+
+/// 读取本地「已开启」的 LLM 密钥 id 列表；从未保存返回 `None`。
+pub fn llm_credentials_enabled_get() -> Option<Vec<String>> {
+    let raw = fs::read_to_string(llm_credentials_enabled_path()).ok()?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    serde_json::from_str::<Vec<String>>(trimmed).ok().map(|ids| {
+        ids.into_iter()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    })
+}
+
+/// 写入已开启的 LLM 密钥 id 列表。
+pub fn llm_credentials_enabled_set(ids: &[String]) {
+    let path = llm_credentials_enabled_path();
     let cleaned: Vec<String> = ids
         .iter()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect();
-    if cleaned.is_empty() {
-        let _ = fs::remove_file(path);
-        return;
-    }
     if let Ok(json) = serde_json::to_string_pretty(&cleaned) {
         let _ = fs::write(path, json);
     }
@@ -178,6 +201,28 @@ pub fn chat_model_get() -> Option<String> {
 pub fn chat_model_set(model_id: &str) {
     let path = chat_model_path();
     let trimmed = model_id.trim();
+    if trimmed.is_empty() {
+        let _ = fs::remove_file(path);
+    } else {
+        let _ = fs::write(path, trimmed);
+    }
+}
+
+/// 读取聊天栏上次选中的 Agent 模式（`agent` / `ask` / `plan` / `multitask`）。
+pub fn chat_agent_mode_get() -> Option<String> {
+    let raw = fs::read_to_string(chat_agent_mode_path()).ok()?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+/// 写入聊天栏 Agent 模式；空字符串删除文件。
+pub fn chat_agent_mode_set(mode: &str) {
+    let path = chat_agent_mode_path();
+    let trimmed = mode.trim();
     if trimmed.is_empty() {
         let _ = fs::remove_file(path);
     } else {

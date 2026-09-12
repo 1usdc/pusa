@@ -29,16 +29,16 @@ fi
 
 stale=""
 if [[ -f "$DEST" ]]; then
-	stale="$(
-		{
-			find pusa-core/src protocol/src -type f \( -name '*.rs' -o -name '*.inc.rs' \) -newer "$DEST" 2>/dev/null || true
-			for f in pusa-core/Cargo.toml pusa-core/Cargo.lock protocol/Cargo.toml protocol/Cargo.lock; do
-				if [[ -f "$f" && "$f" -nt "$DEST" ]]; then
-					printf '%s\n' "$f"
-				fi
-			done
-		} | head -1
-	)"
+	# 不用 find | head：pipefail 下 head 关闭管道会让 find 收到 SIGPIPE（exit 141）
+	stale="$(find pusa-core/src protocol/src -type f \( -name '*.rs' -o -name '*.inc.rs' \) -newer "$DEST" -print -quit 2>/dev/null || true)"
+	if [[ -z "$stale" ]]; then
+		for f in pusa-core/Cargo.toml pusa-core/Cargo.lock protocol/Cargo.toml protocol/Cargo.lock; do
+			if [[ -f "$f" && "$f" -nt "$DEST" ]]; then
+				stale="$f"
+				break
+			fi
+		done
+	fi
 fi
 
 if [[ -f "$DEST" && -z "$stale" ]]; then

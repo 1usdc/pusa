@@ -1,52 +1,10 @@
-//! 把后端 / 网关 / 上游的英文错误文案映射成中文友好提示，避免直接渲染
-//! "HTTP 502" / "Bad Gateway" / 长堆栈到对话气泡。
+//! 对话错误文案入口。
 //!
-//! 适用场景：
-//! 1. `transport_wasm::post_chat_stream` 在握手失败时（HTTP 5xx 直接 bail）。
-//! 2. `apply_chat_sse_event` 处理 `SseEvent::Error` 时——后端 agent 调上游 LLM 拿到
-//!    5xx 会以 `OpenAI HTTP 502: ...` 形式回到前端。
-//! 3. `run_chat_turn` 整体失败时，错误转字符串后再走一道映射。
+//! 当前直接返回上游 / 传输层原文，便于排查 Base URL、网关与模型端点问题。
+//! 调用点仍经本函数，便于日后按需再加截断或脱敏。
 
-/// 根据原始错误文案，给用户一个能看懂的中文提示。
-///
-/// 识别策略偏宽松——后端文案大多是英文且包含 status code 与短语，命中关键字就替换。
-/// 拿不准的（既不是常见 5xx 也不是 401/429/timeout）原样返回，避免误伤工具错误等真实信号。
+/// 返回原始错误文案（不做中文友好改写）。
 pub fn friendly_chat_error_message(raw: &str) -> String {
-    let lower = raw.to_lowercase();
-
-    // 优先识别用户必须感知的真实错误：401 / 429。
-    if lower.contains("401") || lower.contains("unauthorized") {
-        return "登录已失效，请重新登录后再试".to_string();
-    }
-    if lower.contains("429") || lower.contains("too many requests") {
-        return "请求过于频繁，请稍后再试".to_string();
-    }
-
-    // 网关 / 平台抖动类：502 / 503 / 504、Bad Gateway、Gateway Timeout、上游 /me 失败。
-    let is_gateway_5xx = lower.contains("502")
-        || lower.contains("503")
-        || lower.contains("504")
-        || lower.contains("bad gateway")
-        || lower.contains("gateway time")
-        || lower.contains("gateway timeout")
-        || lower.contains("service unavailable")
-        || lower.contains("upstream /me")
-        || lower.contains("upstream me");
-    if is_gateway_5xx {
-        return "云平台暂时抖动，请稍后重试".to_string();
-    }
-
-    // 网络层超时 / 连接错误：reqwest / fetch 抛出的常见短语。
-    let is_network = lower.contains("timeout")
-        || lower.contains("timed out")
-        || lower.contains("connection reset")
-        || lower.contains("connection refused")
-        || lower.contains("network error")
-        || lower.contains("failed to fetch");
-    if is_network {
-        return "网络暂时不可用，请稍后重试".to_string();
-    }
-
     raw.to_string()
 }
 
@@ -55,71 +13,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn maps_502_bad_gateway_to_chinese_friendly() {
+    fn passes_through_raw_errors() {
         assert_eq!(
             friendly_chat_error_message("chat stream HTTP 502"),
-            "云平台暂时抖动，请稍后重试"
+            "chat stream HTTP 502"
         );
         assert_eq!(
             friendly_chat_error_message("OpenAI HTTP 502: <html>Bad Gateway</html>"),
-            "云平台暂时抖动，请稍后重试"
+            "OpenAI HTTP 502: <html>Bad Gateway</html>"
         );
-        assert_eq!(
-            friendly_chat_error_message("upstream /me returned non-2xx 502"),
-            "云平台暂时抖动，请稍后重试"
-        );
-    }
-
-    #[test]
-    fn maps_504_gateway_timeout() {
-        assert_eq!(
-            friendly_chat_error_message("Gateway Timeout"),
-            "云平台暂时抖动，请稍后重试"
-        );
-        assert_eq!(
-            friendly_chat_error_message("HTTP 504"),
-            "云平台暂时抖动，请稍后重试"
-        );
-    }
-
-    #[test]
-    fn maps_401_to_login_expired() {
         assert_eq!(
             friendly_chat_error_message("HTTP 401 Unauthorized"),
-            "登录已失效，请重新登录后再试"
+            "HTTP 401 Unauthorized"
         );
-    }
-
-    #[test]
-    fn maps_429_to_rate_limited() {
-        assert_eq!(
-            friendly_chat_error_message("HTTP 429 Too Many Requests"),
-            "请求过于频繁，请稍后再试"
-        );
-    }
-
-    #[test]
-    fn maps_network_timeout() {
-        assert_eq!(
-            friendly_chat_error_message("operation timed out"),
-            "网络暂时不可用，请稍后重试"
-        );
-        assert_eq!(
-            friendly_chat_error_message("Failed to fetch"),
-            "网络暂时不可用，请稍后重试"
-        );
-    }
-
-    #[test]
-    fn passes_through_unknown_errors() {
-        let raw = "tool 'web_search' returned: invalid arguments";
-        assert_eq!(friendly_chat_error_message(raw), raw);
-    }
-
-    #[test]
-    fn passes_through_business_logic_errors() {
-        // 4xx 业务错误（非 401/429）保持原文，避免误把"模型未配置"等可操作错误吃掉。
-        let raw = "HTTP 400 model required";
+        let raw = "OpenAI HTTP 500 Internal Server Error: <!DOCTYPE html>\n<html>";
         assert_eq!(friendly_chat_error_message(raw), raw);
     }
 }
