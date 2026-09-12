@@ -30,18 +30,16 @@ winget install --id Microsoft.VisualStudio.2022.BuildTools --override "--quiet -
 # 发版 tag = desktop-v{version}（也可用 TAG= 覆盖）
 # 可选签名凭证：cp .env.signing.example .env.signing（勿提交）
 
-# 本机 macOS（Developer ID 签名 + 公证 → desktop/dist/*.dmg）
+# 本机 macOS（Developer ID 签名 + 公证 → desktop/dist/velopack/）
 just desktop-mac
 # 覆盖旧版本（不升版号）
 BUMP=0 just desktop-mac
 # NOTARIZE=0 just desktop-mac   # 只签名，不公证
-# 把本机已打好的 DMG 挂到 GitHub Release
-just desktop-mac-release
 
-# 本机 Windows（未签名 NSIS 安装器 → desktop/dist/Pusa_*-setup.exe）
+# 本机 Windows（Velopack → desktop/dist/velopack/；VELOPACK=0 时为 NSIS *-setup.exe）
 # 安装器会把 vendor 里的 pusa_core.dll 装到程序目录（与 exe 同级）
 just desktop-windows
-# SIGN=1 just desktop-windows   # 可选：打包后 Azure Artifact Signing
+# SIGN=1 just desktop-windows   # 可选：Azure Trusted Signing
 
 # 上传到 GitHub Release（tag 自动取自 desktop/Cargo.toml）
 BUILD=1 just release-mac       # macOS

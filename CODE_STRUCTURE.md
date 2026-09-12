@@ -225,10 +225,9 @@ UI (chat facade)
 | `just server` | 启动 API（`scripts/server.sh`） |
 | `just desktop` | 桌面热重载（`scripts/desktop.sh`） |
 | `just desktop-mac` | 本机 macOS 打包 → Velopack 包（`scripts/desktop-mac.sh`；`VELOPACK=0` 回退 DMG） |
-| `just desktop-mac-release` | 旧流程：本机 DMG 上传 GitHub Release（`scripts/desktop-mac-release.sh`） |
 | `just desktop-windows` | 本机 Windows 打包 → Velopack 包（默认不签名；`SIGN=1` → Azure Trusted Signing；`VELOPACK=0` 回退 NSIS） |
 | `just release-mac` | macOS 发版（tag 取自 `desktop/Cargo.toml`；可选 `BUILD=1`；有 Velopack 产物时 `vpk upload github`） |
-| `just release-windows` | Windows 发版（同上；可选 `BUILD=1`；mac 上代发 Windows 包：`VPK_CHANNEL=win-x64`） |
+| `just release-windows` | Windows 发版（`scripts/release-windows.ps1`；可选 `BUILD=1`） |
 | `just db-clear` | 清空 `data/` |
 | `just push` | 仅推送远端 |
 
@@ -258,7 +257,7 @@ CI：`.github/workflows/`（桌面打包已改为本机流程，不再走 Action
 - macOS 的签名 + 公证由 vpk 完成（`--signAppIdentity` / `--signInstallIdentity` / `--notaryProfile`）；Windows `SIGN=1` 走 Azure Trusted Signing。
 - channel 按 host 决定（`macos-arm64` / `macos-x64` / `win-x64`），`VPK_CHANNEL` 可覆盖；公共配置见 `scripts/velopack-common.sh`。
 
-**发布**（`scripts/release-mac.sh` / `scripts/release-windows.sh`）
+**发布**（`scripts/release-mac.sh` / `scripts/release-windows.ps1`）
 
 - 检测到 `desktop/dist/velopack/releases.<channel>.json` 即走 `vpk upload github --merge`，把安装器、`.nupkg` 与 `releases.<channel>.json` 一起挂到 `desktop-vX.Y.Z` 的 GitHub Release 资产；mac / win 可先后上传到同一个 Release。
 - 没有 Velopack 产物时回退到旧的 `gh release upload`（`*.dmg` / `*-setup.exe`）。

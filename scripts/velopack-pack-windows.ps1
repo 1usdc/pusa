@@ -1,4 +1,4 @@
-# Windows：把 dx bundle 的程序目录（desktop.exe + pusa_core.dll + assets）打成 Velopack 发布包。
+﻿# Windows：把 dx bundle 的程序目录（desktop.exe + pusa_core.dll + assets）打成 Velopack 发布包。
 #
 # 输出 desktop\dist\velopack\：
 #   Pusa-win-x64-Setup.exe        安装器（内含 WebView2 引导，--framework webview2）
@@ -52,7 +52,7 @@ function Get-DesktopVersion {
         if ($t.StartsWith('[')) { $inPkg = $false; continue }
         if ($inPkg -and $t -match '^version\s*=\s*"([^"]+)"') { return $Matches[1] }
     }
-    throw 'desktop/Cargo.toml 里没有 [package].version'
+    throw 'desktop/Cargo.toml missing [package].version'
 }
 
 # dx bundle 装进安装器的完整程序目录：优先 NSIS _staging（含 exe + resources），其次 windows\app
@@ -70,9 +70,9 @@ function Find-PackDir {
         if (Test-Path (Join-Path $dir 'pusa_core.dll')) { return $dir }
     }
     if ($candidates.Count -gt 0) {
-        throw "找到 $MainExe 但同目录缺 pusa_core.dll：$($candidates[0])。检查 embed-pusa-core-windows.ps1 / Dioxus.toml [bundle].resources"
+        throw "Found $MainExe but missing pusa_core.dll beside it: $($candidates[0]). Check embed-pusa-core-windows.ps1 / Dioxus.toml [bundle].resources"
     }
-    throw "未找到 dx bundle 的程序目录（target\dx\**\nsis\_staging 或 windows\app），请先 dx bundle --release"
+    throw 'dx bundle app dir not found (target\dx\**\nsis\_staging or windows\app). Run dx bundle --release first.'
 }
 
 function Get-GithubToken {
@@ -86,7 +86,7 @@ function Get-GithubToken {
 # Azure Trusted Signing 的 metadata.json（vpk --azureTrustedSignFile）
 function New-AzureSignMetadata {
     foreach ($n in 'AZURE_TS_ENDPOINT', 'AZURE_TS_ACCOUNT', 'AZURE_TS_PROFILE') {
-        if (-not [Environment]::GetEnvironmentVariable($n, 'Process')) { throw "SIGN=1 需要 .env.signing 里的 $n" }
+        if (-not [Environment]::GetEnvironmentVariable($n, 'Process')) { throw "SIGN=1 requires $n in .env.signing" }
     }
     $path = Join-Path $Out 'azure-sign-metadata.json'
     @{
@@ -98,11 +98,7 @@ function New-AzureSignMetadata {
 }
 
 if (-not (Get-Command vpk -ErrorAction SilentlyContinue)) {
-    throw @'
-未找到 vpk（Velopack CLI）。安装：
-  winget install Microsoft.DotNet.SDK.8
-  dotnet tool install -g vpk
-'@
+    throw "vpk (Velopack CLI) not found. Install: winget install Microsoft.DotNet.SDK.8 ; dotnet tool install -g vpk"
 }
 
 Load-EnvSigning
@@ -110,7 +106,7 @@ $Version = Get-DesktopVersion
 $PackDir = Find-PackDir
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 
-Write-Host "== Velopack pack（Windows）=="
+Write-Host '== Velopack pack (Windows) =='
 Write-Host "   packDir: $PackDir"
 Write-Host "   version: $Version"
 Write-Host "   channel: $Channel"
@@ -118,16 +114,16 @@ Write-Host "   channel: $Channel"
 # 清掉本机同版本残留，保留 vpk download 拉的旧版（生成 delta 用）
 Get-ChildItem -Path $Out -Filter "$PackId-$Version-*" -File -ErrorAction SilentlyContinue | Remove-Item -Force
 
-Write-Host "== vpk download github（上一版 $Channel，用于生成增量包）=="
+Write-Host "== vpk download github (previous $Channel for delta) =="
 $token = Get-GithubToken
 $dlArgs = @('download', 'github', '--repoUrl', $RepoUrl, '--channel', $Channel, '--outputDir', $Out)
 if ($token) { $dlArgs += @('--token', $token) }
 & vpk @dlArgs
 if ($LASTEXITCODE -ne 0) {
-    Write-Warning '未能下载上一版（首次发版或网络问题）；本次只生成全量包，无 delta'
+    Write-Warning 'Previous release download failed (first release or network); full package only, no delta'
 }
 
-$args = @(
+$packArgs = @(
     'pack',
     '--packId', $PackId,
     '--packVersion', $Version,
@@ -146,17 +142,17 @@ $args = @(
 if ($env:SIGN -eq '1') {
     $meta = New-AzureSignMetadata
     Write-Host "   sign: Azure Trusted Signing ($env:AZURE_TS_ACCOUNT / $env:AZURE_TS_PROFILE)"
-    $args += @('--azureTrustedSignFile', $meta)
+    $packArgs += @('--azureTrustedSignFile', $meta)
 } else {
-    Write-Host '   未签名（需要时 $env:SIGN=1）'
+    Write-Host '   unsigned (set env SIGN=1 to sign)'
 }
 
 if ($env:RELEASE_NOTES_FILE -and (Test-Path $env:RELEASE_NOTES_FILE)) {
-    $args += @('--releaseNotes', $env:RELEASE_NOTES_FILE)
+    $packArgs += @('--releaseNotes', $env:RELEASE_NOTES_FILE)
 }
 
-& vpk @args --yes
-if ($LASTEXITCODE -ne 0) { throw "vpk pack 失败（exit $LASTEXITCODE）" }
+& vpk @packArgs --yes
+if ($LASTEXITCODE -ne 0) { throw "vpk pack failed (exit $LASTEXITCODE)" }
 
-Write-Host "✓ Velopack 产物：$Out"
+Write-Host "Velopack output: $Out"
 Get-ChildItem $Out | Format-Table Name, Length -AutoSize

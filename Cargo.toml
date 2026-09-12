@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["protocol", "shared", "ui", "web", "desktop", "server", "test"]
+members = ["protocol", "shared", "ui", "web", "desktop", "server"]
 
 [profile.release]
 opt-level = 3

@@ -58,11 +58,6 @@ desktop: ensure-pusa-core
 desktop-mac: ensure-pusa-core
     bash scripts/desktop-mac.sh
 
-# 旧流程：把本机 desktop/dist/*.dmg 挂到 GitHub Release（VELOPACK=0 打出的 DMG 用；Velopack 产物请用 just release-mac）
-[unix]
-desktop-mac-release:
-    bash scripts/desktop-mac-release.sh
-
 # 本机 Windows 打包（dx bundle → vpk pack → desktop/dist/velopack/，默认不签名）
 # SIGN=1 由 vpk 走 Azure Trusted Signing；VELOPACK=0 回退旧 NSIS *-setup.exe 流程（无应用内更新）
 [windows]
@@ -75,12 +70,7 @@ desktop-windows: ensure-pusa-core
 release-mac:
     bash scripts/release-mac.sh
 
-# Windows 发版（同上）；BUILD=1 先打包；有 Velopack 产物时 vpk upload github，否则上传旧 *-setup.exe
-# mac / Git Bash：bash 脚本；本机 PowerShell：用下面 [windows] 配方。
-[unix]
-release-windows:
-    bash scripts/release-windows.sh
-
+# Windows 发版；BUILD=1 先打包；有 Velopack 产物时 vpk upload github，否则上传旧 *-setup.exe
 [windows]
 release-windows:
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\release-windows.ps1
@@ -94,7 +84,8 @@ pull:
 pull:
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\pull.ps1
 
-# 同时推送 pusa + pusa-core/，不打 tag / 不发版
+# 同时推送 pusa + pusa-core/：有未提交改动则先 add+commit，再 push；不打 tag / 不发版
+# COMMIT_MSG="feat: ..." just push   # 可选，覆盖默认提交说明
 [unix]
 push:
     bash scripts/push.sh
