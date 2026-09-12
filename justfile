@@ -76,10 +76,14 @@ release-mac:
     bash scripts/release-mac.sh
 
 # Windows 发版（同上）；BUILD=1 先打包；有 Velopack 产物时 vpk upload github，否则上传旧 *-setup.exe
-# 在 mac / Git Bash 上跑（脚本是 bash）；本机只打包用 just desktop-windows。
+# mac / Git Bash：bash 脚本；本机 PowerShell：用下面 [windows] 配方。
 [unix]
 release-windows:
     bash scripts/release-windows.sh
+
+[windows]
+release-windows:
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\release-windows.ps1
 
 # 同时拉取 pusa + pusa-core/（私有仓固定在仓库根下），不打 tag / 不发版
 [unix]
