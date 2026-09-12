@@ -189,13 +189,12 @@ fn shell_quote(path: &str) -> String {
 }
 
 fn default_shell() -> String {
-    std::env::var("SHELL").unwrap_or_else(|_| {
-        if cfg!(windows) {
-            "powershell.exe".to_string()
-        } else {
-            "/bin/zsh".to_string()
-        }
-    })
+    if cfg!(windows) {
+        // Windows 上 Git/Cursor 常设置 SHELL=bash，GUI 进程里拉 bash 会弹出真实控制台窗口。
+        std::env::var("COMSPEC").unwrap_or_else(|_| "powershell.exe".to_string())
+    } else {
+        std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string())
+    }
 }
 
 /// 终端默认工作目录：当前项目根；不可用时回退进程 cwd。

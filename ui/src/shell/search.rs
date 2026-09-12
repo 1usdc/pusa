@@ -849,9 +849,9 @@ fn replace_text_regex(
     req: &SearchRequest,
     replacement: &str,
 ) -> Result<(String, usize), String> {
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
 
-    let mut count_cmd = Command::new("rg");
+    let mut count_cmd = crate::desktop::files::hidden_command("rg");
     count_cmd
         .arg("--count-matches")
         .arg("--max-filesize")
@@ -881,7 +881,7 @@ fn replace_text_regex(
         return Ok((String::new(), 0));
     }
 
-    let mut cmd = Command::new("rg");
+    let mut cmd = crate::desktop::files::hidden_command("rg");
     cmd.arg("--replace")
         .arg(replacement)
         .arg("--passthrough")
@@ -946,9 +946,9 @@ fn run_search(req: &SearchRequest) -> SearchOutcome {
 
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 fn try_rg_search(req: &SearchRequest) -> Result<Option<SearchOutcome>, String> {
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
 
-    let mut cmd = Command::new("rg");
+    let mut cmd = crate::desktop::files::hidden_command("rg");
     cmd.arg("--json")
         .arg("--max-filesize")
         .arg("2M")

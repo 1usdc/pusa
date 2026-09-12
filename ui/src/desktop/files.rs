@@ -5,10 +5,32 @@
 //! 2. 否则最近打开过的项目目录（持久化）
 //! 3. 否则当前工作目录；若其下有 `skills/`，优先视为项目根
 
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use serde::{Deserialize, Serialize};
+
+/// 启动控制台子进程时不弹出 Windows 控制台窗口（`CREATE_NO_WINDOW`）。
+pub fn hidden_command(program: impl AsRef<OsStr>) -> Command {
+    let mut cmd = Command::new(program);
+    hide_windows_console(&mut cmd);
+    cmd
+}
+
+fn hide_windows_console(cmd: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = cmd;
+    }
+}
 
 const MAX_TEXT_BYTES: u64 = 2 * 1024 * 1024;
 /// 磁盘上保留的最近目录上限（展示仍取前 [`RECENT_DISPLAY_CAP`] 条）。
@@ -311,8 +333,12 @@ pub fn git_head_status(root: &Path) -> Option<GitHeadStatus> {
     if !root.is_dir() {
         return None;
     }
+    // 安装目录等工作区没有 .git：不要每 1.5s 拉起 git.exe（GUI 下会闪控制台窗口）。
+    if !root.join(".git").exists() {
+        return None;
+    }
     let root_s = root.to_string_lossy();
-    let branch_out = std::process::Command::new("git")
+    let branch_out = hidden_command("git")
         .args(["-C", root_s.as_ref(), "rev-parse", "--abbrev-ref", "HEAD"])
         .output()
         .ok()?;
@@ -325,7 +351,7 @@ pub fn git_head_status(root: &Path) -> Option<GitHeadStatus> {
     if branch.is_empty() {
         return None;
     }
-    let dirty = std::process::Command::new("git")
+    let dirty = hidden_command("git")
         .args(["-C", root_s.as_ref(), "status", "--porcelain"])
         .output()
         .map(|o| o.status.success() && !String::from_utf8_lossy(&o.stdout).trim().is_empty())
@@ -629,7 +655,7 @@ pub fn clipboard_set_text(text: &str) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         use std::io::Write;
-        let mut child = std::process::Command::new("clip")
+        let mut child = hidden_command("clip")
             .stdin(std::process::Stdio::piped())
             .spawn()
             .map_err(|e| format!("clip 失败：{e}"))?;

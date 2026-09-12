@@ -24,7 +24,7 @@ fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
 
     use_effect(move || {
         spawn(async move {
-            match agent::runtime_ctx().llm_config_get().await {
+            match async { agent::runtime_ctx()?.llm_config_get().await }.await {
                 Ok(cfg) => {
                     apply_cfg(cfg, credentials, active_id);
                     load_hint.set(None);
@@ -53,7 +53,7 @@ fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
                 hint: load_hint(),
                 on_add: move |body: LlmCredentialUpsertBody| {
                     spawn(async move {
-                        match agent::runtime_ctx().llm_credential_upsert(body).await {
+                        match async { agent::runtime_ctx()?.llm_credential_upsert(body).await }.await {
                             Ok(cfg) => {
                                 apply_cfg(cfg, credentials, active_id);
                                 load_hint.set(None);
@@ -65,7 +65,7 @@ fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
                 },
                 on_activate: move |id: String| {
                     spawn(async move {
-                        match agent::runtime_ctx().llm_credential_activate(&id).await {
+                        match async { agent::runtime_ctx()?.llm_credential_activate(&id).await }.await {
                             Ok(cfg) => {
                                 apply_cfg(cfg, credentials, active_id);
                                 load_hint.set(None);
@@ -77,7 +77,7 @@ fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
                 },
                 on_delete: move |id: String| {
                     spawn(async move {
-                        match agent::runtime_ctx().llm_credential_delete(&id).await {
+                        match async { agent::runtime_ctx()?.llm_credential_delete(&id).await }.await {
                             Ok(cfg) => {
                                 apply_cfg(cfg, credentials, active_id);
                                 load_hint.set(None);

@@ -43,14 +43,25 @@ fn open_runtime_for_wallet(wallet_ns: &str) -> anyhow::Result<RuntimeContext> {
 }
 
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
-static RUNTIME: Lazy<RwLock<RuntimeState>> = Lazy::new(|| {
+static RUNTIME: Lazy<RwLock<Option<RuntimeState>>> = Lazy::new(|| {
     let wallet_ns = std::env::var("ANOTHERCLAW_WALLET_ADDRESS")
         .ok()
         .map(|s| s.trim().to_lowercase())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "default".to_string());
-    let ctx = open_runtime_for_wallet(&wallet_ns).expect("open sqlite");
-    RwLock::new(RuntimeState { ctx })
+    match open_runtime_for_wallet(&wallet_ns) {
+        Ok(ctx) => RwLock::new(Some(RuntimeState { ctx })),
+        Err(e) => {
+            let msg = format!("{e:#}");
+            eprintln!("pusa runtime: {msg}");
+            if let Some(base) = std::env::var_os("LOCALAPPDATA") {
+                let dir = std::path::PathBuf::from(base).join("AnotherClaw");
+                let _ = std::fs::create_dir_all(&dir);
+                let _ = std::fs::write(dir.join("runtime-error.log"), &msg);
+            }
+            RwLock::new(None)
+        }
+    }
 });
 
 /// 文件系统安全的钱包目录名：只保留十六进制 / 字母 / 短横，避免越权写入。
@@ -69,8 +80,15 @@ fn sanitize_wallet_ns(raw: &str) -> String {
 
 /// 全局桌面运行时快照。
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
-pub fn runtime_ctx() -> RuntimeContext {
-    RUNTIME.read().expect("runtime read").ctx.clone()
+pub fn runtime_ctx() -> anyhow::Result<RuntimeContext> {
+    let guard = RUNTIME
+        .read()
+        .map_err(|e| anyhow::anyhow!("runtime lock: {e}"))?;
+    guard.as_ref().map(|s| s.ctx.clone()).ok_or_else(|| {
+        anyhow::anyhow!(
+            "未能加载 pusa-core。请确认 pusa_core.dll 与 Pusa.exe 在同一目录。详见 %LOCALAPPDATA%\\AnotherClaw\\runtime-error.log"
+        )
+    })
 }
 
 /// 桌面端中止当前流式对话（对应 Web 的 `AbortController`）。
@@ -113,7 +131,7 @@ pub async fn desktop_chat_stream(
     abort: Arc<ChatAbort>,
     on_event: &mut impl FnMut(SseEvent),
 ) -> anyhow::Result<()> {
-    let ctx = runtime_ctx();
+    let ctx = runtime_ctx()?;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<SseEvent>();
     let worker = tokio::spawn(async move { ctx.run_chat_turn(req, tx).await });
 

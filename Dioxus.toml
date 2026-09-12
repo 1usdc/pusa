@@ -34,6 +34,7 @@ hardened_runtime = true
 entitlements = "entitlements.plist"
 
 [bundle.windows]
+# 产品名 / 安装器名来自 desktop/Cargo.toml 的 [[bin]] name（PascalCase）→ Pusa_*.exe
 # Windows 安装器/exe 图标必须是 .ico；之前指向 .png 是不合法的（dx bundle 严格模式会报错）。
 icon_path = "assets/Pusa.ico"
 

@@ -309,7 +309,7 @@ pub async fn uninstall_installed_skill(slug: &str) -> anyhow::Result<()> {
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
 pub async fn uninstall_installed_skill(slug: &str) -> anyhow::Result<()> {
-    crate::desktop::agent::runtime_ctx()
+    crate::desktop::agent::runtime_ctx()?
         .installed_skill_uninstall(slug)
         .await
 }
@@ -358,14 +358,14 @@ where
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
 pub async fn list_conversations() -> anyhow::Result<Vec<ConversationSummaryDto>> {
-    crate::desktop::agent::runtime_ctx()
+    crate::desktop::agent::runtime_ctx()?
         .conversations_list()
         .await
 }
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
 pub async fn create_conversation() -> anyhow::Result<ConversationSummaryDto> {
-    crate::desktop::agent::runtime_ctx()
+    crate::desktop::agent::runtime_ctx()?
         .conversation_create()
         .await
 }
@@ -375,14 +375,14 @@ pub async fn update_conversation_title(
     conversation_id: String,
     title: String,
 ) -> anyhow::Result<ConversationSummaryDto> {
-    crate::desktop::agent::runtime_ctx()
+    crate::desktop::agent::runtime_ctx()?
         .conversation_title_update(&conversation_id, &title)
         .await
 }
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
 pub async fn delete_conversation(conversation_id: String) -> anyhow::Result<()> {
-    crate::desktop::agent::runtime_ctx()
+    crate::desktop::agent::runtime_ctx()?
         .conversation_delete(&conversation_id)
         .await
 }
@@ -392,14 +392,14 @@ pub async fn load_conversation_messages(
     conversation_id: String,
     limit: usize,
 ) -> anyhow::Result<Vec<StoredChatMessageDto>> {
-    crate::desktop::agent::runtime_ctx()
+    crate::desktop::agent::runtime_ctx()?
         .conversation_messages(&conversation_id, limit)
         .await
 }
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
 pub async fn load_agent_run_detail(run_id: i64) -> anyhow::Result<AgentRunDetailDto> {
-    crate::desktop::agent::runtime_ctx()
+    crate::desktop::agent::runtime_ctx()?
         .agent_run_detail(run_id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("agent run not found: {run_id}"))
@@ -407,7 +407,7 @@ pub async fn load_agent_run_detail(run_id: i64) -> anyhow::Result<AgentRunDetail
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
 pub async fn load_skill_market(query: String) -> anyhow::Result<SkillMarketResponse> {
-    crate::desktop::agent::runtime_ctx()
+    crate::desktop::agent::runtime_ctx()?
         .skill_market_search(Some(query))
         .await
 }
@@ -419,7 +419,7 @@ pub async fn install_skill(
     name: Option<String>,
     url: Option<String>,
 ) -> anyhow::Result<SkillInstallResponse> {
-    crate::desktop::agent::runtime_ctx()
+    crate::desktop::agent::runtime_ctx()?
         .skill_install(protocol::SkillInstallRequest {
             source,
             id,
@@ -431,50 +431,50 @@ pub async fn install_skill(
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
 pub async fn load_equipped_skills() -> anyhow::Result<EquippedSkillsDto> {
-    crate::desktop::agent::runtime_ctx()
+    crate::desktop::agent::runtime_ctx()?
         .equipped_skills_get()
         .await
 }
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
 pub async fn toggle_skill_equip(slug: String, equipped: bool) -> anyhow::Result<EquippedSkillsDto> {
-    crate::desktop::agent::runtime_ctx()
+    crate::desktop::agent::runtime_ctx()?
         .equipped_skills_toggle(protocol::SkillEquipToggleRequest { slug, equipped })
         .await
 }
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
 pub async fn load_installed_skills() -> anyhow::Result<InstalledSkillsResponse> {
-    crate::desktop::agent::runtime_ctx()
+    crate::desktop::agent::runtime_ctx()?
         .installed_skills_list()
         .await
 }
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
 pub async fn load_roles() -> anyhow::Result<Vec<RoleDto>> {
-    crate::desktop::agent::runtime_ctx().roles_list().await
+    crate::desktop::agent::runtime_ctx()?.roles_list().await
 }
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
 pub async fn create_role(body: RoleCreateRequest) -> anyhow::Result<RoleDto> {
-    crate::desktop::agent::runtime_ctx().role_create(body).await
+    crate::desktop::agent::runtime_ctx()?.role_create(body).await
 }
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
 pub async fn update_role(id: i64, body: RoleUpdateRequest) -> anyhow::Result<RoleDto> {
-    crate::desktop::agent::runtime_ctx()
+    crate::desktop::agent::runtime_ctx()?
         .role_update(id, body)
         .await
 }
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
 pub async fn activate_role(id: i64) -> anyhow::Result<RoleDto> {
-    crate::desktop::agent::runtime_ctx().role_activate(id).await
+    crate::desktop::agent::runtime_ctx()?.role_activate(id).await
 }
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
 pub async fn delete_role(id: i64) -> anyhow::Result<()> {
-    crate::desktop::agent::runtime_ctx().role_delete(id).await
+    crate::desktop::agent::runtime_ctx()?.role_delete(id).await
 }
 
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "native")))]

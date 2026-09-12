@@ -38,7 +38,7 @@ BUMP=0 just desktop-mac
 # 把本机已打好的 DMG 挂到 GitHub Release
 just desktop-mac-release
 
-# 本机 Windows（未签名 NSIS 安装器 → desktop/dist/*-setup.exe）
+# 本机 Windows（未签名 NSIS 安装器 → desktop/dist/Pusa_*-setup.exe）
 # 安装器会把 vendor 里的 pusa_core.dll 装到程序目录（与 exe 同级）
 just desktop-windows
 # SIGN=1 just desktop-windows   # 可选：打包后 Azure Artifact Signing

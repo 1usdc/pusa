@@ -37,5 +37,7 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = [
 ] }
 
 [[bin]]
-name = "desktop"
+# dx bundle 的 Windows 产品名 / 安装器文件名是 bin 名的 PascalCase。
+# 保持 Pusa，安装器才是 Pusa_x.y.z_x64-setup.exe（而不是 Desktop_…）。
+name = "Pusa"
 path = "src/main.rs"

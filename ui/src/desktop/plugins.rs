@@ -613,6 +613,7 @@ pub async fn search_github_repositories(query: &str) -> Result<Vec<PluginItem>, 
 /// 调用 RuntimeContext LLM，按关键词检索相关开源应用。
 pub async fn search_apps_with_ai(query: &str, model: &str) -> Result<Vec<PluginItem>, String> {
     let dtos = super::agent::runtime_ctx()
+        .map_err(|e| e.to_string())?
         .plugin_ai_search(query, model)
         .await
         .map_err(|e| {
@@ -657,7 +658,7 @@ pub fn install_plugin(item: &PluginItem) -> Result<PathBuf, String> {
     }
 
     // 先确认 git 可用
-    let git_ok = Command::new("git")
+    let git_ok = super::files::hidden_command("git")
         .arg("--version")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -668,7 +669,7 @@ pub fn install_plugin(item: &PluginItem) -> Result<PathBuf, String> {
         return Err("未找到 git，请先安装 Git 后再试。".into());
     }
 
-    let output = Command::new("git")
+    let output = super::files::hidden_command("git")
         .args([
             "clone",
             "--depth",
@@ -1137,6 +1138,7 @@ pub async fn generate_smart_ui(
     let dir = plugin_dir(id)?;
     let context = scan_plugin_project_context(id)?;
     let mut dto = super::agent::runtime_ctx()
+        .map_err(|e| e.to_string())?
         .plugin_smart_ui_generate(&context, model)
         .await
         .map_err(|e| {

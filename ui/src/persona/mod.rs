@@ -28,7 +28,7 @@ pub async fn load_persona() -> anyhow::Result<String> {
 
     #[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
     {
-        crate::desktop::agent::runtime_ctx()
+        crate::desktop::agent::runtime_ctx()?
             .persona_get()
             .await
             .map_err(Into::into)
@@ -66,7 +66,7 @@ pub async fn save_persona_remote(text: &str) -> anyhow::Result<()> {
 
     #[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
     {
-        crate::desktop::agent::runtime_ctx()
+        crate::desktop::agent::runtime_ctx()?
             .persona_set(text)
             .await?;
         Ok(())
@@ -114,7 +114,7 @@ pub async fn polish_persona_remote(text: &str, model: &str) -> anyhow::Result<St
 
     #[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
     {
-        crate::desktop::agent::runtime_ctx()
+        crate::desktop::agent::runtime_ctx()?
             .persona_polish(text, model)
             .await
             .map_err(Into::into)

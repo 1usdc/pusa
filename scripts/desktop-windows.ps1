@@ -1,4 +1,4 @@
-﻿# 本机 Windows 打包：嵌入 pusa_core.dll → dx bundle --release → desktop/dist/*-setup.exe（默认不签名）
+﻿# 本机 Windows 打包：嵌入 pusa_core.dll → dx bundle --release → desktop/dist/Pusa_*-setup.exe（默认不签名）
 #
 # 安装后 DLL 与 exe 同目录（shared/src/ffi.rs 从 current_exe 父目录加载）。
 #
@@ -32,7 +32,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Write-Host '== 3) dx bundle --release（desktop/）=='
 Push-Location $Desktop
 try {
-    dx bundle --release
+    dx bundle --release --windows-subsystem windows
 } finally {
     Pop-Location
 }

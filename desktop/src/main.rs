@@ -1,4 +1,6 @@
 //! 桌面（系统 WebView / wry）入口。
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use std::path::{Path, PathBuf};
 
 use dioxus::desktop::tao::dpi::LogicalSize;
@@ -23,6 +25,21 @@ fn pusa_icon_png() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/app-icon.png")
 }
 
+/// release / 打包后没有控制台：把 panic 写到 `%LOCALAPPDATA%\AnotherClaw\crash.log`。
+fn install_release_panic_log() {
+    if cfg!(debug_assertions) {
+        return;
+    }
+    std::panic::set_hook(Box::new(|info| {
+        let mut dir = std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."));
+        dir.push("AnotherClaw");
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::write(dir.join("crash.log"), format!("{info}\n"));
+    }));
+}
+
 /// 嵌入带透明边距的 `app-icon.png`（非满铺 `Pusa.png`）；开发态 Dock 由此加载。
 #[cfg(target_os = "macos")]
 const PUSA_DOCK_ICON_PNG: &[u8] = include_bytes!("../assets/app-icon.png");
@@ -30,6 +47,7 @@ const PUSA_DOCK_ICON_PNG: &[u8] = include_bytes!("../assets/app-icon.png");
 // Dioxus 0.7 的 `LaunchBuilder::new` 在部分配置下仍会误报弃用。
 #[allow(deprecated)]
 fn main() {
+    install_release_panic_log();
     let icon_path = pusa_icon_png();
 
     dioxus::LaunchBuilder::new()
