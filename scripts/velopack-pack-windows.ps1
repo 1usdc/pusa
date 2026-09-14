@@ -2,9 +2,9 @@
 #
 # 输出 desktop\dist\velopack\：
 #   Pusa-win-x64-Setup.exe        安装器（内含 WebView2 引导，--framework webview2）
-#   Pusa-win-x64-Portable.zip     免安装版
 #   Pusa-<ver>-win-x64-full.nupkg / -delta.nupkg
 #   releases.win-x64.json         客户端更新清单
+# （默认 --noPortable：不生成 / 不上传 Pusa-win-x64-Portable.zip）
 #
 # 用法：
 #   .\scripts\velopack-pack-windows.ps1              # 不签名
@@ -12,6 +12,7 @@
 #       → Azure Trusted Signing（vpk --azureTrustedSignFile），凭证见 .env.signing：
 #         AZURE_TS_ENDPOINT / AZURE_TS_ACCOUNT / AZURE_TS_PROFILE，并需 az login 或 AZURE_CLIENT_ID 等
 #   $env:RELEASE_NOTES_FILE='CHANGELOG.md'           # 可选发布说明
+#   $env:PORTABLE='1'                                # 例外：仍生成 Portable.zip
 $ErrorActionPreference = 'Stop'
 
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
@@ -138,6 +139,11 @@ $packArgs = @(
     '--framework', 'webview2',
     '--shortcuts', 'Desktop,StartMenuRoot'
 )
+
+# 默认不发布免安装 zip（与 mac 用 DMG 取代 Portable 一致）；PORTABLE=1 可保留
+if ($env:PORTABLE -ne '1') {
+    $packArgs += '--noPortable'
+}
 
 if ($env:SIGN -eq '1') {
     $meta = New-AzureSignMetadata

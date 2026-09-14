@@ -75,6 +75,20 @@ release-mac:
 release-windows:
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\release-windows.ps1
 
+# 合并上传 Windows 到已有 Release（不 push/不打 tag；BUILD=1 先打包；TAG=desktop-v1.1.2 可覆盖）
+[windows]
+release-windows-merge:
+    $env:MERGE = '1'; powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\release-windows.ps1
+
+# 按当前 Release 资产重写说明（双平台一键下载按钮）；TAG= 可覆盖
+[windows]
+release-notes:
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\update-desktop-release-notes.ps1
+
+[unix]
+release-notes:
+    bash scripts/update-desktop-release-notes.sh
+
 # 同时拉取 pusa + pusa-core/（私有仓固定在仓库根下），不打 tag / 不发版
 [unix]
 pull:

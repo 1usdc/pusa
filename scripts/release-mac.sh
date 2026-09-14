@@ -123,6 +123,7 @@ if [[ "${MODE}" == "velopack" ]]; then
 	fi
 	echo "✓ macOS Velopack Release ${TAG} 已上传（channel ${VPK_CHANNEL}）"
 	ls -lh "${VPK_OUT}"
+	bash "${ROOT}/scripts/update-desktop-release-notes.sh"
 	exit 0
 fi
 
@@ -143,3 +144,4 @@ fi
 
 echo "✓ macOS Release ${TAG} 已上传"
 ls -lh "${STAGE}"
+bash "${ROOT}/scripts/update-desktop-release-notes.sh"

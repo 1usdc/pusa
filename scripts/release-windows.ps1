@@ -8,6 +8,7 @@
 #   $env:BUILD='1'; just release-windows
 #   $env:TAG='desktop-v0.2.8'; just release-windows
 #   $env:VPK_CHANNEL='win-x64'; just release-windows
+#   MERGE=1：只合并上传到已有 Release（不 push / 不打 tag）；just release-windows-merge
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
@@ -15,8 +16,24 @@ $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $Root
 
 $VerboseLog = $env:VERBOSE -eq '1'
+$MergeOnly = $env:MERGE -eq '1'
 function Say([string]$Message) {
     if ($VerboseLog) { Write-Host $Message }
+}
+
+function Get-TagCommitSha([string]$TagName) {
+    $local = & git rev-parse --verify --quiet "refs/tags/$TagName" 2>$null
+    if ($LASTEXITCODE -eq 0 -and $local) {
+        $peeled = (& git rev-parse "${TagName}^{commit}" 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $peeled) { return $peeled.Trim() }
+    }
+    $peeledLine = @(& git ls-remote --tags origin "refs/tags/${TagName}^{}" 2>$null) | Select-Object -First 1
+    if ($peeledLine) { return ($peeledLine -split '\s+')[0] }
+    $direct = @(& git ls-remote --tags origin "refs/tags/$TagName" 2>$null) |
+        Where-Object { $_ -notmatch '\^\{\}$' } |
+        Select-Object -First 1
+    if ($direct) { return ($direct -split '\s+')[0] }
+    return $null
 }
 
 function Get-DesktopReleaseTag {
@@ -59,6 +76,11 @@ function Require-Vpk {
 "@
 }
 
+function Update-ReleaseNotes {
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root 'scripts\update-desktop-release-notes.ps1')
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+
 function Invoke-VpkUploadGithub {
     param(
         [string]$OutDir,
@@ -86,6 +108,7 @@ function Invoke-VpkUploadGithub {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
+
 $Tag = Get-DesktopReleaseTag
 $Build = if ($env:BUILD) { $env:BUILD } else { '0' }
 $ReleaseDir = if ($env:RELEASE_DIR) { $env:RELEASE_DIR } else { Join-Path $Root 'desktop\dist' }
@@ -94,17 +117,23 @@ if ($Tag -notmatch '^desktop-v[0-9]+\.[0-9]+\.[0-9]+') {
     throw "TAG 格式不对：$Tag（应为 desktop-vX.Y.Z）"
 }
 
-Write-Host "→ Release tag: $Tag（来自 desktop/Cargo.toml，可用 `$env:TAG 覆盖）"
+if ($MergeOnly) {
+    Write-Host "→ Merge 上传到已有 Release：$Tag（不 push / 不打 tag；可用 `$env:TAG 覆盖）"
+} else {
+    Write-Host "→ Release tag: $Tag（来自 desktop/Cargo.toml，可用 `$env:TAG 覆盖）"
+}
 
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
     throw '未找到 gh CLI，请先安装并 gh auth login'
 }
 
-$dirty = git status --porcelain
-if ($dirty) {
-    Write-Host '工作区不干净，请先提交或 stash' -ForegroundColor Red
-    git status --short
-    exit 1
+if (-not $MergeOnly) {
+    $dirty = git status --porcelain
+    if ($dirty) {
+        Write-Host '工作区不干净，请先提交或 stash' -ForegroundColor Red
+        git status --short
+        exit 1
+    }
 }
 
 if ($Build -eq '1') {
@@ -145,6 +174,38 @@ if ($Mode -eq 'setup') {
     }
 }
 
+if ($MergeOnly) {
+    & gh release view $Tag 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "GitHub Release $Tag 不存在。请先用 just release-windows / release-mac 创建，或检查 TAG="
+    }
+    $Sha = Get-TagCommitSha $Tag
+    if (-not $Sha) {
+        throw "找不到 tag $Tag 的 commit（本地与 origin 都没有）"
+    }
+    Write-Host "→ 已有 Release $Tag @ $Sha，合并上传 Windows 资产"
+
+    Say '== 上传 GitHub Release（merge）=='
+    if ($Mode -eq 'velopack') {
+        $ver = $Tag -replace '^desktop-v', ''
+        Invoke-VpkUploadGithub -OutDir $VpkOut -Channel $VpkChannel -Tag $Tag -Sha $Sha -Version $ver
+        Write-Host "✓ Windows Velopack 已合并到 Release $Tag（channel $VpkChannel）"
+        Get-ChildItem $VpkOut | Format-Table Name, Length -AutoSize
+        Update-ReleaseNotes
+        exit 0
+    }
+
+    $files = @(Get-ChildItem $Stage -File | ForEach-Object { $_.FullName })
+    if ($files.Count -gt 0) {
+        & gh release upload $Tag @files --clobber
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    }
+    Write-Host "✓ Windows 安装包已合并到 Release $Tag"
+    Get-ChildItem $Stage | Format-Table Name, Length -AutoSize
+    Update-ReleaseNotes
+    exit 0
+}
+
 Say '== 1) git push =='
 git push
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -154,9 +215,9 @@ $Sha = (git rev-parse HEAD).Trim()
 Say "== 2) 创建并推送 tag $Tag =="
 $localTag = & git rev-parse --verify --quiet "refs/tags/$Tag" 2>$null
 if ($LASTEXITCODE -eq 0 -and $localTag) {
-    $localTagSha = (& git rev-parse "$Tag^{commit}").Trim()
+    $localTagSha = (& git rev-parse "${Tag}^{commit}").Trim()
     if ($localTagSha -ne $Sha) {
-        throw "本地 tag $Tag 指向 $localTagSha，当前 HEAD 是 $Sha"
+        throw "本地 tag $Tag 指向 $localTagSha，当前 HEAD 是 $Sha（若只想补传资产：just release-windows-merge）"
     }
     Say "本地已有 tag $Tag，跳过 git tag"
 } else {
@@ -167,7 +228,7 @@ if ($LASTEXITCODE -eq 0 -and $localTag) {
 $remoteLines = @(& git ls-remote --tags origin "refs/tags/$Tag" 2>$null)
 $hasRemoteTag = $remoteLines | Where-Object { $_ -match [regex]::Escape("refs/tags/$Tag") -and $_ -notmatch '\^\{\}$' }
 if ($hasRemoteTag) {
-    $localPeeled = (& git rev-parse "$Tag^{commit}").Trim()
+    $localPeeled = (& git rev-parse "${Tag}^{commit}").Trim()
     $peeledLine = @(& git ls-remote --tags origin "refs/tags/${Tag}^{}" 2>$null) | Select-Object -First 1
     $remoteSha = if ($peeledLine) {
         ($peeledLine -split '\s+')[0]
@@ -189,6 +250,7 @@ if ($Mode -eq 'velopack') {
     Invoke-VpkUploadGithub -OutDir $VpkOut -Channel $VpkChannel -Tag $Tag -Sha $Sha -Version $ver
     Write-Host "✓ Windows Velopack Release $Tag 已上传（channel $VpkChannel）"
     Get-ChildItem $VpkOut | Format-Table Name, Length -AutoSize
+    Update-ReleaseNotes
     exit 0
 }
 
@@ -217,3 +279,4 @@ if ($releaseExists) {
 
 Write-Host "✓ Windows Release $Tag 已上传"
 Get-ChildItem $Stage | Format-Table Name, Length -AutoSize
+Update-ReleaseNotes

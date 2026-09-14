@@ -430,6 +430,7 @@ fn html_preview_apply_resize(drag: HtmlPreviewResizeDrag, x: f64, y: f64) -> (i3
 
 #[derive(Clone, PartialEq)]
 pub enum HtmlPreviewFrame {
+    #[cfg_attr(target_os = "windows", allow(dead_code))]
     Url(String),
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     SrcDoc(String),

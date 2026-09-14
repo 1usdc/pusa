@@ -51,6 +51,8 @@ pub fn is_stl_path(path: &Path) -> bool {
 }
 
 /// STL 预览 iframe `src`：查看器页面 + query 指向同目录下的模型文件。
+/// Windows 走 `stl_preview_srcdoc`，此路径仅非 Windows 桌面使用。
+#[cfg(not(target_os = "windows"))]
 pub fn stl_preview_src(stl_path: &Path) -> Result<String, String> {
     if !is_stl_path(stl_path) {
         return Err("不是 STL 文件。".into());
@@ -108,6 +110,8 @@ pub fn resolve_html_preview(path: &Path, is_dir: bool) -> Option<PathBuf> {
     None
 }
 
+/// Windows 走 `preview_srcdoc`，此路径仅非 Windows 桌面使用。
+#[cfg(not(target_os = "windows"))]
 pub fn preview_iframe_src(html_path: &Path) -> Result<String, String> {
     let (token, file_name) = register_file(html_path)?;
     Ok(format!(
@@ -160,6 +164,7 @@ fn encode_path_seg(name: &str) -> String {
 }
 
 /// query 值编码：与 `encode_path_seg` 同一保留集（`URLSearchParams` 可原样解出 `:` `/` `%` 等）。
+#[cfg(not(target_os = "windows"))]
 fn encode_query_value(value: &str) -> String {
     encode_path_seg(value)
 }

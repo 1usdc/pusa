@@ -6,7 +6,7 @@
 #   Pusa-<ver>-<channel>-delta.nupkg    相对上一版的增量包（需先 vpk download 上一版）
 #   releases.<channel>.json             客户端 GithubSource 读取的清单
 #   macOS: Pusa-<ver>-<channel>.dmg（始终 --noInst，不出 .pkg；channel 形如 macos-arm64 / macos-x64）
-#   Windows: Pusa-<channel>-Setup.exe + Pusa-<channel>-Portable.zip（channel win-x64）
+#   Windows: Pusa-<channel>-Setup.exe（默认 --noPortable，不出 Portable.zip；channel win-x64）
 #
 # 客户端（ui/src/desktop/updater.rs）用 GithubSource 读 Release 资产里的 releases.<channel>.json，
 # channel 由安装包自带的 sq.version 决定，客户端代码无需感知。

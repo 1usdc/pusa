@@ -45,6 +45,13 @@ just desktop-windows
 BUILD=1 just release-mac       # macOS
 BUILD=1 just release-windows   # Windows
 # 或已打包好：just release-windows
+
+# 补传 Windows 到已有 Release（不打 tag；例如 mac 已发、Windows 后补）
+BUILD=1 just release-windows-merge
+# TAG=desktop-v1.1.2 just release-windows-merge
+
+# 重写 Release 说明（双平台一键下载）
+just release-notes
 ```
 
 ### 发版流程示例（Windows）

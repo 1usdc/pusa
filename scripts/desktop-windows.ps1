@@ -1,5 +1,5 @@
 ﻿# 本机 Windows 打包：嵌入 pusa_core.dll → dx bundle --release → Velopack（vpk pack）
-#   → desktop/dist/velopack/（Setup.exe / Portable.zip / full+delta .nupkg / releases.win-x64.json）
+#   → desktop/dist/velopack/（Setup.exe / full+delta .nupkg / releases.win-x64.json；默认无 Portable.zip）
 #
 # 安装后 DLL 与 exe 同目录（shared/src/ffi.rs 从 current_exe 父目录加载）。
 #
@@ -72,7 +72,7 @@ if ($env:SKIP_CORE_CHECK -ne '1') {
 }
 
 if ($env:VELOPACK -ne '0') {
-    # Velopack：Setup.exe / Portable.zip / full+delta 包 / releases.win-x64.json → desktop\dist\velopack
+    # Velopack：Setup.exe / full+delta 包 / releases.win-x64.json → desktop\dist\velopack（默认 --noPortable）
     # 签名交给 vpk（SIGN=1 时 --azureTrustedSignFile），不再单独给 NSIS 安装器签名。
     Write-Host '== 5) Velopack 打包（vpk pack，含增量包）=='
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root 'scripts\velopack-pack-windows.ps1')

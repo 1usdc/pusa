@@ -228,6 +228,8 @@ UI (chat facade)
 | `just desktop-windows` | 本机 Windows 打包 → Velopack 包（默认不签名；`SIGN=1` → Azure Trusted Signing；`VELOPACK=0` 回退 NSIS） |
 | `just release-mac` | macOS 发版（tag 取自 `desktop/Cargo.toml`；可选 `BUILD=1`；有 Velopack 产物时 `vpk upload github`） |
 | `just release-windows` | Windows 发版（`scripts/release-windows.ps1`；可选 `BUILD=1`） |
+| `just release-windows-merge` | 合并上传 Windows 到已有 Release（`MERGE=1`；不 push / 不打 tag；可选 `BUILD=1` / `TAG=`） |
+| `just release-notes` | 按当前 Release 资产重写说明（mac/win 一键下载按钮） |
 | `just db-clear` | 清空 `data/` |
 | `just push` | 仅推送远端 |
 
@@ -253,7 +255,7 @@ CI：`.github/workflows/`（桌面打包已改为本机流程，不再走 Action
 
 **打包**（`scripts/velopack-pack-mac.sh` / `scripts/velopack-pack-windows.ps1`，由 `desktop-mac.sh` / `desktop-windows.ps1` 默认调用）
 
-- `vpk download github` 拉上一版全量包 → `vpk pack` 生成 full + delta `.nupkg`、`releases.<channel>.json`（mac 始终 `--noInst` 不出 `.pkg`，Portable 再封成 `.dmg`；win 仍出 `Setup.exe` + Portable.zip），输出到 `desktop/dist/velopack/`。
+- `vpk download github` 拉上一版全量包 → `vpk pack` 生成 full + delta `.nupkg`、`releases.<channel>.json`（mac 始终 `--noInst` 不出 `.pkg`，Portable 再封成 `.dmg`；win 默认 `--noPortable`，只出 `Setup.exe`），输出到 `desktop/dist/velopack/`。
 - macOS 的签名 + 公证由 vpk 完成（`--signAppIdentity` / `--signInstallIdentity` / `--notaryProfile`）；Windows `SIGN=1` 走 Azure Trusted Signing。
 - channel 按 host 决定（`macos-arm64` / `macos-x64` / `win-x64`），`VPK_CHANNEL` 可覆盖；公共配置见 `scripts/velopack-common.sh`。
 

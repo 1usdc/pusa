@@ -2988,7 +2988,7 @@ pub fn Console(
     let fs_create_name = use_signal(String::new);
     let fs_create_parent = use_signal(|| None::<String>);
     let mut fs_notice = use_signal(|| None::<String>);
-    let mut recent_project_dirs = use_signal(super::files::fs_recent_project_dirs);
+    let recent_project_dirs = use_signal(super::files::fs_recent_project_dirs);
     // 中间栏标签栏右键菜单：视口坐标（position: fixed），None = 关闭。
     let mut center_tabs_ctx_menu = use_signal(|| None::<(f64, f64)>);
     let mut fs_drafts = use_signal(HashMap::<String, String>::new);
