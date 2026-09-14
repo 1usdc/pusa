@@ -1,4 +1,4 @@
-# Windows 发版：本机打包（可选）→ 打 tag → 上传 GitHub Release。
+﻿# Windows 发版：本机打包（可选）→ 打 tag → 上传 GitHub Release。
 # 版本默认取自 desktop/Cargo.toml → desktop-vX.Y.Z（可用 $env:TAG 覆盖）。
 # 有 desktop/dist/velopack/releases.win-x64.json 时走 `vpk upload github`，
 # 否则退回上传 *-setup.exe / *.msi。
