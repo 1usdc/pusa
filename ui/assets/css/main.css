@@ -4801,6 +4801,30 @@ html[data-theme="dark"] .ac-xterm-host {
     background: var(--ac-color-ecfeff);
 }
 
+.ac-plugin-icon-has-img {
+    background: transparent;
+    overflow: hidden;
+}
+
+.ac-plugin-icon-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: inherit;
+    display: block;
+}
+
+.ac-plugin-icon-letter {
+    font-weight: 800;
+    font-size: 0.78rem;
+    line-height: 1;
+    user-select: none;
+}
+
+.ac-skills-detail-icon .ac-plugin-icon-letter {
+    font-size: 1.15rem;
+}
+
 .ac-strategy-page {
     width: 100%;
     max-width: 1160px;
@@ -8740,7 +8764,7 @@ button.ac-scope-pair-input.ac-builder-model-dropdown-trigger {
 
 .ac-chat-bubble-ai {
     max-width: 100%;
-    color: var(--secondary-color-3);
+    color: var(--ac-chat-ai-fg);
     background: transparent;
     border: none;
     box-shadow: none;
@@ -9103,6 +9127,14 @@ button.ac-chat-trace-primary.is-link:hover {
     font-weight: 750;
     line-height: 1.35;
     color: var(--text-primary);
+}
+
+.ac-chat-bubble-ai .ac-chat-md h1,
+.ac-chat-bubble-ai .ac-chat-md h2,
+.ac-chat-bubble-ai .ac-chat-md h3,
+.ac-chat-bubble-ai .ac-chat-md h4,
+.ac-chat-bubble-ai .ac-chat-md strong {
+    color: var(--ac-chat-ai-fg-strong);
 }
 
 .ac-chat-md h1 {

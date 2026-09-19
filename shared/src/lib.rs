@@ -136,18 +136,6 @@ impl RuntimeContext {
         self.call_unit_async("persona_set", json!({ "text": text })).await
     }
 
-    pub async fn plugin_ai_search(
-        &self,
-        query: &str,
-        model: &str,
-    ) -> Result<Vec<protocol::PluginAiSearchItemDto>> {
-        self.call_json_async(
-            "plugin_ai_search",
-            json!({ "query": query, "model": model }),
-        )
-        .await
-    }
-
     pub async fn plugin_smart_ui_generate(
         &self,
         project_context: &str,

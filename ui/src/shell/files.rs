@@ -1850,8 +1850,7 @@ pub fn FileEditorPane(
                 {
                     let line_count = count_text_lines(&body);
                     let code_style = format!("--ac-editor-lines: {line_count}");
-                    let lang = super::syntax::language_from_path(&path_key);
-                    let mut highlight = super::syntax::highlight_html(&body, lang);
+                    let mut highlight = super::syntax::highlight_file_html(&body, &path_key);
                     if !body.ends_with('\n') && !body.is_empty() {
                         highlight.push('\n');
                     }
@@ -2104,7 +2103,6 @@ pub fn FileEditDiffPane(
         .iter()
         .filter(|l| l.kind == DiffLineKind::Delete)
         .count();
-    let lang = super::syntax::language_from_path(&path);
 
     rsx! {
         section { class: "ac-file-diff",
@@ -2150,7 +2148,7 @@ pub fn FileEditDiffPane(
                                 .map(|n| n.to_string())
                                 .unwrap_or_default();
                             let highlighted =
-                                super::syntax::highlight_line_html(&line.text, lang);
+                                super::syntax::highlight_file_html(&line.text, &path);
                             rsx! {
                                 div {
                                     key: "{idx}",

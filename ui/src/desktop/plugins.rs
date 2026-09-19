@@ -1,15 +1,17 @@
-//! 应用市场：我的应用、官方搜索（含 GitHub）、AI 搜索，克隆到工作区 `applications/`。
+//! 扩展市场：Open VSX（VS Code 开源扩展），安装到工作区 `extensions/`。
+//! 本地脚手架应用仍写入 `applications/`（首页「创建应用」等）。
 
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 
-use super::files::workspace_root;
+use super::files::{extension_root, workspace_root};
 
-/// 预留：日后可改为远程官方目录 URL；当前为空则用内置榜单。
-const OFFICIAL_CATALOG_URL: Option<&str> = None;
+const OPEN_VSX_API: &str = "https://open-vsx.org/api";
+const USER_AGENT: &str = "PusaPluginMarket/0.2 (OpenVSX)";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PluginItem {
@@ -21,72 +23,51 @@ pub struct PluginItem {
     pub stars: Option<u64>,
     pub mentions: Option<u64>,
     pub homepage: String,
+    /// Open VSX 下载 URL（.vsix）；本地脚手架可为空。
     pub git_url: String,
     pub installed: bool,
+    /// 是否偏向语法高亮 / 语言 Grammar（用于排序与徽章）。
+    pub highlight_priority: bool,
+    pub version: Option<String>,
+    /// Open VSX `files.icon` / `icon`，或由 namespace/name/version 拼出的图标 URL。
+    pub icon_url: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PluginSource {
-    Official,
-    GitHub,
-    Ai,
+    OpenVsx,
     Local,
 }
 
 impl PluginSource {
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Official => "official",
-            Self::GitHub => "github",
-            Self::Ai => "ai",
+            Self::OpenVsx => "openvsx",
             Self::Local => "local",
         }
     }
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Official => "官方",
-            Self::GitHub => "GitHub",
-            Self::Ai => "AI",
+            Self::OpenVsx => "Open VSX",
             Self::Local => "本地",
         }
     }
 
     fn from_meta(raw: &str) -> Self {
         match raw.trim() {
-            "official" => Self::Official,
-            "github" => Self::GitHub,
-            "ai" => Self::Ai,
+            "openvsx" | "official" | "github" | "ai" => Self::OpenVsx,
             _ => Self::Local,
         }
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct OfficialCatalogFile {
-    #[serde(default)]
-    items: Vec<OfficialCatalogEntry>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct OfficialCatalogEntry {
-    id: String,
-    name: String,
-    #[serde(default)]
-    description: String,
-    git_url: String,
-    #[serde(default)]
-    homepage: Option<String>,
-    #[serde(default)]
-    language: Option<String>,
-}
-
-/// 解析「应用库」目录（容纳各已安装应用的父目录）。
+/// 解析「应用库」目录（容纳各已安装本地应用的父目录）。
 ///
-/// - 工作区本身是 `…/applications/{app}`：返回上一级 `applications/`（打开单个应用后仍能列出兄弟应用）
+/// - 工作区本身是 `…/applications/{app}`：返回上一级 `applications/`
 /// - 工作区本身叫 `applications`（或旧名 `application`）：直接返回它
 /// - 工作区下存在 `applications/`（或旧名 `application/`）：返回该目录
-/// - 否则回退为 `工作区/applications`（后续 `ensure` 会创建）
+/// - 否则回退为 `工作区/applications`
 ///
 /// 注意：不向上穿越到文件系统根去找 `applications/`，避免在 macOS 上误命中系统 `/Applications`。
 pub fn application_root() -> PathBuf {
@@ -132,9 +113,341 @@ pub fn ensure_application_root() -> Result<PathBuf, String> {
     Ok(root)
 }
 
-/// 扫描 `applications/` 下已安装的子目录名。
+pub fn ensure_extension_root() -> Result<PathBuf, String> {
+    let root = extension_root();
+    fs::create_dir_all(&root).map_err(|e| format!("无法创建 extensions 目录：{e}"))?;
+    Ok(root)
+}
+
+fn validate_plugin_id(id: &str) -> Result<String, String> {
+    let id = id.trim();
+    if id.is_empty() {
+        return Err("插件 id 无效".into());
+    }
+    if id.contains('/') || id.contains('\\') || id.contains("..") {
+        return Err("插件 id 非法".into());
+    }
+    Ok(id.to_string())
+}
+
+fn sanitize_dir_name(raw: &str) -> String {
+    let trimmed = raw.trim();
+    let base = trimmed
+        .rsplit('/')
+        .next()
+        .unwrap_or(trimmed)
+        .trim_end_matches(".git");
+    let mut out = String::with_capacity(base.len());
+    for ch in base.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' || ch == '.' {
+            out.push(ch);
+        } else if ch == ' ' {
+            out.push('-');
+        }
+    }
+    if out.is_empty() {
+        "ext".into()
+    } else {
+        out
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct InstallMeta {
+    id: String,
+    name: String,
+    #[serde(default)]
+    source: String,
+    #[serde(default)]
+    git_url: String,
+    #[serde(default)]
+    homepage: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    version: Option<String>,
+    #[serde(default)]
+    icon_url: Option<String>,
+}
+
+fn read_install_meta(dir: &Path) -> Option<InstallMeta> {
+    let path = dir.join(".pusa-plugin.json");
+    let raw = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&raw).ok()
+}
+
+fn write_install_meta(target: &Path, item: &PluginItem) -> Result<(), String> {
+    let meta = InstallMeta {
+        id: item.id.clone(),
+        name: item.name.clone(),
+        source: item.source.as_str().into(),
+        git_url: item.git_url.clone(),
+        homepage: item.homepage.clone(),
+        description: item.description.clone(),
+        version: item.version.clone(),
+        icon_url: item.icon_url.clone(),
+    };
+    let path = target.join(".pusa-plugin.json");
+    let raw = serde_json::to_string_pretty(&meta).map_err(|e| e.to_string())?;
+    fs::write(path, raw).map_err(|e| format!("写入安装元数据失败：{e}"))
+}
+
+/// 解析 VS Code 扩展 `package.json` 中的 `contributes.grammars` / `languages`。
+///
+/// 安装后写入 `.pusa-grammars.json`。编辑器在打开文件时通过
+/// [`list_installed_grammar_contributes`] 取回扩展目录与贡献，再加载 tmLanguage
+///（见 `shell/textmate`）。无匹配时回退 `shell/syntax.rs` 内置分词。
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GrammarContribution {
+    pub language: Option<String>,
+    pub scope_name: Option<String>,
+    pub path: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LanguageContribution {
+    pub id: Option<String>,
+    pub extensions: Vec<String>,
+    pub aliases: Vec<String>,
+    /// 无扩展名的文件名（如 `Dockerfile`）。旧缓存缺省为空。
+    #[serde(default)]
+    pub filenames: Vec<String>,
+}
+
+/// `.pusa-grammars.json` 结构版本。低于此值时重新解析 `package.json`。
+const GRAMMAR_CACHE_SCHEMA: u32 = 2;
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ExtensionContributes {
+    pub extension_id: String,
+    pub grammars: Vec<GrammarContribution>,
+    pub languages: Vec<LanguageContribution>,
+    /// 缓存结构版本；旧文件缺省为 0，触发重新解析。
+    #[serde(default)]
+    pub schema: u32,
+}
+
+/// 已安装扩展目录及其语法贡献。
+#[derive(Clone, Debug)]
+pub struct InstalledGrammarContributes {
+    pub dir: PathBuf,
+    pub contributes: ExtensionContributes,
+}
+
+const GRAMMARS_CACHE: &str = ".pusa-grammars.json";
+
+/// 从已解压扩展目录读取 `package.json` 的 contributes 摘要。
+pub fn parse_extension_contributes(dir: &Path) -> Result<ExtensionContributes, String> {
+    let pkg_path = dir.join("package.json");
+    let raw = fs::read_to_string(&pkg_path).map_err(|e| format!("读取 package.json 失败：{e}"))?;
+    let v: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|e| format!("解析 package.json 失败：{e}"))?;
+
+    let publisher = v
+        .get("publisher")
+        .and_then(|x| x.as_str())
+        .unwrap_or("");
+    let name = v.get("name").and_then(|x| x.as_str()).unwrap_or("");
+    let extension_id = if !publisher.is_empty() && !name.is_empty() {
+        format!("{publisher}.{name}")
+    } else {
+        dir.file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string()
+    };
+
+    let contributes = v.get("contributes").cloned().unwrap_or(serde_json::json!({}));
+    let mut grammars = Vec::new();
+    if let Some(arr) = contributes.get("grammars").and_then(|x| x.as_array()) {
+        for g in arr {
+            grammars.push(GrammarContribution {
+                language: g
+                    .get("language")
+                    .and_then(|x| x.as_str())
+                    .map(|s| s.to_string()),
+                scope_name: g
+                    .get("scopeName")
+                    .and_then(|x| x.as_str())
+                    .map(|s| s.to_string()),
+                path: g
+                    .get("path")
+                    .and_then(|x| x.as_str())
+                    .map(|s| s.to_string()),
+            });
+        }
+    }
+    let mut languages = Vec::new();
+    if let Some(arr) = contributes.get("languages").and_then(|x| x.as_array()) {
+        for lang in arr {
+            let extensions = lang
+                .get("extensions")
+                .and_then(|x| x.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let aliases = lang
+                .get("aliases")
+                .and_then(|x| x.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let filenames = lang
+                .get("filenames")
+                .and_then(|x| x.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default();
+            languages.push(LanguageContribution {
+                id: lang
+                    .get("id")
+                    .and_then(|x| x.as_str())
+                    .map(|s| s.to_string()),
+                extensions,
+                aliases,
+                filenames,
+            });
+        }
+    }
+
+    Ok(ExtensionContributes {
+        extension_id,
+        grammars,
+        languages,
+        schema: GRAMMAR_CACHE_SCHEMA,
+    })
+}
+
+fn write_grammars_cache(dir: &Path, contributes: &ExtensionContributes) -> Result<(), String> {
+    let path = dir.join(GRAMMARS_CACHE);
+    let raw = serde_json::to_string_pretty(contributes).map_err(|e| e.to_string())?;
+    fs::write(path, raw).map_err(|e| format!("写入语法贡献缓存失败：{e}"))
+}
+
+/// 扫描已安装扩展的 Grammar 贡献（目录 + `.pusa-grammars.json` / `package.json`）。
+///
+/// 编辑器按返回的 `dir` 与 `grammars[].path` 加载 TextMate。
+pub fn list_installed_grammar_contributes() -> Vec<InstalledGrammarContributes> {
+    let root = extension_root();
+    let Ok(entries) = fs::read_dir(&root) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let cache = path.join(GRAMMARS_CACHE);
+        if cache.is_file() {
+            if let Ok(raw) = fs::read_to_string(&cache) {
+                if let Ok(c) = serde_json::from_str::<ExtensionContributes>(&raw) {
+                    if c.schema >= GRAMMAR_CACHE_SCHEMA {
+                        out.push(InstalledGrammarContributes {
+                            dir: path,
+                            contributes: c,
+                        });
+                        continue;
+                    }
+                }
+            }
+        }
+        if let Ok(c) = parse_extension_contributes(&path) {
+            let _ = write_grammars_cache(&path, &c);
+            out.push(InstalledGrammarContributes {
+                dir: path,
+                contributes: c,
+            });
+        }
+    }
+    out.sort_by(|a, b| a.contributes.extension_id.cmp(&b.contributes.extension_id));
+    out
+}
+
+fn looks_like_vscode_extension(dir: &Path) -> bool {
+    dir.join("package.json").is_file()
+}
+
+fn path_to_file_url(path: &Path) -> String {
+    let abs = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    #[cfg(windows)]
+    {
+        let s = abs.to_string_lossy().replace('\\', "/");
+        if s.starts_with('/') {
+            format!("file://{s}")
+        } else {
+            format!("file:///{s}")
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        format!("file://{}", abs.to_string_lossy())
+    }
+}
+
+/// 已安装扩展图标：优先 `package.json` 的绝对 URL，其次拼 Open VSX file URL，最后本地 `file://`。
+fn package_icon_url(dir: &Path) -> Option<String> {
+    let raw = fs::read_to_string(dir.join("package.json")).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let icon_rel = v.get("icon").and_then(|x| x.as_str())?.trim();
+    if icon_rel.is_empty() {
+        return None;
+    }
+    if icon_rel.starts_with("https://") || icon_rel.starts_with("http://") {
+        return Some(icon_rel.to_string());
+    }
+    let rel = icon_rel.trim_start_matches("./");
+    let publisher = v.get("publisher").and_then(|x| x.as_str()).unwrap_or("");
+    let name = v.get("name").and_then(|x| x.as_str()).unwrap_or("");
+    let version = v.get("version").and_then(|x| x.as_str()).unwrap_or("");
+    if !publisher.is_empty() && !name.is_empty() && !version.is_empty() {
+        return Some(format!(
+            "https://open-vsx.org/api/{publisher}/{name}/{version}/file/{rel}"
+        ));
+    }
+    let local = dir.join(rel);
+    if local.is_file() {
+        return Some(path_to_file_url(&local));
+    }
+    None
+}
+
+fn resolve_openvsx_icon(
+    files_icon: Option<&str>,
+    top_icon: Option<&str>,
+    namespace: &str,
+    name: &str,
+    version: Option<&str>,
+) -> Option<String> {
+    let pick = |raw: Option<&str>| -> Option<String> {
+        let u = raw.map(str::trim).filter(|s| !s.is_empty())?;
+        if u.starts_with("https://") || u.starts_with("http://") {
+            return Some(u.to_string());
+        }
+        let ver = version.map(str::trim).filter(|s| !s.is_empty())?;
+        if namespace.is_empty() || name.is_empty() {
+            return None;
+        }
+        let path = u.trim_start_matches("./");
+        Some(format!(
+            "https://open-vsx.org/api/{namespace}/{name}/{ver}/file/{path}"
+        ))
+    };
+    pick(files_icon).or_else(|| pick(top_icon))
+}
+
+/// 扫描 `extensions/` 下已安装的 VS Code 扩展（及带 `.pusa-plugin.json` 的目录）。
 pub fn list_installed_ids() -> Vec<String> {
-    let root = application_root();
+    let root = extension_root();
     let Ok(entries) = fs::read_dir(&root) else {
         return Vec::new();
     };
@@ -150,35 +463,60 @@ pub fn list_installed_ids() -> Vec<String> {
         if name.starts_with('.') || name.eq_ignore_ascii_case("readme.md") {
             continue;
         }
-        ids.push(name.to_string());
+        if looks_like_vscode_extension(&path) || path.join(".pusa-plugin.json").is_file() {
+            ids.push(name.to_string());
+        }
     }
     ids.sort();
     ids
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct InstallMeta {
-    id: String,
-    name: String,
-    #[serde(default)]
-    source: String,
-    #[serde(default)]
-    git_url: String,
-    #[serde(default)]
-    homepage: String,
-    #[serde(default)]
-    description: String,
+fn package_display_info(dir: &Path) -> Option<(String, String, bool)> {
+    let raw = fs::read_to_string(dir.join("package.json")).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let name = v
+        .get("displayName")
+        .and_then(|x| x.as_str())
+        .or_else(|| v.get("name").and_then(|x| x.as_str()))
+        .unwrap_or("")
+        .to_string();
+    let description = v
+        .get("description")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string();
+    let categories: Vec<String> = v
+        .get("categories")
+        .and_then(|x| x.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let keywords: Vec<String> = v
+        .get("keywords")
+        .and_then(|x| x.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let contributes = v.get("contributes");
+    let has_grammar = contributes
+        .and_then(|c| c.get("grammars"))
+        .and_then(|g| g.as_array())
+        .map(|a| !a.is_empty())
+        .unwrap_or(false);
+    let highlight = has_grammar
+        || is_highlight_extension(&categories, &keywords, &name, &description);
+    Some((name, description, highlight))
 }
 
-fn read_install_meta(dir: &Path) -> Option<InstallMeta> {
-    let path = dir.join(".pusa-plugin.json");
-    let raw = fs::read_to_string(path).ok()?;
-    serde_json::from_str(&raw).ok()
-}
-
-/// 扫描 `applications/` 下已安装应用，优先读取 `.pusa-plugin.json`。
+/// 扫描已安装扩展，优先读取 `.pusa-plugin.json` / `package.json`。
 pub fn list_installed_plugins() -> Vec<PluginItem> {
-    let root = application_root();
+    let root = extension_root();
     let Ok(entries) = fs::read_dir(&root) else {
         return Vec::new();
     };
@@ -194,76 +532,112 @@ pub fn list_installed_plugins() -> Vec<PluginItem> {
         if dirname.starts_with('.') || dirname.eq_ignore_ascii_case("readme.md") {
             continue;
         }
-        // 以目录名为 id，保证打开/卸载路径与「官方榜单已安装」标记一致。
+        if !looks_like_vscode_extension(&path) && !path.join(".pusa-plugin.json").is_file() {
+            continue;
+        }
         let id = dirname.to_string();
         let meta = read_install_meta(&path);
-        let (name, description, source, git_url, homepage) = if let Some(m) = meta {
-            let name = if m.name.trim().is_empty() {
-                dirname.to_string()
+        let stored_icon = meta.as_ref().and_then(|m| {
+            m.icon_url
+                .clone()
+                .filter(|s| !s.trim().is_empty())
+        });
+        let icon_url = stored_icon.or_else(|| package_icon_url(&path));
+        let pkg = package_display_info(&path);
+        let (name, description, source, git_url, homepage, version, highlight) =
+            if let Some(m) = meta {
+                let name = if m.name.trim().is_empty() {
+                    pkg.as_ref()
+                        .map(|(n, _, _)| n.clone())
+                        .unwrap_or_else(|| dirname.to_string())
+                } else {
+                    m.name
+                };
+                let description = if m.description.trim().is_empty() {
+                    pkg.as_ref()
+                        .map(|(_, d, _)| d.clone())
+                        .unwrap_or_else(|| format!("extensions/{dirname}/"))
+                } else {
+                    m.description
+                };
+                let homepage = if m.homepage.trim().is_empty() {
+                    format!("https://open-vsx.org/extension/{}", id.replace('.', "/"))
+                } else {
+                    m.homepage
+                };
+                let highlight = pkg
+                    .as_ref()
+                    .map(|(_, _, h)| *h)
+                    .unwrap_or(false);
+                (
+                    name,
+                    description,
+                    PluginSource::from_meta(&m.source),
+                    m.git_url,
+                    homepage,
+                    m.version,
+                    highlight,
+                )
+            } else if let Some((name, description, highlight)) = pkg {
+                (
+                    if name.is_empty() {
+                        dirname.to_string()
+                    } else {
+                        name
+                    },
+                    if description.is_empty() {
+                        format!("extensions/{dirname}/")
+                    } else {
+                        description
+                    },
+                    PluginSource::OpenVsx,
+                    String::new(),
+                    format!("https://open-vsx.org/extension/{}", id.replace('.', "/")),
+                    None,
+                    highlight,
+                )
             } else {
-                m.name
+                (
+                    dirname.to_string(),
+                    format!("extensions/{dirname}/"),
+                    PluginSource::Local,
+                    String::new(),
+                    String::new(),
+                    None,
+                    false,
+                )
             };
-            let description = if m.description.trim().is_empty() {
-                format!("applications/{dirname}/")
-            } else {
-                m.description
-            };
-            let homepage = if m.homepage.trim().is_empty() {
-                m.git_url.trim_end_matches(".git").to_string()
-            } else {
-                m.homepage
-            };
-            (
-                name,
-                description,
-                PluginSource::from_meta(&m.source),
-                m.git_url,
-                homepage,
-            )
-        } else {
-            (
-                dirname.to_string(),
-                format!("applications/{dirname}/"),
-                PluginSource::Local,
-                String::new(),
-                String::new(),
-            )
-        };
         items.push(PluginItem {
             id,
             name,
             description,
             source,
-            language: None,
+            language: if highlight {
+                Some("语法高亮".into())
+            } else {
+                None
+            },
             stars: None,
             mentions: None,
             homepage,
             git_url,
             installed: true,
+            highlight_priority: highlight,
+            version,
+            icon_url,
         });
     }
-    items.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    items.sort_by(|a, b| {
+        b.highlight_priority
+            .cmp(&a.highlight_priority)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
     items
 }
 
-fn validate_plugin_id(id: &str) -> Result<String, String> {
-    let id = id.trim();
-    if id.is_empty() {
-        return Err("插件 id 无效".into());
-    }
-    if id.contains('/') || id.contains('\\') || id.contains("..") {
-        return Err("插件 id 非法".into());
-    }
-    Ok(id.to_string())
-}
-
-/// 在系统文件管理器中打开已安装插件目录。
+/// 在系统文件管理器中打开已安装扩展/应用目录。
 pub fn open_installed_plugin(id: &str) -> Result<(), String> {
-    let id = validate_plugin_id(id)?;
-    let path = application_root().join(&id);
-    if !path.is_dir() {
-        return Err(format!("未找到已安装目录：{}", path.display()));
-    }
+    let path = plugin_dir(id)?;
     #[cfg(target_os = "macos")]
     {
         let status = Command::new("open")
@@ -302,419 +676,588 @@ pub fn open_installed_plugin(id: &str) -> Result<(), String> {
     }
 }
 
-/// 卸载 `applications/{id}`（删除目录）。
+/// 卸载扩展：优先 `extensions/{id}`，否则 `applications/{id}`。
 pub fn uninstall_plugin(id: &str) -> Result<(), String> {
     let id = validate_plugin_id(id)?;
-    let root = application_root();
-    let target = root.join(&id);
-    if !target.is_dir() {
-        return Err(format!("未找到已安装目录：{}", target.display()));
-    }
-    let canonical_root = root
-        .canonicalize()
-        .map_err(|e| format!("无法解析 applications 目录：{e}"))?;
-    let canonical_target = target
-        .canonicalize()
-        .map_err(|e| format!("无法解析插件目录：{e}"))?;
-    if !canonical_target.starts_with(&canonical_root) || canonical_target == canonical_root {
-        return Err("拒绝卸载：路径不在 applications/ 下".into());
-    }
-    fs::remove_dir_all(&canonical_target).map_err(|e| format!("卸载失败：{e}"))
-}
-
-fn sanitize_dir_name(raw: &str) -> String {
-    let trimmed = raw.trim();
-    let base = trimmed
-        .rsplit('/')
-        .next()
-        .unwrap_or(trimmed)
-        .trim_end_matches(".git");
-    let mut out = String::with_capacity(base.len());
-    for ch in base.chars() {
-        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' || ch == '.' {
-            out.push(ch);
-        } else if ch == ' ' {
-            out.push('-');
+    let candidates = [
+        (extension_root(), "extensions"),
+        (application_root(), "applications"),
+    ];
+    for (root, label) in candidates {
+        let target = root.join(&id);
+        if !target.is_dir() {
+            continue;
         }
+        let canonical_root = root
+            .canonicalize()
+            .map_err(|e| format!("无法解析 {label} 目录：{e}"))?;
+        let canonical_target = target
+            .canonicalize()
+            .map_err(|e| format!("无法解析插件目录：{e}"))?;
+        if !canonical_target.starts_with(&canonical_root) || canonical_target == canonical_root {
+            return Err(format!("拒绝卸载：路径不在 {label}/ 下"));
+        }
+        fs::remove_dir_all(&canonical_target).map_err(|e| format!("卸载失败：{e}"))?;
+        return Ok(());
     }
-    if out.is_empty() {
-        "app".into()
-    } else {
-        out
+    Err(format!("未找到已安装目录：{id}"))
+}
+
+pub fn is_highlight_extension(
+    categories: &[String],
+    tags_or_keywords: &[String],
+    name: &str,
+    description: &str,
+) -> bool {
+    let cat_hit = categories.iter().any(|c| {
+        let l = c.to_ascii_lowercase();
+        l.contains("programming languages") || l == "themes" || l.contains("language")
+    });
+    if cat_hit {
+        return true;
     }
+    let blob = format!(
+        "{} {} {}",
+        name.to_ascii_lowercase(),
+        description.to_ascii_lowercase(),
+        tags_or_keywords
+            .iter()
+            .map(|t| t.to_ascii_lowercase())
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+    const KEYS: &[&str] = &[
+        "grammar",
+        "syntax",
+        "highlight",
+        "textmate",
+        "tmlanguage",
+        "language support",
+        "syntax highlighting",
+    ];
+    KEYS.iter().any(|k| blob.contains(k))
 }
 
-fn mark_installed(items: &mut [PluginItem], installed: &[String]) {
-    for item in items {
-        item.installed = installed.iter().any(|id| id == &item.id);
-    }
-}
-
-/// 内置官方榜单（无远程目录时使用）。
-fn builtin_official_catalog() -> Vec<OfficialCatalogEntry> {
-    vec![
-        OfficialCatalogEntry {
-            id: "servers".into(),
-            name: "MCP Servers".into(),
-            description: "Model Context Protocol 官方参考服务器集合。".into(),
-            git_url: "https://github.com/modelcontextprotocol/servers.git".into(),
-            homepage: Some("https://github.com/modelcontextprotocol/servers".into()),
-            language: Some("TypeScript".into()),
-        },
-        OfficialCatalogEntry {
-            id: "codex".into(),
-            name: "OpenAI Codex CLI".into(),
-            description: "轻量终端编程 Agent。".into(),
-            git_url: "https://github.com/openai/codex.git".into(),
-            homepage: Some("https://github.com/openai/codex".into()),
-            language: Some("Rust".into()),
-        },
-        OfficialCatalogEntry {
-            id: "goose".into(),
-            name: "goose".into(),
-            description: "本地优先的开源 AI Agent 框架。".into(),
-            git_url: "https://github.com/block/goose.git".into(),
-            homepage: Some("https://github.com/block/goose".into()),
-            language: Some("Rust".into()),
-        },
-        OfficialCatalogEntry {
-            id: "aider".into(),
-            name: "aider".into(),
-            description: "终端里的 AI 结对编程工具。".into(),
-            git_url: "https://github.com/Aider-AI/aider.git".into(),
-            homepage: Some("https://github.com/Aider-AI/aider".into()),
-            language: Some("Python".into()),
-        },
-        OfficialCatalogEntry {
-            id: "open-webui".into(),
-            name: "Open WebUI".into(),
-            description: "自托管 LLM Web 界面。".into(),
-            git_url: "https://github.com/open-webui/open-webui.git".into(),
-            homepage: Some("https://github.com/open-webui/open-webui".into()),
-            language: Some("Python".into()),
-        },
-        OfficialCatalogEntry {
-            id: "anything-llm".into(),
-            name: "AnythingLLM".into(),
-            description: "全栈私有知识库 / Agent 应用。".into(),
-            git_url: "https://github.com/Mintplex-Labs/anything-llm.git".into(),
-            homepage: Some("https://github.com/Mintplex-Labs/anything-llm".into()),
-            language: Some("JavaScript".into()),
-        },
-    ]
-}
-
-fn catalog_to_items(entries: Vec<OfficialCatalogEntry>, installed: &[String]) -> Vec<PluginItem> {
-    let mut items: Vec<PluginItem> = entries
-        .into_iter()
-        .map(|e| {
-            let id = sanitize_dir_name(if e.id.is_empty() { &e.name } else { &e.id });
-            let homepage = e
-                .homepage
-                .unwrap_or_else(|| e.git_url.trim_end_matches(".git").to_string());
-            PluginItem {
-                id,
-                name: e.name,
-                description: e.description,
-                source: PluginSource::Official,
-                language: e.language,
-                stars: None,
-                mentions: None,
-                homepage,
-                git_url: e.git_url,
-                installed: false,
-            }
-        })
-        .collect();
-    mark_installed(&mut items, installed);
-    items
-}
-
-async fn fetch_remote_official_catalog() -> Result<Vec<OfficialCatalogEntry>, String> {
-    let Some(url) = OFFICIAL_CATALOG_URL else {
-        return Ok(builtin_official_catalog());
-    };
-    let client = reqwest::Client::builder()
-        .user_agent("PusaPluginMarket/0.1")
-        .timeout(std::time::Duration::from_secs(20))
+fn http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .user_agent(USER_AGENT)
+        .timeout(std::time::Duration::from_secs(30))
         .build()
-        .map_err(|e| e.to_string())?;
-    let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
-    if !resp.status().is_success() {
-        return Err(format!("官方目录 HTTP {}", resp.status()));
-    }
-    let body = resp
-        .json::<OfficialCatalogFile>()
-        .await
-        .map_err(|e| format!("官方目录 JSON 解析失败：{e}"))?;
-    if body.items.is_empty() {
-        return Err("官方目录为空".into());
-    }
-    Ok(body.items)
-}
-
-pub async fn load_official_catalog() -> Result<Vec<PluginItem>, String> {
-    let installed = list_installed_ids();
-    let entries = match fetch_remote_official_catalog().await {
-        Ok(items) => items,
-        Err(err) => {
-            // 远程失败时回落到内置榜单，并附带错误信息由调用方决定是否展示。
-            let _ = err;
-            builtin_official_catalog()
-        }
-    };
-    Ok(catalog_to_items(entries, &installed))
+        .map_err(|e| format!("创建 HTTP 客户端失败：{e}"))
 }
 
 #[derive(Clone, Debug, Deserialize)]
-struct GitHubSearchResponse {
+struct OpenVsxSearchResponse {
     #[serde(default)]
-    items: Vec<GitHubRepoItem>,
+    extensions: Vec<OpenVsxSearchItem>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
-struct GitHubRepoItem {
+struct OpenVsxSearchItem {
+    #[serde(default)]
+    namespace: String,
     #[serde(default)]
     name: String,
-    #[serde(default)]
-    full_name: String,
+    #[serde(default, rename = "displayName")]
+    display_name: Option<String>,
     #[serde(default)]
     description: Option<String>,
     #[serde(default)]
-    html_url: String,
+    version: Option<String>,
+    #[serde(default, rename = "downloadCount")]
+    download_count: Option<u64>,
     #[serde(default)]
-    clone_url: String,
+    files: Option<OpenVsxFiles>,
     #[serde(default)]
-    language: Option<String>,
-    #[serde(default)]
-    stargazers_count: u64,
+    icon: Option<String>,
 }
 
-fn github_token_from_env() -> Option<String> {
-    for key in ["GITHUB_TOKEN", "GH_TOKEN"] {
-        if let Ok(v) = std::env::var(key) {
-            let t = v.trim();
-            if !t.is_empty() {
-                return Some(t.to_string());
-            }
-        }
-    }
-    None
+#[derive(Clone, Debug, Deserialize)]
+struct OpenVsxFiles {
+    #[serde(default)]
+    download: Option<String>,
+    #[serde(default)]
+    icon: Option<String>,
 }
 
-fn map_github_http_error(status: u16, body: &str) -> String {
-    match status {
-        401 => "GitHub 认证失败，请检查环境变量 GITHUB_TOKEN / GH_TOKEN。".into(),
-        403 | 429 => {
-            "GitHub API 请求过于频繁或被限流，请稍后再试（可设置环境变量 GITHUB_TOKEN 提高限额）。"
-                .into()
-        }
-        422 => "GitHub 搜索关键词无效，请换一个词再试。".into(),
-        _ => {
-            let detail = body.trim();
-            if detail.is_empty() {
-                format!("GitHub 搜索失败（HTTP {status}）")
-            } else if let Ok(v) = serde_json::from_str::<serde_json::Value>(detail) {
-                if let Some(msg) = v.get("message").and_then(|m| m.as_str()) {
-                    format!("GitHub 搜索失败：{msg}")
-                } else {
-                    format!("GitHub 搜索失败（HTTP {status}）")
-                }
+#[derive(Clone, Debug, Deserialize)]
+#[allow(dead_code)]
+struct OpenVsxDetail {
+    #[serde(default)]
+    namespace: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default, rename = "displayName")]
+    display_name: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    version: Option<String>,
+    #[serde(default, rename = "downloadCount")]
+    download_count: Option<u64>,
+    #[serde(default)]
+    categories: Vec<String>,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    files: Option<OpenVsxFiles>,
+    #[serde(default)]
+    downloads: Option<std::collections::HashMap<String, String>>,
+    #[serde(default)]
+    homepage: Option<String>,
+    #[serde(default)]
+    repository: Option<String>,
+    #[serde(default)]
+    icon: Option<String>,
+}
+
+fn search_item_display_name(item: &OpenVsxSearchItem) -> String {
+    item.display_name
+        .clone()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| {
+            if item.namespace.is_empty() {
+                item.name.clone()
             } else {
-                format!("GitHub 搜索失败（HTTP {status}）")
+                format!("{}.{}", item.namespace, item.name)
             }
-        }
+        })
+}
+
+fn host_platform_key() -> &'static str {
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    {
+        "darwin-arm64"
+    }
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    {
+        "darwin-x64"
+    }
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    {
+        "win32-x64"
+    }
+    #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
+    {
+        "win32-arm64"
+    }
+    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+    {
+        "linux-arm64"
+    }
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        "linux-x64"
+    }
+    #[cfg(not(any(
+        all(target_os = "macos", target_arch = "aarch64"),
+        all(target_os = "macos", target_arch = "x86_64"),
+        all(target_os = "windows", target_arch = "x86_64"),
+        all(target_os = "windows", target_arch = "aarch64"),
+        all(target_os = "linux", target_arch = "aarch64"),
+        all(target_os = "linux", target_arch = "x86_64"),
+    )))]
+    {
+        "universal"
     }
 }
 
-/// 通过 GitHub Search API 检索公开仓库（官方榜单页回车搜索）。
-pub async fn search_github_repositories(query: &str) -> Result<Vec<PluginItem>, String> {
-    let q = query.trim();
-    if q.is_empty() {
-        return Ok(Vec::new());
+fn pick_vsix_url(detail: &OpenVsxDetail) -> Option<String> {
+    if let Some(map) = &detail.downloads {
+        let key = host_platform_key();
+        if let Some(u) = map.get(key) {
+            return Some(u.clone());
+        }
+        // 无本机平台时优先无后缀的 universal（files.download）
     }
+    detail
+        .files
+        .as_ref()
+        .and_then(|f| f.download.clone())
+        .filter(|u| !u.trim().is_empty())
+}
 
-    let client = reqwest::Client::builder()
-        .user_agent("PusaPluginMarket/0.1")
-        .timeout(std::time::Duration::from_secs(20))
-        .build()
-        .map_err(|e| format!("创建 HTTP 客户端失败：{e}"))?;
+fn openvsx_item_to_plugin(
+    namespace: &str,
+    name: &str,
+    display: String,
+    description: String,
+    version: Option<String>,
+    downloads: Option<u64>,
+    download_url: String,
+    homepage: String,
+    icon_url: Option<String>,
+    categories: &[String],
+    tags: &[String],
+    installed: &[String],
+) -> PluginItem {
+    let id = sanitize_dir_name(&format!("{namespace}.{name}"));
+    let highlight = is_highlight_extension(categories, tags, &display, &description);
+    let language = if highlight {
+        Some("语法高亮".into())
+    } else {
+        categories.first().cloned()
+    };
+    let mut item = PluginItem {
+        id: id.clone(),
+        name: display,
+        description: if description.trim().is_empty() {
+            "（无描述）".into()
+        } else {
+            description
+        },
+        source: PluginSource::OpenVsx,
+        language,
+        stars: downloads,
+        mentions: None,
+        homepage,
+        git_url: download_url,
+        installed: false,
+        highlight_priority: highlight,
+        version,
+        icon_url,
+    };
+    item.installed = installed.iter().any(|x| x == &id);
+    item
+}
 
-    let mut builder = client
-        .get("https://api.github.com/search/repositories")
-        .query(&[("q", q), ("per_page", "30"), ("sort", "stars")]);
-    if let Some(token) = github_token_from_env() {
-        builder = builder.bearer_auth(token);
+fn search_item_to_plugin(item: OpenVsxSearchItem, installed: &[String]) -> Option<PluginItem> {
+    if item.namespace.trim().is_empty() || item.name.trim().is_empty() {
+        return None;
     }
+    let namespace = item.namespace.clone();
+    let name = item.name.clone();
+    let display = search_item_display_name(&item);
+    let description = item
+        .description
+        .clone()
+        .filter(|d| !d.trim().is_empty())
+        .unwrap_or_else(|| "（无描述）".into());
+    let download_url = item
+        .files
+        .as_ref()
+        .and_then(|f| f.download.clone())
+        .unwrap_or_default();
+    let homepage = format!("https://open-vsx.org/extension/{namespace}/{name}");
+    let downloads = item.download_count;
+    let version = item.version.clone();
+    let icon_url = resolve_openvsx_icon(
+        item.files.as_ref().and_then(|f| f.icon.as_deref()),
+        item.icon.as_deref(),
+        &namespace,
+        &name,
+        item.version.as_deref(),
+    );
+    Some(openvsx_item_to_plugin(
+        &namespace,
+        &name,
+        display,
+        description,
+        version,
+        downloads,
+        download_url,
+        homepage,
+        icon_url,
+        &[],
+        &[],
+        installed,
+    ))
+}
 
-    let resp = builder
+fn sort_highlight_first(items: &mut [PluginItem]) {
+    items.sort_by(|a, b| {
+        b.highlight_priority
+            .cmp(&a.highlight_priority)
+            .then_with(|| b.stars.unwrap_or(0).cmp(&a.stars.unwrap_or(0)))
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+}
+
+async fn openvsx_search_raw(
+    query: &str,
+    category: Option<&str>,
+    size: u32,
+) -> Result<Vec<OpenVsxSearchItem>, String> {
+    let client = http_client()?;
+    let mut req = client
+        .get(format!("{OPEN_VSX_API}/-/search"))
+        .query(&[("size", size.to_string()), ("sortBy", "downloadCount".into()), ("sortOrder", "desc".into())]);
+    if !query.trim().is_empty() {
+        req = req.query(&[("query", query)]);
+    }
+    if let Some(cat) = category {
+        req = req.query(&[("category", cat)]);
+    }
+    let resp = req
         .send()
         .await
-        .map_err(|e| format!("GitHub 搜索请求失败：{e}"))?;
+        .map_err(|e| format!("Open VSX 搜索失败：{e}"))?;
     let status = resp.status().as_u16();
     if !(200..300).contains(&status) {
         let body = resp.text().await.unwrap_or_default();
-        return Err(map_github_http_error(status, &body));
+        return Err(format!("Open VSX 搜索失败（HTTP {status}）：{}", body.chars().take(120).collect::<String>()));
+    }
+    let parsed = resp
+        .json::<OpenVsxSearchResponse>()
+        .await
+        .map_err(|e| format!("Open VSX 搜索结果解析失败：{e}"))?;
+    Ok(parsed.extensions)
+}
+
+/// 默认浏览：优先 Programming Languages 类扩展，并合并语法高亮向查询。
+pub async fn browse_openvsx_highlight_catalog() -> Result<Vec<PluginItem>, String> {
+    let installed = list_installed_ids();
+    let mut by_id = std::collections::HashMap::<String, PluginItem>::new();
+
+    let lang_items = openvsx_search_raw("", Some("Programming Languages"), 24).await?;
+    for item in lang_items {
+        if let Some(mut p) = search_item_to_plugin(item, &installed) {
+            // 分类浏览进来的一律视为高亮优先候选
+            p.highlight_priority = true;
+            if p.language.is_none() {
+                p.language = Some("Programming Languages".into());
+            }
+            by_id.insert(p.id.clone(), p);
+        }
     }
 
-    let parsed = resp
-        .json::<GitHubSearchResponse>()
-        .await
-        .map_err(|e| format!("GitHub 搜索结果解析失败：{e}"))?;
-
-    let installed = list_installed_ids();
-    let mut items: Vec<PluginItem> = parsed
-        .items
-        .into_iter()
-        .filter(|r| !r.clone_url.trim().is_empty() || !r.html_url.trim().is_empty())
-        .map(|r| {
-            let id = sanitize_dir_name(if r.name.is_empty() {
-                &r.full_name
-            } else {
-                &r.name
-            });
-            let homepage = if r.html_url.trim().is_empty() {
-                r.clone_url.trim_end_matches(".git").to_string()
-            } else {
-                r.html_url
-            };
-            let git_url = if r.clone_url.trim().is_empty() {
-                format!("{}.git", homepage.trim_end_matches('/'))
-            } else {
-                r.clone_url
-            };
-            let description = r
-                .description
-                .filter(|d| !d.trim().is_empty())
-                .unwrap_or_else(|| "（无描述）".into());
-            let name = if r.full_name.trim().is_empty() {
-                r.name
-            } else {
-                r.full_name
-            };
-            PluginItem {
-                id,
-                name,
-                description,
-                source: PluginSource::GitHub,
-                language: r.language,
-                stars: Some(r.stargazers_count),
-                mentions: None,
-                homepage,
-                git_url,
-                installed: false,
+    for q in ["syntax highlight", "grammar", "textmate"] {
+        if let Ok(items) = openvsx_search_raw(q, None, 12).await {
+            for item in items {
+                if let Some(p) = search_item_to_plugin(item, &installed) {
+                    by_id.entry(p.id.clone()).or_insert(p);
+                }
             }
-        })
-        .collect();
-    mark_installed(&mut items, &installed);
-    Ok(items)
+        }
+    }
+
+    let mut out: Vec<PluginItem> = by_id.into_values().collect();
+    sort_highlight_first(&mut out);
+    out.truncate(40);
+    Ok(out)
 }
 
-/// 调用 RuntimeContext LLM，按关键词检索相关开源应用。
-pub async fn search_apps_with_ai(query: &str, model: &str) -> Result<Vec<PluginItem>, String> {
-    let dtos = super::agent::runtime_ctx()
-        .map_err(|e| e.to_string())?
-        .plugin_ai_search(query, model)
-        .await
-        .map_err(|e| {
-            let msg = e.to_string();
-            if msg.contains("openai_api_key_missing") {
-                "尚未配置 LLM API Key，请先在设置中配置后再使用 AI 搜索。".into()
-            } else {
-                msg
-            }
-        })?;
+/// Open VSX 关键词搜索；结果按语法高亮相关性优先排序。
+pub async fn search_openvsx_extensions(query: &str) -> Result<Vec<PluginItem>, String> {
+    let q = query.trim();
+    if q.is_empty() {
+        return browse_openvsx_highlight_catalog().await;
+    }
     let installed = list_installed_ids();
-    let mut items: Vec<PluginItem> = dtos
-        .into_iter()
-        .map(|d| {
-            let homepage = d
-                .homepage
-                .unwrap_or_else(|| d.git_url.trim_end_matches(".git").to_string());
-            PluginItem {
-                id: sanitize_dir_name(&d.id),
-                name: d.name,
-                description: d.description,
-                source: PluginSource::Ai,
-                language: d.language,
-                stars: None,
-                mentions: None,
-                homepage,
-                git_url: d.git_url,
-                installed: false,
+    let mut by_id = std::collections::HashMap::<String, PluginItem>::new();
+
+    // 先按 Programming Languages 分类收窄，再做全库补充。
+    if let Ok(items) = openvsx_search_raw(q, Some("Programming Languages"), 20).await {
+        for item in items {
+            if let Some(mut p) = search_item_to_plugin(item, &installed) {
+                p.highlight_priority = true;
+                by_id.insert(p.id.clone(), p);
             }
-        })
-        .collect();
-    mark_installed(&mut items, &installed);
-    Ok(items)
+        }
+    }
+    let items = openvsx_search_raw(q, None, 30).await?;
+    for item in items {
+        if let Some(p) = search_item_to_plugin(item, &installed) {
+            by_id.entry(p.id.clone()).or_insert(p);
+        }
+    }
+
+    let mut out: Vec<PluginItem> = by_id.into_values().collect();
+    sort_highlight_first(&mut out);
+    Ok(out)
 }
 
-/// `git clone --depth 1` 到 `applications/{id}`。
-pub fn install_plugin(item: &PluginItem) -> Result<PathBuf, String> {
-    let root = ensure_application_root()?;
+async fn resolve_download_url(item: &PluginItem) -> Result<String, String> {
+    if !item.git_url.trim().is_empty() && !item.git_url.contains('@') {
+        // 无平台后缀的通用包可直接用
+        return Ok(item.git_url.clone());
+    }
+    let parts: Vec<&str> = item.id.splitn(2, '.').collect();
+    if parts.len() != 2 {
+        if !item.git_url.trim().is_empty() {
+            return Ok(item.git_url.clone());
+        }
+        return Err("无法解析扩展命名空间".into());
+    }
+    let (ns, name) = (parts[0], parts[1]);
+    let client = http_client()?;
+    let url = format!("{OPEN_VSX_API}/{ns}/{name}/latest");
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("查询扩展详情失败：{e}"))?;
+    if !resp.status().is_success() {
+        if !item.git_url.trim().is_empty() {
+            return Ok(item.git_url.clone());
+        }
+        return Err(format!("查询扩展详情失败（HTTP {}）", resp.status()));
+    }
+    let detail = resp
+        .json::<OpenVsxDetail>()
+        .await
+        .map_err(|e| format!("解析扩展详情失败：{e}"))?;
+    pick_vsix_url(&detail)
+        .or_else(|| {
+            if item.git_url.trim().is_empty() {
+                None
+            } else {
+                Some(item.git_url.clone())
+            }
+        })
+        .ok_or_else(|| "该扩展没有可用的 .vsix 下载地址".into())
+}
+
+fn extract_vsix(vsix_path: &Path, dest: &Path) -> Result<(), String> {
+    fs::create_dir_all(dest).map_err(|e| format!("创建目标目录失败：{e}"))?;
+    #[cfg(target_os = "windows")]
+    {
+        // Expand-Archive 需要 .zip 后缀
+        let zip_path = vsix_path.with_extension("zip");
+        if zip_path != vsix_path {
+            fs::copy(vsix_path, &zip_path).map_err(|e| format!("准备 zip 失败：{e}"))?;
+        }
+        let status = Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                &format!(
+                    "Expand-Archive -LiteralPath '{}' -DestinationPath '{}' -Force",
+                    zip_path.display(),
+                    dest.display()
+                ),
+            ])
+            .status()
+            .map_err(|e| format!("解压 .vsix 失败：{e}"))?;
+        if zip_path != vsix_path {
+            let _ = fs::remove_file(&zip_path);
+        }
+        if !status.success() {
+            return Err("解压 .vsix 失败".into());
+        }
+        return Ok(());
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let status = Command::new("unzip")
+            .args([
+                "-oq",
+                vsix_path.to_str().ok_or("路径无效")?,
+                "-d",
+                dest.to_str().ok_or("路径无效")?,
+            ])
+            .status()
+            .map_err(|e| format!("解压 .vsix 失败（需要 unzip）：{e}"))?;
+        if !status.success() {
+            return Err("解压 .vsix 失败".into());
+        }
+        Ok(())
+    }
+}
+
+/// 下载 Open VSX `.vsix` 并解压到 `extensions/{id}/`，解析 grammars 贡献。
+pub async fn install_plugin(item: &PluginItem) -> Result<PathBuf, String> {
+    let root = ensure_extension_root()?;
     let target = root.join(&item.id);
     if target.exists() {
         return Err(format!("已存在：{}", target.display()));
     }
 
-    // 先确认 git 可用
-    let git_ok = super::files::hidden_command("git")
-        .arg("--version")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
-    if !git_ok {
-        return Err("未找到 git，请先安装 Git 后再试。".into());
+    let download_url = resolve_download_url(item).await?;
+    let client = http_client()?;
+    let resp = client
+        .get(&download_url)
+        .send()
+        .await
+        .map_err(|e| format!("下载 .vsix 失败：{e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("下载 .vsix 失败（HTTP {}）", resp.status()));
+    }
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("读取 .vsix 内容失败：{e}"))?;
+
+    let tmp_dir = std::env::temp_dir().join(format!(
+        "pusa-vsix-{}-{}",
+        std::process::id(),
+        item.id.replace('.', "_")
+    ));
+    let _ = fs::remove_dir_all(&tmp_dir);
+    fs::create_dir_all(&tmp_dir).map_err(|e| format!("创建临时目录失败：{e}"))?;
+    let vsix_path = tmp_dir.join("ext.vsix");
+    {
+        let mut f = fs::File::create(&vsix_path).map_err(|e| format!("写入临时文件失败：{e}"))?;
+        f.write_all(&bytes)
+            .map_err(|e| format!("写入临时文件失败：{e}"))?;
     }
 
-    let output = super::files::hidden_command("git")
-        .args([
-            "clone",
-            "--depth",
-            "1",
-            &item.git_url,
-            target.to_str().ok_or("目标路径无效")?,
-        ])
-        .output()
-        .map_err(|e| format!("启动 git clone 失败：{e}"))?;
+    let extract_tmp = tmp_dir.join("unpacked");
+    if let Err(e) = extract_vsix(&vsix_path, &extract_tmp) {
+        let _ = fs::remove_dir_all(&tmp_dir);
+        return Err(e);
+    }
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let detail = if !stderr.trim().is_empty() {
-            stderr.trim().to_string()
-        } else {
-            stdout.trim().to_string()
-        };
-        // 清理半成品目录
-        if target.exists() {
+    // 部分包在 zip 根目录，部分在 extension/ 子目录
+    let content_root = if extract_tmp.join("package.json").is_file() {
+        extract_tmp.clone()
+    } else if extract_tmp.join("extension").join("package.json").is_file() {
+        extract_tmp.join("extension")
+    } else {
+        extract_tmp.clone()
+    };
+
+    if let Err(e) = fs::rename(&content_root, &target) {
+        // 跨设备 rename 失败时改为递归复制
+        if let Err(copy_err) = copy_dir_recursive(&content_root, &target) {
+            let _ = fs::remove_dir_all(&tmp_dir);
             let _ = fs::remove_dir_all(&target);
+            return Err(format!("安装失败：{e} / {copy_err}"));
         }
-        return Err(if detail.is_empty() {
-            "git clone 失败".into()
-        } else {
-            format!("git clone 失败：{detail}")
-        });
     }
+    let _ = fs::remove_dir_all(&tmp_dir);
 
     write_install_meta(&target, item)?;
-    Ok(target)
+    match parse_extension_contributes(&target) {
+        Ok(c) => {
+            let _ = write_grammars_cache(&target, &c);
+        }
+        Err(e) => {
+            // 非致命：仍算安装成功
+            let _ = e;
+        }
+    }
+    Ok(target.canonicalize().unwrap_or(target))
 }
 
-fn write_install_meta(target: &Path, item: &PluginItem) -> Result<(), String> {
-    let meta = InstallMeta {
-        id: item.id.clone(),
-        name: item.name.clone(),
-        source: item.source.as_str().into(),
-        git_url: item.git_url.clone(),
-        homepage: item.homepage.clone(),
-        description: item.description.clone(),
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
+    fs::create_dir_all(dst).map_err(|e| e.to_string())?;
+    for entry in fs::read_dir(src).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if from.is_dir() {
+            copy_dir_recursive(&from, &to)?;
+        } else {
+            fs::copy(&from, &to).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+/// 是否为 Open VSX / VS Code 扩展（智能 UI 扫描应跳过）。
+pub fn is_vscode_extension_install(id: &str) -> bool {
+    let Ok(id) = validate_plugin_id(id) else {
+        return false;
     };
-    let path = target.join(".pusa-plugin.json");
-    let raw = serde_json::to_string_pretty(&meta).map_err(|e| e.to_string())?;
-    fs::write(path, raw).map_err(|e| format!("写入安装元数据失败：{e}"))
+    let dir = extension_root().join(&id);
+    if looks_like_vscode_extension(&dir) {
+        return true;
+    }
+    if let Some(m) = read_install_meta(&dir) {
+        return PluginSource::from_meta(&m.source) == PluginSource::OpenVsx;
+    }
+    false
 }
 
 /// 本地新建插件目录名：保留 Unicode 字母数字，空白变 `-`，去掉路径不安全字符。
@@ -762,6 +1305,8 @@ pub fn scaffold_local_application(display_name: &str) -> Result<PathBuf, String>
         git_url: String::new(),
         homepage: String::new(),
         description: format!("本地脚手架应用，位于工作区 applications/{id}/"),
+        version: None,
+        icon_url: None,
     };
     let meta_path = target.join(".pusa-plugin.json");
     let raw = serde_json::to_string_pretty(&meta).map_err(|e| e.to_string())?;
@@ -775,14 +1320,16 @@ pub fn scaffold_local_application(display_name: &str) -> Result<PathBuf, String>
 const SMART_UI_FILENAME: &str = ".pusa-smart-ui.json";
 const SMART_UI_SCAN_BUDGET: usize = 18_000;
 
-/// 已安装应用目录（绝对路径优先）。
+/// 已安装扩展/应用目录：优先 `extensions/{id}`，其次 `applications/{id}`。
 pub fn plugin_dir(id: &str) -> Result<PathBuf, String> {
     let id = validate_plugin_id(id)?;
-    let path = application_root().join(&id);
-    if !path.is_dir() {
-        return Err(format!("未找到已安装目录：{}", path.display()));
+    for root in [extension_root(), application_root()] {
+        let path = root.join(&id);
+        if path.is_dir() {
+            return Ok(path.canonicalize().unwrap_or(path));
+        }
     }
-    Ok(path.canonicalize().unwrap_or(path))
+    Err(format!("未找到已安装目录：{id}"))
 }
 
 fn smart_ui_path(dir: &Path) -> PathBuf {
@@ -814,12 +1361,33 @@ pub fn has_smart_ui_cache(id: &str) -> bool {
     matches!(load_smart_ui(id), Ok(Some(_)))
 }
 
-/// 尚未缓存智能 UI 的已安装应用 id 列表。
+/// 尚未缓存智能 UI 的已安装应用 id 列表（跳过 VS Code / Open VSX 扩展）。
 pub fn list_ids_missing_smart_ui() -> Vec<String> {
-    list_installed_ids()
-        .into_iter()
-        .filter(|id| !has_smart_ui_cache(id))
-        .collect()
+    // 智能 UI 面向 applications/ 脚手架应用；VS Code 扩展无脚本面板需求。
+    let app_root = application_root();
+    let Ok(entries) = fs::read_dir(&app_root) else {
+        return Vec::new();
+    };
+    let mut ids = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if name.starts_with('.') {
+            continue;
+        }
+        if is_vscode_extension_install(name) {
+            continue;
+        }
+        if !has_smart_ui_cache(name) {
+            ids.push(name.to_string());
+        }
+    }
+    ids
 }
 
 /// 有缓存则读取，否则扫描项目并用 LLM 生成后写入 `applications/{id}/.pusa-smart-ui.json`。

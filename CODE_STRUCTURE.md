@@ -239,7 +239,7 @@ UI (chat facade)
 - `OPENAI_API_KEY` — LLM
 - `ANOTHERME_BASE_URL` — 联调外部认证基址
 
-桌面打包签名凭证见 `.env.signing.example`（复制为 `.env.signing`，已 gitignore）。
+桌面打包签名凭证请本机自备 `.env.signing` / `.env.signing.example`，不要提交到仓库。
 
 CI：`.github/workflows/`（桌面打包已改为本机流程，不再走 Actions）。
 

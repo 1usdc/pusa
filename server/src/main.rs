@@ -13,7 +13,7 @@ use protocol::{
     ConversationSummaryDto, ConversationTitleBody, CredentialStatusDto, CredentialUpsertRequest,
     EquippedSkillsDto, InstalledSkillsResponse, LiveAssetTradeHistoryDto, LiveAssetsDashboardDto, LlmConfigDto,
     LlmConfigUpsertBody, LlmCredentialUpsertBody, LlmStatusBody, PersonaBody, PersonaPolishRequest, PersonaPolishResponse,
-    PluginAiSearchRequest, PluginAiSearchResponse, RoleCreateRequest, RoleDto, RoleUpdateRequest,
+    RoleCreateRequest, RoleDto, RoleUpdateRequest,
     ServerIpDto, SkillEquipToggleRequest, SkillInstallRequest, SkillInstallResponse,
     SkillMarketQuery, SkillMarketResponse, SseEvent,
     StoredChatMessageDto, StrategyCreateRequest, StrategyDto, StrategyEvent, StrategyRunDto,
@@ -89,7 +89,6 @@ async fn main() -> anyhow::Result<()> {
         .route("/v1/llm/credentials/:id/activate", post(llm_credential_activate))
         .route("/v1/persona", get(persona_get).put(persona_put))
         .route("/v1/persona/polish", post(persona_polish))
-        .route("/v1/plugins/ai-search", post(plugins_ai_search))
         .route("/v1/roles", get(roles_list).post(roles_create))
         .route("/v1/roles/:id", put(roles_update).delete(roles_delete))
         /* Web WASM 用 POST 规避部分宿主对 DELETE 的 405；与 `transport_wasm::delete_role` 对齐 */
@@ -358,31 +357,6 @@ async fn persona_polish(
                 status,
                 Json(serde_json::json!({ "error": msg })),
             ))
-        }
-    }
-}
-
-#[instrument(skip(state))]
-async fn plugins_ai_search(
-    State(state): State<AppState>,
-    Json(body): Json<PluginAiSearchRequest>,
-) -> Result<Json<PluginAiSearchResponse>, (StatusCode, Json<serde_json::Value>)> {
-    match state.ctx.plugin_ai_search(&body.query, &body.model).await {
-        Ok(items) => Ok(Json(PluginAiSearchResponse { items })),
-        Err(e) => {
-            let msg = e.to_string();
-            warn!(%msg, model = %body.model, "plugins_ai_search failed");
-            let status = if msg.contains(ERR_MODEL_REQUIRED)
-                || msg.contains("openai_api_key_missing")
-                || msg.contains("plugin_ai_query_empty")
-            {
-                StatusCode::BAD_REQUEST
-            } else if msg.contains("上游 API HTTP") {
-                StatusCode::BAD_GATEWAY
-            } else {
-                StatusCode::INTERNAL_SERVER_ERROR
-            };
-            Err((status, Json(serde_json::json!({ "error": msg }))))
         }
     }
 }

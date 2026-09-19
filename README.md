@@ -1,90 +1,62 @@
-### Serving Your App
+# Pusa
 
-# 网页端启动
+Pusa 是一套 Agent 控制台，同时提供**桌面端**与 **Web** 两种形态：在同一套界面里对话、管理技能，并在桌面端打开本机工作区。
 
-```bash
-just web
-just server
-# 本地认证
-ANOTHERME_BASE_URL=http://host.docker.internal:8881 just web
-ANOTHERME_BASE_URL=http://host.docker.internal:8881 just server
-# 浏览器访问 http://127.0.0.1:8080/
-```
+插件市场对接 [Open VSX](https://open-vsx.org/) 开放 API，可安装 VS Code 兼容扩展（优先用于语法高亮与编程语言支持）。
 
-# 桌面端启动
+## 能做什么
 
-```bash
-just desktop
-```
+- **对话**：与 Agent 聊天，配置模型与密钥
+- **工作区（桌面）**：打开本机项目，浏览、编辑文件，使用内置终端
+- **技能库**：浏览、安装并装备 Agent 技能
+- **插件市场（桌面）**：从 Open VSX 搜索、安装扩展到工作区 `extensions/`
+- **内置浏览器**：在应用内打开网页
 
-# 桌面端打包
+Web 端侧重对话与技能；本机文件、终端和扩展安装请使用桌面应用。
 
-Windows 前置：Rust 用 `x86_64-pc-windows-msvc`，需要 MSVC C++ 生成工具（`link.exe`）：
+## 环境要求
+
+从源码运行需要：
+
+- [Rust](https://www.rust-lang.org/)
+- [just](https://github.com/casey/just)
+- [Dioxus CLI](https://dioxuslabs.com/)（`dx`）
+
+Windows 编译桌面端还需 MSVC C++ 生成工具（提供 `link.exe`）：
 
 ```powershell
 winget install --id Microsoft.VisualStudio.2022.BuildTools --override "--quiet --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
 ```
 
-```bash
-# 版本号：just desktop-mac 默认把 desktop/Cargo.toml patch +1；BUMP=0 则不改
-# 发版 tag = desktop-v{version}（也可用 TAG= 覆盖）
-# 可选签名凭证：cp .env.signing.example .env.signing（勿提交）
+## 运行
 
-# 本机 macOS（Developer ID 签名 + 公证 → desktop/dist/velopack/）
-just desktop-mac
-# 覆盖旧版本（不升版号）
-BUMP=0 just desktop-mac
-# NOTARIZE=0 just desktop-mac   # 只签名，不公证
-
-# 本机 Windows（Velopack → desktop/dist/velopack/；VELOPACK=0 时为 NSIS *-setup.exe）
-# 安装器会把 vendor 里的 pusa_core.dll 装到程序目录（与 exe 同级）
-just desktop-windows
-# SIGN=1 just desktop-windows   # 可选：Azure Trusted Signing
-
-# 上传到 GitHub Release（tag 自动取自 desktop/Cargo.toml）
-BUILD=1 just release-mac       # macOS
-BUILD=1 just release-windows   # Windows
-# 或已打包好：just release-windows
-
-# 补传 Windows 到已有 Release（不打 tag；例如 mac 已发、Windows 后补）
-BUILD=1 just release-windows-merge
-# TAG=desktop-v1.1.2 just release-windows-merge
-
-# 重写 Release 说明（双平台一键下载）
-just release-notes
-```
-
-### 发版流程示例（Windows）
+### 桌面端
 
 ```bash
-# 1. 改版本并提交
-#    desktop/Cargo.toml → version = "0.2.7"
-git push
-
-# 2. 打包并上传（生成 tag desktop-v0.2.7）
-BUILD=1 just release-windows
+just desktop
 ```
 
-### Windows 可选签名（Azure Artifact Signing）
+### Web
 
-默认不签名。需要签名时：
+分别启动前端与 API，然后在浏览器打开 `http://127.0.0.1:8080/`：
 
-1. Azure Portal 创建 **Artifact Signing** 账户，完成 Identity Validation，建 Certificate Profile
-2. 本机安装 Client Tools + 登录 Azure：
-   ```powershell
-   winget install -e --id Microsoft.Azure.ArtifactSigningClientTools
-   az login
-   ```
-3. 配置 `.env.signing`（见 `.env.signing.example`）：
-   ```ini
-   AZURE_TS_ENDPOINT=https://eus.codesigning.azure.net
-   AZURE_TS_ACCOUNT=你的账户名
-   AZURE_TS_PROFILE=你的 Profile 名
-   ```
-4. 签名打包：
-   ```powershell
-   SIGN=1 just desktop-windows
-   # 或对已有安装器：pwsh scripts/windows-sign.ps1
-   ```
+```bash
+just web
+just server
+```
 
-定价约 **$9.99/月**（Basic，含 5000 次签名）。Endpoint 区域须与账户一致（East US → `https://eus.codesigning.azure.net`）。
+## 仓库结构
+
+公开层面主要包含：
+
+| 路径 | 说明 |
+|------|------|
+| `desktop/` | 桌面端入口 |
+| `web/` | Web 端入口 |
+| `server/` | Web 所用 HTTP API |
+| `ui/` | 桌面与 Web 共用界面 |
+| `protocol/` | 前后端共用的数据类型 |
+| `extensions/` | 工作区扩展（含从 Open VSX 安装的包） |
+| `skills/` | Agent 技能包 |
+
+界面由 Rust 与 [Dioxus](https://dioxuslabs.com/) 实现。

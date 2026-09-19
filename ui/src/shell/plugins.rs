@@ -1,4 +1,4 @@
-//! 侧栏应用市场：我的应用 / 应用市场（官方搜索含 GitHub、AI 搜索），下载到工作区 `applications/`。
+//! 侧栏扩展市场：已安装扩展 / Open VSX（VS Code 开源扩展），安装到工作区 `extensions/`。
 
 use dioxus::prelude::*;
 use dioxus_free_icons::icons::ld_icons::{
@@ -8,36 +8,18 @@ use dioxus_free_icons::icons::ld_icons::{
 use dioxus_free_icons::Icon;
 use keyboard_types::Key;
 
-const DEFAULT_AI_SEARCH_MODEL: &str = "gpt-5.4";
-
-/// 一级视图：我的应用 | 应用市场（与技能侧栏「我的技能 | 技能市场」对齐）。
+/// 一级视图：我的扩展 | 扩展市场。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PluginView {
     Installed,
     Market,
 }
 
-/// 应用市场下级站台：官方搜索 | AI 搜索。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PluginStation {
-    Official,
-    AiSearch,
-}
-
-impl PluginStation {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Official => "官方搜索",
-            Self::AiSearch => "AI 搜索",
-        }
-    }
-}
-
-/// 需通过 `load_epoch` 拉取的列表来源（不含 AI，AI 走独立 trigger）。
+/// 需通过 `load_epoch` 拉取的列表来源。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PluginListSource {
     Installed,
-    Official,
+    Market,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -50,9 +32,14 @@ pub struct PluginCard {
     pub stars: Option<u64>,
     pub mentions: Option<u64>,
     pub homepage: String,
+    /// Open VSX `.vsix` 下载 URL。
     pub git_url: String,
     pub installed: bool,
     pub install_key: String,
+    pub highlight_priority: bool,
+    pub version: Option<String>,
+    /// Open VSX 扩展图标 URL；缺省时用名称首字母占位。
+    pub icon_url: Option<String>,
 }
 
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
@@ -84,7 +71,7 @@ fn resolve_ai_model() -> String {
             }
         }
     }
-    DEFAULT_AI_SEARCH_MODEL.to_string()
+    "gpt-5.4".to_string()
 }
 
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
@@ -101,16 +88,19 @@ fn to_card(item: crate::desktop::plugins::PluginItem) -> PluginCard {
         homepage: item.homepage,
         git_url: item.git_url,
         installed: item.installed,
+        highlight_priority: item.highlight_priority,
+        version: item.version,
+        icon_url: item.icon_url,
     }
 }
 
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 async fn fetch_list_items(source: PluginListSource) -> Result<Vec<PluginCard>, String> {
-    use crate::desktop::plugins::{list_installed_plugins, load_official_catalog};
+    use crate::desktop::plugins::{browse_openvsx_highlight_catalog, list_installed_plugins};
 
     match source {
-        PluginListSource::Official => {
-            let items = load_official_catalog().await?;
+        PluginListSource::Market => {
+            let items = browse_openvsx_highlight_catalog().await?;
             Ok(items.into_iter().map(to_card).collect())
         }
         PluginListSource::Installed => tokio::task::spawn_blocking(list_installed_plugins)
@@ -123,188 +113,8 @@ async fn fetch_list_items(source: PluginListSource) -> Result<Vec<PluginCard>, S
 #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
 async fn fetch_list_items(source: PluginListSource) -> Result<Vec<PluginCard>, String> {
     match source {
-        PluginListSource::Official => Ok(web_official_preview()),
+        PluginListSource::Market => run_openvsx_search(String::new()).await,
         PluginListSource::Installed => Ok(Vec::new()),
-    }
-}
-
-#[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
-fn web_official_preview() -> Vec<PluginCard> {
-    vec![
-        PluginCard {
-            id: "servers".into(),
-            name: "MCP Servers".into(),
-            description: "Model Context Protocol 官方参考服务器集合。".into(),
-            source_label: "官方".into(),
-            language: Some("TypeScript".into()),
-            stars: None,
-            mentions: None,
-            homepage: "https://github.com/modelcontextprotocol/servers".into(),
-            git_url: "https://github.com/modelcontextprotocol/servers.git".into(),
-            installed: false,
-            install_key: "official:servers".into(),
-        },
-        PluginCard {
-            id: "codex".into(),
-            name: "OpenAI Codex CLI".into(),
-            description: "轻量终端编程 Agent。".into(),
-            source_label: "官方".into(),
-            language: Some("Rust".into()),
-            stars: None,
-            mentions: None,
-            homepage: "https://github.com/openai/codex".into(),
-            git_url: "https://github.com/openai/codex.git".into(),
-            installed: false,
-            install_key: "official:codex".into(),
-        },
-    ]
-}
-
-#[cfg(target_arch = "wasm32")]
-fn map_github_http_error(status: u16, body: &str) -> String {
-    match status {
-        401 => "GitHub 认证失败，请检查环境变量 GITHUB_TOKEN / GH_TOKEN。".into(),
-        403 | 429 => {
-            "GitHub API 请求过于频繁或被限流，请稍后再试（可设置环境变量 GITHUB_TOKEN 提高限额）。"
-                .into()
-        }
-        422 => "GitHub 搜索关键词无效，请换一个词再试。".into(),
-        _ => {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(body) {
-                if let Some(msg) = v.get("message").and_then(|m| m.as_str()) {
-                    return format!("GitHub 搜索失败：{msg}");
-                }
-            }
-            format!("GitHub 搜索失败（HTTP {status}）")
-        }
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-fn sanitize_web_dir_name(raw: &str) -> String {
-    let trimmed = raw.trim();
-    let base = trimmed
-        .rsplit('/')
-        .next()
-        .unwrap_or(trimmed)
-        .trim_end_matches(".git");
-    let mut out = String::with_capacity(base.len());
-    for ch in base.chars() {
-        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' || ch == '.' {
-            out.push(ch);
-        } else if ch == ' ' {
-            out.push('-');
-        }
-    }
-    if out.is_empty() {
-        "app".into()
-    } else {
-        out
-    }
-}
-
-async fn run_github_search(query: String) -> Result<Vec<PluginCard>, String> {
-    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
-    {
-        let items = crate::desktop::plugins::search_github_repositories(&query).await?;
-        Ok(items.into_iter().map(to_card).collect())
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        #[derive(serde::Deserialize)]
-        struct GhSearch {
-            #[serde(default)]
-            items: Vec<GhRepo>,
-        }
-        #[derive(serde::Deserialize)]
-        struct GhRepo {
-            #[serde(default)]
-            name: String,
-            #[serde(default)]
-            full_name: String,
-            #[serde(default)]
-            description: Option<String>,
-            #[serde(default)]
-            html_url: String,
-            #[serde(default)]
-            clone_url: String,
-            #[serde(default)]
-            language: Option<String>,
-            #[serde(default)]
-            stargazers_count: u64,
-        }
-
-        let q = query.trim();
-        if q.is_empty() {
-            return Ok(Vec::new());
-        }
-        let url = format!(
-            "https://api.github.com/search/repositories?q={}&per_page=30&sort=stars",
-            urlencoding_encode(q)
-        );
-        let resp = gloo_net::http::Request::get(&url)
-            .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", "PusaPluginMarket/0.1")
-            .send()
-            .await
-            .map_err(|e| format!("GitHub 搜索请求失败：{e}"))?;
-        let status = resp.status();
-        if !(200..300).contains(&status) {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(map_github_http_error(status, &body));
-        }
-        let parsed: GhSearch = resp.json().await.map_err(|e| format!("GitHub 搜索结果解析失败：{e}"))?;
-        Ok(parsed
-            .items
-            .into_iter()
-            .filter(|r| !r.clone_url.trim().is_empty() || !r.html_url.trim().is_empty())
-            .map(|r| {
-                let id = sanitize_web_dir_name(if r.name.is_empty() {
-                    &r.full_name
-                } else {
-                    &r.name
-                });
-                let homepage = if r.html_url.trim().is_empty() {
-                    r.clone_url.trim_end_matches(".git").to_string()
-                } else {
-                    r.html_url
-                };
-                let git_url = if r.clone_url.trim().is_empty() {
-                    format!("{}.git", homepage.trim_end_matches('/'))
-                } else {
-                    r.clone_url
-                };
-                let description = r
-                    .description
-                    .filter(|d| !d.trim().is_empty())
-                    .unwrap_or_else(|| "（无描述）".into());
-                let name = if r.full_name.trim().is_empty() {
-                    r.name
-                } else {
-                    r.full_name
-                };
-                PluginCard {
-                    install_key: format!("github:{id}"),
-                    id,
-                    name,
-                    description,
-                    source_label: "GitHub".into(),
-                    language: r.language,
-                    stars: Some(r.stargazers_count),
-                    mentions: None,
-                    homepage,
-                    git_url,
-                    installed: false,
-                }
-            })
-            .collect())
-    }
-
-    #[cfg(all(not(target_arch = "wasm32"), not(feature = "native")))]
-    {
-        let _ = query;
-        Err("当前构建不支持 GitHub 搜索。".into())
     }
 }
 
@@ -322,102 +132,230 @@ fn urlencoding_encode(s: &str) -> String {
     out
 }
 
-async fn run_ai_search(query: String, model: String) -> Result<Vec<PluginCard>, String> {
+#[cfg(target_arch = "wasm32")]
+fn is_highlight_text(name: &str, description: &str) -> bool {
+    let blob = format!("{} {}", name, description).to_ascii_lowercase();
+    ["grammar", "syntax", "highlight", "textmate", "language", "tmlanguage"]
+        .iter()
+        .any(|k| blob.contains(k))
+}
+
+async fn run_openvsx_search(query: String) -> Result<Vec<PluginCard>, String> {
     #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
     {
-        let items = crate::desktop::plugins::search_apps_with_ai(&query, &model).await?;
+        let items = crate::desktop::plugins::search_openvsx_extensions(&query).await?;
         Ok(items.into_iter().map(to_card).collect())
     }
 
     #[cfg(target_arch = "wasm32")]
     {
-        let base = crate::chat::api_base_url();
-        let url = format!("{}/v1/plugins/ai-search", base.trim_end_matches('/'));
-        let mut builder = gloo_net::http::Request::post(&url);
-        if let Some(tok) = crate::web::auth::token_get() {
-            builder = builder.header("Authorization", &format!("Bearer {tok}"));
+        #[derive(serde::Deserialize)]
+        struct SearchResp {
+            #[serde(default)]
+            extensions: Vec<SearchItem>,
         }
-        let resp = builder
-            .json(&protocol::PluginAiSearchRequest { query, model })
-            .map_err(|e| e.to_string())?
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
-        if !resp.ok() {
-            let status = resp.status();
-            let raw = resp.text().await.unwrap_or_default();
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) {
-                if let Some(err) = v.get("error").and_then(|x| x.as_str()) {
-                    if err.contains("openai_api_key_missing") {
-                        return Err("尚未配置 LLM API Key，请先在设置中配置后再使用 AI 搜索。".into());
+        #[derive(serde::Deserialize)]
+        struct SearchItem {
+            #[serde(default)]
+            namespace: String,
+            #[serde(default)]
+            name: String,
+            #[serde(default, rename = "displayName")]
+            display_name: Option<String>,
+            #[serde(default)]
+            description: Option<String>,
+            #[serde(default)]
+            version: Option<String>,
+            #[serde(default, rename = "downloadCount")]
+            download_count: Option<u64>,
+            #[serde(default)]
+            url: Option<String>,
+            #[serde(default)]
+            files: Option<Files>,
+            #[serde(default)]
+            icon: Option<String>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Files {
+            #[serde(default)]
+            download: Option<String>,
+            #[serde(default)]
+            icon: Option<String>,
+        }
+
+        async fn one_search(q: &str, category: Option<&str>, size: u32) -> Result<Vec<SearchItem>, String> {
+            let mut url = format!(
+                "https://open-vsx.org/api/-/search?size={size}&sortBy=downloadCount&sortOrder=desc"
+            );
+            if !q.trim().is_empty() {
+                url.push_str(&format!("&query={}", urlencoding_encode(q)));
+            }
+            if let Some(cat) = category {
+                url.push_str(&format!("&category={}", urlencoding_encode(cat)));
+            }
+            let resp = gloo_net::http::Request::get(&url)
+                .header("Accept", "application/json")
+                .header("User-Agent", "PusaPluginMarket/0.2")
+                .send()
+                .await
+                .map_err(|e| format!("Open VSX 搜索失败：{e}"))?;
+            if !(200..300).contains(&resp.status()) {
+                return Err(format!("Open VSX 搜索失败（HTTP {}）", resp.status()));
+            }
+            let parsed: SearchResp = resp
+                .json()
+                .await
+                .map_err(|e| format!("Open VSX 结果解析失败：{e}"))?;
+            Ok(parsed.extensions)
+        }
+
+        fn to_web_card(item: SearchItem) -> Option<PluginCard> {
+            if item.namespace.is_empty() || item.name.is_empty() {
+                return None;
+            }
+            let id = format!("{}.{}", item.namespace, item.name);
+            let name = item
+                .display_name
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| id.clone());
+            let description = item
+                .description
+                .filter(|d| !d.trim().is_empty())
+                .unwrap_or_else(|| "（无描述）".into());
+            let highlight = is_highlight_text(&name, &description);
+            let homepage = item.url.unwrap_or_else(|| {
+                format!(
+                    "https://open-vsx.org/extension/{}/{}",
+                    item.namespace, item.name
+                )
+            });
+            let files = item.files;
+            let download = files
+                .as_ref()
+                .and_then(|f| f.download.clone())
+                .unwrap_or_default();
+            let icon_url = files
+                .as_ref()
+                .and_then(|f| f.icon.clone())
+                .filter(|s| !s.trim().is_empty())
+                .or_else(|| item.icon.filter(|s| !s.trim().is_empty()))
+                .map(|raw| {
+                    let raw = raw.trim();
+                    if raw.starts_with("https://") || raw.starts_with("http://") {
+                        raw.to_string()
+                    } else if let Some(ver) = item.version.as_deref().filter(|v| !v.is_empty()) {
+                        format!(
+                            "https://open-vsx.org/api/{}/{}/{ver}/file/{}",
+                            item.namespace,
+                            item.name,
+                            raw.trim_start_matches("./")
+                        )
+                    } else {
+                        raw.to_string()
                     }
-                    return Err(err.to_string());
+                })
+                .filter(|s| s.starts_with("https://") || s.starts_with("http://"));
+            Some(PluginCard {
+                install_key: format!("openvsx:{id}"),
+                id,
+                name,
+                description,
+                source_label: "Open VSX".into(),
+                language: if highlight {
+                    Some("语法高亮".into())
+                } else {
+                    None
+                },
+                stars: item.download_count,
+                mentions: None,
+                homepage,
+                git_url: download,
+                installed: false,
+                highlight_priority: highlight,
+                version: item.version,
+                icon_url,
+            })
+        }
+
+        let q = query.trim().to_string();
+        let mut by_id = std::collections::HashMap::<String, PluginCard>::new();
+        if q.is_empty() {
+            for item in one_search("", Some("Programming Languages"), 24).await? {
+                if let Some(mut c) = to_web_card(item) {
+                    c.highlight_priority = true;
+                    by_id.insert(c.id.clone(), c);
                 }
             }
-            return Err(format!("AI 搜索失败（HTTP {status}）"));
-        }
-        let body: protocol::PluginAiSearchResponse =
-            resp.json().await.map_err(|e| e.to_string())?;
-        Ok(body
-            .items
-            .into_iter()
-            .map(|d| {
-                let homepage = d
-                    .homepage
-                    .unwrap_or_else(|| d.git_url.trim_end_matches(".git").to_string());
-                PluginCard {
-                    install_key: format!("ai:{}", d.id),
-                    id: d.id,
-                    name: d.name,
-                    description: d.description,
-                    source_label: "AI".into(),
-                    language: d.language,
-                    stars: None,
-                    mentions: None,
-                    homepage,
-                    git_url: d.git_url,
-                    installed: false,
+            for qq in ["syntax highlight", "grammar"] {
+                if let Ok(items) = one_search(qq, None, 10).await {
+                    for item in items {
+                        if let Some(c) = to_web_card(item) {
+                            by_id.entry(c.id.clone()).or_insert(c);
+                        }
+                    }
                 }
-            })
-            .collect())
+            }
+        } else {
+            if let Ok(items) = one_search(&q, Some("Programming Languages"), 20).await {
+                for item in items {
+                    if let Some(mut c) = to_web_card(item) {
+                        c.highlight_priority = true;
+                        by_id.insert(c.id.clone(), c);
+                    }
+                }
+            }
+            for item in one_search(&q, None, 30).await? {
+                if let Some(c) = to_web_card(item) {
+                    by_id.entry(c.id.clone()).or_insert(c);
+                }
+            }
+        }
+        let mut out: Vec<PluginCard> = by_id.into_values().collect();
+        out.sort_by(|a, b| {
+            b.highlight_priority
+                .cmp(&a.highlight_priority)
+                .then_with(|| b.stars.unwrap_or(0).cmp(&a.stars.unwrap_or(0)))
+        });
+        Ok(out)
     }
 
     #[cfg(all(not(target_arch = "wasm32"), not(feature = "native")))]
     {
-        let _ = (query, model);
-        Err("当前构建不支持 AI 搜索。".into())
+        let _ = query;
+        Err("当前构建不支持 Open VSX 搜索。".into())
     }
 }
 
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
-fn install_card(card: &PluginCard) -> Result<String, String> {
-    use crate::desktop::plugins::{install_plugin, PluginItem, PluginSource};
-    let source = if card.install_key.starts_with("ai:") {
-        PluginSource::Ai
-    } else if card.install_key.starts_with("github:") {
-        PluginSource::GitHub
-    } else {
-        PluginSource::Official
-    };
-    let item = PluginItem {
+fn card_to_item(card: &PluginCard) -> crate::desktop::plugins::PluginItem {
+    use crate::desktop::plugins::{PluginItem, PluginSource};
+    PluginItem {
         id: card.id.clone(),
         name: card.name.clone(),
         description: card.description.clone(),
-        source,
+        source: PluginSource::OpenVsx,
         language: card.language.clone(),
         stars: card.stars,
         mentions: card.mentions,
         homepage: card.homepage.clone(),
         git_url: card.git_url.clone(),
         installed: card.installed,
-    };
-    let path = install_plugin(&item)?;
+        highlight_priority: card.highlight_priority,
+        version: card.version.clone(),
+        icon_url: card.icon_url.clone(),
+    }
+}
+
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+async fn run_install(card: PluginCard) -> Result<String, String> {
+    let item = card_to_item(&card);
+    let path = crate::desktop::plugins::install_plugin(&item).await?;
     Ok(format!("已安装到 {}", path.display()))
 }
 
 #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
-fn install_card(_card: &PluginCard) -> Result<String, String> {
-    Err("Web 端无法下载到本机 application 目录，请使用桌面版。".into())
+async fn run_install(_card: PluginCard) -> Result<String, String> {
+    Err("Web 端无法安装到本机 extensions 目录，请使用桌面版。".into())
 }
 
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
@@ -430,7 +368,6 @@ fn open_installed_card(_card: &PluginCard) -> Result<(), String> {
     Err("Web 端无法打开本机目录，请使用桌面版。".into())
 }
 
-/// 已安装应用的绝对路径（桌面）；Web 返回相对展示路径。
 fn installed_absolute_path(card: &PluginCard) -> Result<String, String> {
     #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
     {
@@ -456,19 +393,7 @@ fn uninstall_installed_card(card: &PluginCard) -> Result<(), String> {
 
 #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
 fn uninstall_installed_card(_card: &PluginCard) -> Result<(), String> {
-    Err("Web 端无法卸载本机应用，请使用桌面版。".into())
-}
-
-#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
-async fn run_install(card: PluginCard) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || install_card(&card))
-        .await
-        .unwrap_or_else(|e| Err(format!("安装任务失败：{e}")))
-}
-
-#[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
-async fn run_install(card: PluginCard) -> Result<String, String> {
-    install_card(&card)
+    Err("Web 端无法卸载本机扩展，请使用桌面版。".into())
 }
 
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
@@ -539,7 +464,6 @@ async fn ensure_smart_ui_for(
     Err("智能 UI 仅桌面版可用。".into())
 }
 
-/// 后台为缺少缓存的已安装应用扫描并写入 `applications/{id}/.pusa-smart-ui.json`。
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 fn spawn_auto_scan_missing_smart_ui(toast: super::toast::ToastCtx) {
     let model = resolve_ai_model();
@@ -584,7 +508,6 @@ fn spawn_auto_scan_missing_smart_ui(toast: super::toast::ToastCtx) {
 #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
 fn spawn_auto_scan_missing_smart_ui(_toast: super::toast::ToastCtx) {}
 
-/// 单个应用安装后：确保智能 UI 已扫描并缓存。
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 fn spawn_ensure_smart_ui_after_install(id: String, toast: super::toast::ToastCtx) {
     let model = resolve_ai_model();
@@ -599,41 +522,48 @@ fn spawn_ensure_smart_ui_after_install(id: String, toast: super::toast::ToastCtx
 #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
 fn spawn_ensure_smart_ui_after_install(_id: String, _toast: super::toast::ToastCtx) {}
 
+fn language_meta_label(card: &PluginCard) -> Option<String> {
+    let lang = card.language.as_deref()?.trim();
+    if lang.is_empty() || lang == "语法高亮" || lang == "语法高亮优先" {
+        None
+    } else {
+        Some(lang.to_string())
+    }
+}
+
 fn format_meta(card: &PluginCard) -> String {
     let mut parts = vec![card.source_label.clone()];
-    if let Some(lang) = &card.language {
-        parts.push(lang.clone());
+    if let Some(lang) = language_meta_label(card) {
+        parts.push(lang);
     }
-    if let Some(mentions) = card.mentions {
-        parts.push(format!("提及 {mentions}"));
+    if let Some(ver) = &card.version {
+        parts.push(format!("v{ver}"));
     }
     if let Some(stars) = card.stars {
-        parts.push(format!("★{stars}"));
+        parts.push(format!("↓{stars}"));
     }
     parts.join(" · ")
 }
 
-/// 详情页元信息：不含来源徽章（GitHub / AI / 官方）。
+/// 详情页元信息：不含来源徽章。
 fn format_detail_meta(card: &PluginCard) -> String {
     let mut parts = Vec::new();
-    if let Some(lang) = &card.language {
-        parts.push(lang.clone());
+    if let Some(lang) = language_meta_label(card) {
+        parts.push(lang);
     }
-    if let Some(mentions) = card.mentions {
-        parts.push(format!("提及 {mentions}"));
+    if let Some(ver) = &card.version {
+        parts.push(format!("v{ver}"));
     }
     if let Some(stars) = card.stars {
-        parts.push(format!("★{stars}"));
+        parts.push(format!("下载 {stars}"));
     }
     parts.join(" · ")
 }
 
-/// 工作区相对安装路径，展示在详情标题下方。
 fn detail_install_path(card: &PluginCard) -> String {
-    format!("applications/{}/", card.id)
+    format!("extensions/{}/", card.id)
 }
 
-/// 去掉「已安装到」前缀；若描述仅是安装路径则返回空（路径改由标题区展示）。
 fn detail_description(raw: &str, install_path: &str) -> String {
     let t = raw.trim();
     let t = if let Some(rest) = t.strip_prefix("已安装到") {
@@ -683,6 +613,65 @@ fn remove_catalog_card(mut catalog: Signal<Vec<PluginCard>>, key: &str) {
     });
 }
 
+fn plugin_initial(name: &str) -> String {
+    name.chars()
+        .find(|c| !c.is_whitespace())
+        .map(|c| c.to_uppercase().collect::<String>())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "·".into())
+}
+
+#[component]
+fn PluginGlyph(icon_url: ReadSignal<Option<String>>, name: String, large: bool) -> Element {
+    let mut broken = use_signal(|| false);
+    use_effect(move || {
+        let _ = icon_url();
+        broken.set(false);
+    });
+    let url = icon_url()
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| {
+            !s.is_empty()
+                && (s.starts_with("https://")
+                    || s.starts_with("http://")
+                    || s.starts_with("file://"))
+        })
+        .map(|s| s.to_string());
+    let show_img = url.is_some() && !broken();
+    let initial = plugin_initial(&name);
+    let box_class = if large {
+        if show_img {
+            "ac-skills-detail-icon ac-plugin-icon-has-img"
+        } else {
+            "ac-skills-detail-icon ac-skill-icon-blue"
+        }
+    } else if show_img {
+        "ac-skills-list-icon ac-plugin-icon-has-img"
+    } else {
+        "ac-skills-list-icon ac-skill-icon-blue"
+    };
+    rsx! {
+        div { class: "{box_class}",
+            if let Some(src) = url.as_ref() {
+                if !broken() {
+                    img {
+                        class: "ac-plugin-icon-img",
+                        src: "{src}",
+                        alt: "",
+                        onerror: move |_| broken.set(true),
+                    }
+                } else {
+                    span { class: "ac-plugin-icon-letter", "{initial}" }
+                }
+            } else {
+                span { class: "ac-plugin-icon-letter", "{initial}" }
+            }
+        }
+    }
+}
+
+
 #[component]
 pub fn PluginDetailPane(
     plugin_key: String,
@@ -716,6 +705,12 @@ pub fn PluginDetailPane(
                 return;
             }
             let id = card.id.clone();
+            #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+            {
+                if crate::desktop::plugins::is_vscode_extension_install(&id) {
+                    return;
+                }
+            }
             smart_ui_visible.set(true);
             smart_ui_busy.set(true);
             let model = resolve_ai_model();
@@ -762,14 +757,10 @@ pub fn PluginDetailPane(
                     rsx! {
                         div { class: "ac-skills-detail",
                             div { class: "ac-skills-detail-head",
-                                div { class: "ac-skills-detail-icon ac-skill-icon-blue",
-                                    Icon {
-                                        icon: LdDownload,
-                                        width: 28,
-                                        height: 28,
-                                        fill: "currentColor",
-                                        class: "ac-skill-card-icon",
-                                    }
+                                PluginGlyph {
+                                    icon_url: card.icon_url.clone(),
+                                    name: name.clone(),
+                                    large: true,
                                 }
                                 div { class: "ac-skills-detail-titles",
                                     h2 { "{name}" }
@@ -1052,13 +1043,20 @@ pub fn PluginDetailPane(
                                                         toast.success(msg);
                                                         mark_catalog_installed(catalog, &key, true);
                                                         refresh_tick.with_mut(|n| *n += 1);
-                                                        spawn_ensure_smart_ui_after_install(
-                                                            install_id,
-                                                            toast,
-                                                        );
+                                                        #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+                                                        {
+                                                            if !crate::desktop::plugins::is_vscode_extension_install(
+                                                                &install_id,
+                                                            ) {
+                                                                spawn_ensure_smart_ui_after_install(
+                                                                    install_id,
+                                                                    toast,
+                                                                );
+                                                            }
+                                                        }
                                                     }
                                                     Err(e) => {
-                                                        toast.error(format!("下载失败：{e}"));
+                                                        toast.error(format!("安装失败：{e}"));
                                                     }
                                                 }
                                                 installing.set(None);
@@ -1072,9 +1070,9 @@ pub fn PluginDetailPane(
                                             class: "ac-skill-action-icon",
                                         }
                                         if installing() == Some(key.clone()) {
-                                            "下载中"
+                                            "安装中"
                                         } else {
-                                            "下载"
+                                            "安装"
                                         }
                                     }
                                 } else if !homepage.is_empty() {
@@ -1113,13 +1111,15 @@ pub fn PluginDetailPane(
                         fill: "currentColor",
                         class: "ac-installed-empty-icon",
                     }
-                    h3 { "应用" }
-                    p { "该应用已不在当前列表中，可重新搜索后打开。" }
+                    h3 { "扩展" }
+                    p { "该扩展已不在当前列表中，可重新搜索后打开。" }
                 }
             }
         }
     }
 }
+
+
 
 #[component]
 pub fn SidebarPluginMarket(
@@ -1129,38 +1129,27 @@ pub fn SidebarPluginMarket(
     on_open: EventHandler<(String, String)>,
 ) -> Element {
     let toast = super::toast::use_toast();
-    // 与技能侧栏一致：进入应用栏默认「我的应用」，而非「应用市场」。
     let mut plugin_view = use_signal(|| PluginView::Installed);
-    let mut station = use_signal(|| PluginStation::Official);
     let mut search = use_signal(String::new);
     let mut items = use_signal(Vec::<PluginCard>::new);
-    let mut ai_items = use_signal(Vec::<PluginCard>::new);
-    let mut github_items = use_signal(Vec::<PluginCard>::new);
-    let mut ai_query_done = use_signal(|| None::<String>);
-    let mut github_query_done = use_signal(|| None::<String>);
+    let mut search_items = use_signal(Vec::<PluginCard>::new);
+    let mut search_query_done = use_signal(|| None::<String>);
     let mut loading = use_signal(|| false);
-    let mut ai_loading = use_signal(|| false);
-    let mut github_loading = use_signal(|| false);
+    let mut search_loading = use_signal(|| false);
     let mut loaded_source = use_signal(|| None::<PluginListSource>);
     let mut load_epoch = use_signal(|| 0_u64);
-    let mut ai_search_trigger = use_signal(|| 0_u64);
-    let mut github_search_trigger = use_signal(|| 0_u64);
+    let mut search_trigger = use_signal(|| 0_u64);
     let mut error = use_signal(|| None::<String>);
-    let mut ai_error = use_signal(|| None::<String>);
-    let mut github_error = use_signal(|| None::<String>);
+    let mut search_error = use_signal(|| None::<String>);
 
     let active_source = use_memo(move || {
         if plugin_view() == PluginView::Installed {
             Some(PluginListSource::Installed)
-        } else if station() == PluginStation::Official {
-            Some(PluginListSource::Official)
         } else {
-            None
+            Some(PluginListSource::Market)
         }
     });
 
-    // 仅响应 refresh_tick：强制重新拉取当前源。切勿在此订阅 catalog，
-    // 否则 fetch → sync_catalog 写 catalog 会再次触发本 effect，造成无限刷新。
     use_effect(move || {
         let tick = refresh_tick();
         if tick == 0 {
@@ -1170,17 +1159,9 @@ pub fn SidebarPluginMarket(
         load_epoch.with_mut(|n| *n += 1);
     });
 
-    // 目录安装状态变更时，同步到 AI / GitHub 缓存列表（不触发列表重拉）。
     use_effect(move || {
         let cat = catalog();
-        ai_items.with_mut(|list| {
-            for c in list.iter_mut() {
-                if let Some(found) = cat.iter().find(|x| x.install_key == c.install_key) {
-                    c.installed = found.installed;
-                }
-            }
-        });
-        github_items.with_mut(|list| {
+        search_items.with_mut(|list| {
             for c in list.iter_mut() {
                 if let Some(found) = cat.iter().find(|x| x.install_key == c.install_key) {
                     c.installed = found.installed;
@@ -1195,6 +1176,15 @@ pub fn SidebarPluginMarket(
             return;
         };
         if loaded_source() == Some(source) {
+            return;
+        }
+        // 市场页若正在展示关键词搜索结果，不覆盖为默认榜单。
+        if source == PluginListSource::Market
+            && search_query_done()
+                .as_ref()
+                .map(|q| !q.trim().is_empty())
+                .unwrap_or(false)
+        {
             return;
         }
         loading.set(true);
@@ -1221,83 +1211,48 @@ pub fn SidebarPluginMarket(
     });
 
     use_effect(move || {
-        let trigger = ai_search_trigger();
+        let trigger = search_trigger();
         if trigger == 0 {
             return;
         }
-        let Some(query) = ai_query_done() else {
+        let Some(query) = search_query_done() else {
             return;
         };
         if query.trim().is_empty() {
             return;
         }
-        ai_loading.set(true);
-        ai_error.set(None);
-        let model = resolve_ai_model();
+        search_loading.set(true);
+        search_error.set(None);
         spawn(async move {
-            match run_ai_search(query, model).await {
+            match run_openvsx_search(query).await {
                 Ok(list) => {
                     sync_catalog(catalog, &list);
-                    ai_items.set(list);
-                    ai_error.set(None);
+                    search_items.set(list);
+                    search_error.set(None);
                 }
                 Err(e) => {
-                    ai_items.set(Vec::new());
-                    ai_error.set(Some(e));
+                    search_items.set(Vec::new());
+                    search_error.set(Some(e));
                 }
             }
-            ai_loading.set(false);
-        });
-    });
-
-    use_effect(move || {
-        let trigger = github_search_trigger();
-        if trigger == 0 {
-            return;
-        }
-        let Some(query) = github_query_done() else {
-            return;
-        };
-        if query.trim().is_empty() {
-            return;
-        }
-        github_loading.set(true);
-        github_error.set(None);
-        spawn(async move {
-            match run_github_search(query).await {
-                Ok(list) => {
-                    sync_catalog(catalog, &list);
-                    github_items.set(list);
-                    github_error.set(None);
-                }
-                Err(e) => {
-                    github_items.set(Vec::new());
-                    github_error.set(Some(e));
-                }
-            }
-            github_loading.set(false);
+            search_loading.set(false);
         });
     });
 
     let on_market = use_memo(move || plugin_view() == PluginView::Market);
     let on_installed = use_memo(move || plugin_view() == PluginView::Installed);
-    let on_ai = use_memo(move || on_market() && station() == PluginStation::AiSearch);
-    let on_official = use_memo(move || on_market() && station() == PluginStation::Official);
 
-    let showing_github = use_memo(move || {
-        on_official()
-            && github_query_done()
+    let showing_search = use_memo(move || {
+        on_market()
+            && search_query_done()
                 .as_ref()
                 .map(|q| !q.trim().is_empty())
                 .unwrap_or(false)
     });
 
     let filtered = use_memo(move || {
-        if on_ai() {
-            return ai_items();
-        }
-        if showing_github() {
-            return github_items();
+        if showing_search() {
+            return search_items();
         }
         let q = search().trim().to_lowercase();
         items()
@@ -1308,6 +1263,7 @@ pub fn SidebarPluginMarket(
                 }
                 card.name.to_lowercase().contains(&q)
                     || card.description.to_lowercase().contains(&q)
+                    || card.id.to_lowercase().contains(&q)
                     || card
                         .language
                         .as_ref()
@@ -1317,18 +1273,13 @@ pub fn SidebarPluginMarket(
             .collect::<Vec<_>>()
     });
 
-    let list_loading = if on_ai() {
-        ai_loading()
-    } else if showing_github() {
-        github_loading()
+    let list_loading = if showing_search() {
+        search_loading()
     } else {
         loading()
     };
-
-    let list_error = if on_ai() {
-        ai_error()
-    } else if showing_github() {
-        github_error()
+    let list_error = if showing_search() {
+        search_error()
     } else {
         error()
     };
@@ -1347,20 +1298,18 @@ pub fn SidebarPluginMarket(
                 input {
                     r#type: "search",
                     value: "{search()}",
-                    placeholder: if on_ai() {
-                        "搜索应用（Enter 用 AI）"
-                    } else if on_installed() {
-                        "筛选我的应用"
+                    placeholder: if on_installed() {
+                        "筛选已安装扩展"
                     } else {
-                        "搜索应用（Enter 搜 GitHub）"
+                        "搜索 Open VSX（Enter）"
                     },
                     oninput: move |e| {
                         let v = e.value();
                         search.set(v.clone());
-                        if on_official() && v.trim().is_empty() {
-                            github_query_done.set(None);
-                            github_items.set(Vec::new());
-                            github_error.set(None);
+                        if on_market() && v.trim().is_empty() {
+                            search_query_done.set(None);
+                            search_items.set(Vec::new());
+                            search_error.set(None);
                         }
                     },
                     onkeydown: move |e: KeyboardEvent| {
@@ -1373,25 +1322,16 @@ pub fn SidebarPluginMarket(
                         if on_installed() {
                             return;
                         }
-                        if on_official() {
-                            if q.is_empty() {
-                                github_query_done.set(None);
-                                github_items.set(Vec::new());
-                                github_error.set(None);
-                                return;
-                            }
-                            github_query_done.set(Some(q));
-                            github_search_trigger.with_mut(|n| *n += 1);
+                        if q.is_empty() {
+                            search_query_done.set(None);
+                            search_items.set(Vec::new());
+                            search_error.set(None);
+                            loaded_source.set(None);
+                            load_epoch.with_mut(|n| *n += 1);
                             return;
                         }
-                        if on_ai() {
-                            if q.is_empty() {
-                                toast.warning("请输入关键词后再使用 AI 搜索。");
-                                return;
-                            }
-                            ai_query_done.set(Some(q));
-                            ai_search_trigger.with_mut(|n| *n += 1);
-                        }
+                        search_query_done.set(Some(q));
+                        search_trigger.with_mut(|n| *n += 1);
                     },
                 }
             }
@@ -1412,7 +1352,7 @@ pub fn SidebarPluginMarket(
                         loaded_source.set(None);
                         load_epoch.with_mut(|n| *n += 1);
                     },
-                    "我的应用"
+                    "我的扩展"
                 }
                 button {
                     r#type: "button",
@@ -1427,61 +1367,15 @@ pub fn SidebarPluginMarket(
                         }
                         plugin_view.set(PluginView::Market);
                         selected_key.set(None);
-                        if station() == PluginStation::Official {
-                            loaded_source.set(None);
-                            load_epoch.with_mut(|n| *n += 1);
-                        } else if ai_query_done().is_none() {
-                            let q = search().trim().to_string();
-                            if !q.is_empty() {
-                                ai_query_done.set(Some(q));
-                                ai_search_trigger.with_mut(|n| *n += 1);
-                            }
-                        }
+                        loaded_source.set(None);
+                        load_epoch.with_mut(|n| *n += 1);
                     },
-                    "应用市场"
-                }
-            }
-            if on_market() {
-                div { class: "ac-sidebar-skills-stations",
-                    for st in [PluginStation::Official, PluginStation::AiSearch] {
-                        {
-                            let is_active = station() == st;
-                            rsx! {
-                                button {
-                                    r#type: "button",
-                                    class: if is_active {
-                                        "ac-sidebar-skills-station-btn is-active"
-                                    } else {
-                                        "ac-sidebar-skills-station-btn"
-                                    },
-                                    title: "{st.label()}",
-                                    onclick: move |_| {
-                                        if station() == st {
-                                            return;
-                                        }
-                                        station.set(st);
-                                        selected_key.set(None);
-                                        if st == PluginStation::Official {
-                                            loaded_source.set(None);
-                                            load_epoch.with_mut(|n| *n += 1);
-                                        } else if ai_query_done().is_none() {
-                                            let q = search().trim().to_string();
-                                            if !q.is_empty() {
-                                                ai_query_done.set(Some(q));
-                                                ai_search_trigger.with_mut(|n| *n += 1);
-                                            }
-                                        }
-                                    },
-                                    "{st.label()}"
-                                }
-                            }
-                        }
-                    }
+                    "扩展市场"
                 }
             }
             if !plugin_available() {
                 div { class: "ac-sidebar-skills-banner is-warn",
-                    "桌面端可将项目克隆到工作区 applications/；Web 可浏览官方预览、GitHub 与 AI 搜索。"
+                    "桌面端可从 Open VSX 安装 .vsix 到工作区 extensions/；Web 可浏览与搜索，安装请用桌面版。"
                 }
             }
             if list_loading {
@@ -1502,37 +1396,27 @@ pub fn SidebarPluginMarket(
                 }
                 if filtered().is_empty() && !has_list_error {
                     div { class: "ac-sidebar-skills-empty",
-                        if on_ai() {
-                            if ai_query_done().is_none() {
-                                "输入关键词后按 Enter，用 AI 搜索相关开源应用"
-                            } else {
-                                "没有匹配的应用"
-                            }
-                        } else if on_installed() {
+                        if on_installed() {
                             if search().trim().is_empty() {
-                                "暂无已安装应用，去「应用市场」浏览。"
+                                "暂无已安装扩展，去「扩展市场」浏览。"
                             } else {
-                                "没有匹配的应用"
+                                "没有匹配的扩展"
                             }
-                        } else if showing_github() {
-                            "没有匹配的 GitHub 仓库"
-                        } else if search().trim().is_empty() {
-                            "暂无应用"
+                        } else if showing_search() {
+                            "没有匹配的 Open VSX 扩展"
                         } else {
-                            "没有匹配的应用（按 Enter 搜索 GitHub）"
+                            "暂无扩展，可输入关键词后按 Enter 搜索"
                         }
                     }
                 } else if !filtered().is_empty() {
                     div { class: "ac-skills-section-header",
                         span {
-                            if on_ai() {
-                                "AI 推荐"
-                            } else if on_installed() {
-                                "我的应用"
-                            } else if showing_github() {
-                                "GitHub 搜索"
+                            if on_installed() {
+                                "我的扩展"
+                            } else if showing_search() {
+                                "Open VSX 搜索"
                             } else {
-                                "官方推荐"
+                                "Open VSX"
                             }
                         }
                     }
@@ -1558,14 +1442,10 @@ pub fn SidebarPluginMarket(
                                             });
                                             on_open.call((key_select.clone(), title.clone()));
                                         },
-                                        div { class: "ac-skills-list-icon ac-skill-icon-blue",
-                                            Icon {
-                                                icon: LdDownload,
-                                                width: 16,
-                                                height: 16,
-                                                fill: "currentColor",
-                                                class: "ac-skill-card-icon",
-                                            }
+                                        PluginGlyph {
+                                            icon_url: card.icon_url.clone(),
+                                            name: card.name.clone(),
+                                            large: false,
                                         }
                                         div { class: "ac-skills-list-body",
                                             div { class: "ac-skills-list-title", "{card.name}" }

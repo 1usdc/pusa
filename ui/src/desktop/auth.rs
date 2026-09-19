@@ -291,6 +291,7 @@ pub fn DesktopAppShell() -> Element {
 
     use_effect(move || {
         crate::shell::theme::restore_on_launch();
+        crate::shell::syntax::preload_installed_grammars();
     });
 
     use_effect(move || {

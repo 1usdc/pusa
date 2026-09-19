@@ -19,6 +19,9 @@
     --button-secondary: #e3eaf6;
     /* 用户聊天气泡底 */
     --ac-chat-bubble-user-bg: #e3eaf6;
+    /* 助手回答正文 / 标题强调（浅色保持原 --secondary-color-3 / --text-primary） */
+    --ac-chat-ai-fg: #64758b;
+    --ac-chat-ai-fg-strong: #2a2f37;
     --text-primary: #2a2f37;
     --text-secondary: #64758b;
     --text-tertiary: #94a3b8;
@@ -169,6 +172,9 @@ html[data-theme="dark"] {
     --button-primary-light: #9d9d9d;
     --button-secondary: #1c1c20;
     --ac-chat-bubble-user-bg: #1c1c20;
+    /* 助手回答：比全局次要字 #9d9d9d 明显更亮，仍低于纯白 */
+    --ac-chat-ai-fg: #e4e4e4;
+    --ac-chat-ai-fg-strong: #f0f0f0;
     /* 对齐 Cursor Dark Modern：主文字 #CCCCCC，次要 #9D9D9D */
     --text-primary: #cccccc;
     --text-secondary: #9d9d9d;

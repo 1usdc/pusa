@@ -269,33 +269,6 @@ pub struct PersonaPolishResponse {
     pub system_prompt: String,
 }
 
-/// POST `/v1/plugins/ai-search` 请求体。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PluginAiSearchRequest {
-    pub query: String,
-    /// LLM 模型 ID（必填，由前端选择后传入）。
-    pub model: String,
-}
-
-/// AI 搜索到的单个开源应用。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PluginAiSearchItemDto {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub git_url: String,
-    #[serde(default)]
-    pub homepage: Option<String>,
-    #[serde(default)]
-    pub language: Option<String>,
-}
-
-/// POST `/v1/plugins/ai-search` 响应体。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PluginAiSearchResponse {
-    pub items: Vec<PluginAiSearchItemDto>,
-}
-
 /// 智能 UI 中的可执行动作（启动项目 / 跑脚本等）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PluginSmartUiActionDto {

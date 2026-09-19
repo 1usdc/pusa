@@ -1,4 +1,8 @@
-//! 轻量语法高亮：按扩展名分词，输出已转义 HTML。
+//! 语法高亮：优先使用已安装 VS Code / Open VSX 扩展的 TextMate grammar，
+//! 无匹配时按扩展名做内置分词。两种路径都输出已转义 HTML（`ac-syn-*`）。
+//!
+//! TextMate 加载见 [`super::textmate`]（仅桌面端）：读取
+//! `extensions/*/.pusa-grammars.json` 的 `contributes.grammars` / `languages`。
 
 use std::path::Path;
 
@@ -204,12 +208,32 @@ fn supports_block_comment(lang: &str) -> bool {
     )
 }
 
-/// 将源码高亮为 HTML；未知语言或超大文件退化为转义纯文本。
+/// 按文件路径高亮：已安装 grammar 优先，否则回退内置分词。
+pub fn highlight_file_html(source: &str, path: &str) -> String {
+    let lang = language_from_path(path);
+    render_highlight(source, Some(path), lang)
+}
+
+/// 按语言 id 高亮（没有文件路径时）。编辑器打开文件走 [`highlight_file_html`]。
+#[allow(dead_code)]
 pub fn highlight_html(source: &str, lang: &str) -> String {
+    render_highlight(source, None, lang)
+}
+
+fn render_highlight(source: &str, path: Option<&str>, lang: &str) -> String {
     if source.is_empty() {
         return String::new();
     }
-    if source.len() > MAX_HIGHLIGHT_BYTES || lang == "plain" {
+    if source.len() > MAX_HIGHLIGHT_BYTES {
+        return escape_html(source);
+    }
+    #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+    let _ = path;
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    if let Some(html) = super::textmate::try_highlight(source, path, lang) {
+        return html;
+    }
+    if lang == "plain" {
         return escape_html(source);
     }
     match lang {
@@ -217,6 +241,17 @@ pub fn highlight_html(source: &str, lang: &str) -> String {
         "html" | "xml" => highlight_markup(source),
         _ => highlight_code(source, lang),
     }
+}
+
+/// 启动时在后台扫描已安装扩展的语法索引（编译推迟到首次打开对应文件）。
+pub fn preload_installed_grammars() {
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    super::textmate::preload_installed_grammars();
+}
+
+/// `source[i..]` 处的 Unicode 标量；`i` 必须落在字符边界且 `i < source.len()`。
+fn char_at(source: &str, i: usize) -> char {
+    source[i..].chars().next().expect("char boundary")
 }
 
 fn highlight_code(source: &str, lang: &str) -> String {
@@ -228,14 +263,20 @@ fn highlight_code(source: &str, lang: &str) -> String {
     let block_ok = supports_block_comment(lang);
 
     while i < n {
-        let c = b[i] as char;
+        // 必须按 UTF-8 解码：`b[i] as char` 会把首字节当成 Latin-1，
+        // 例如「邮」的 0xE9 变成 U+00E9，`len_utf8()` 为 2 而非 3，切片会 panic。
+        let c = char_at(source, i);
 
         // 空白
         if c.is_whitespace() {
             let start = i;
-            i += 1;
-            while i < n && (b[i] as char).is_whitespace() {
-                i += 1;
+            i += c.len_utf8();
+            while i < n {
+                let ch = char_at(source, i);
+                if !ch.is_whitespace() {
+                    break;
+                }
+                i += ch.len_utf8();
             }
             push_plain(&mut out, &source[start..i]);
             continue;
@@ -350,7 +391,7 @@ fn highlight_code(source: &str, lang: &str) -> String {
             continue;
         }
 
-        // 标点（多字节安全：非 ASCII 当普通字符）
+        // 标点（ASCII）/ 其余多字节字符按完整标量输出
         if c.is_ascii() {
             push_span(&mut out, "punct", &source[i..i + 1]);
             i += 1;
@@ -439,7 +480,29 @@ fn highlight_markdown(source: &str) -> String {
     out
 }
 
-/// 单行高亮（diff 行）。
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn builtin_rust_keywords_are_colored() {
+        let html = super::highlight_code("fn main() {}", "rust");
+        assert!(html.contains("ac-syn-keyword"), "{html}");
+        assert!(html.contains("fn"));
+    }
+
+    #[test]
+    fn builtin_highlight_keeps_multibyte_chars_intact() {
+        // 「邮」是 3 字节；错误的 `b[i] as char` 会切到字符中间并 panic。
+        let src = "let 邮箱 = \"你好\"; // 注释";
+        let html = super::highlight_code(src, "rust");
+        assert!(html.contains("邮箱"), "{html}");
+        assert!(html.contains("你好"), "{html}");
+        assert!(html.contains("注释"), "{html}");
+        assert!(html.contains("ac-syn-keyword"), "{html}");
+    }
+}
+
+/// 单行高亮（仅语言 id；diff 已改用 [`highlight_file_html`]）。
+#[allow(dead_code)]
 pub fn highlight_line_html(line: &str, lang: &str) -> String {
     let trimmed = line.strip_suffix('\n').unwrap_or(line);
     let trimmed = trimmed.strip_suffix('\r').unwrap_or(trimmed);
