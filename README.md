@@ -4,6 +4,16 @@ Pusa 是一套 Agent 控制台，同时提供**桌面端**与 **Web** 两种形�
 
 插件市场对接 [Open VSX](https://open-vsx.org/) 开放 API，可安装 VS Code 兼容扩展（优先用于语法高亮与编程语言支持）。
 
+## 界面预览
+
+![Pusa 欢迎页：工作区、快捷操作与 AI 聊天](assets/readme/welcome.jpg)
+
+欢迎页集中展示打开项目、创建应用与创建插件等入口，右侧可直接与 Agent 对话。
+
+![Pusa 角色设定页：人格提示词与角色管理](assets/readme/role-settings.jpg)
+
+角色设定页支持管理自定义人格，编辑提示词后即可在同一界面中试用对话效果。
+
 ## 能做什么
 
 - **对话**：与 Agent 聊天，配置模型与密钥
@@ -58,5 +68,3 @@ just server
 | `protocol/` | 前后端共用的数据类型 |
 | `extensions/` | 工作区扩展（含从 Open VSX 安装的包） |
 | `skills/` | Agent 技能包 |
-
-界面由 Rust 与 [Dioxus](https://dioxuslabs.com/) 实现。
