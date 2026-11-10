@@ -16,6 +16,7 @@ pulldown-cmark = "0.13.3"
 ammonia = "4.1.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+regex = "1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 dioxus-primitives = { git = "https://github.com/DioxusLabs/components", version = "0.0.1", default-features = false, optional = true }

@@ -7,7 +7,6 @@
 #   just desktop-windows
 #   SIGN=1 just desktop-windows      # vpk 用 Azure Trusted Signing 签 exe / 安装器（凭证 .env.signing）
 #   VELOPACK=0 just desktop-windows  # 旧流程：只出 NSIS *-setup.exe（无应用内更新）
-#   ANOTHERME_BASE_URL=... just desktop-windows
 $ErrorActionPreference = 'Stop'
 
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
@@ -17,10 +16,6 @@ $DoSign = $env:SIGN -eq '1'
 
 if (-not (Get-Command dx -ErrorAction SilentlyContinue)) {
     throw '未找到 dx，请先安装 dioxus-cli（版本与 CI 对齐：dx --version）'
-}
-
-if (-not $env:ANOTHERME_BASE_URL) {
-    $env:ANOTHERME_BASE_URL = 'https://api.anotherme.co'
 }
 
 Write-Host '== 1) 清空 desktop/dist =='

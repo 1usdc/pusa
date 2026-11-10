@@ -1,7 +1,7 @@
 //! 设置弹窗：多组 OpenAI / Anthropic API Key + Base URL。
 
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::ld_icons::LdTrash2;
+use dioxus_free_icons::icons::ld_icons::{LdPencil, LdTrash2};
 use dioxus_free_icons::Icon;
 use protocol::{LlmApiProvider, LlmCredentialDto, LlmCredentialUpsertBody};
 
@@ -189,7 +189,7 @@ pub fn LlmCredentialsPanel(
     enabled_ids: Vec<String>,
     hint: Option<String>,
     on_add: EventHandler<LlmCredentialUpsertBody>,
-    on_rename: EventHandler<(String, String)>,
+    on_update: EventHandler<LlmCredentialUpsertBody>,
     on_toggle: EventHandler<(String, bool)>,
     on_delete: EventHandler<String>,
 ) -> Element {
@@ -223,7 +223,7 @@ pub fn LlmCredentialsPanel(
                                     key: "{id}",
                                     cred,
                                     is_on,
-                                    on_rename,
+                                    on_update,
                                     on_toggle,
                                     on_delete,
                                 }
@@ -376,23 +376,26 @@ pub fn LlmCredentialsPanel(
 fn LlmCredentialCard(
     cred: LlmCredentialDto,
     is_on: bool,
-    on_rename: EventHandler<(String, String)>,
+    on_update: EventHandler<LlmCredentialUpsertBody>,
     on_toggle: EventHandler<(String, bool)>,
     on_delete: EventHandler<String>,
 ) -> Element {
     let id_toggle = cred.id.clone();
     let id_delete = cred.id.clone();
-    let id_rename_enter = cred.id.clone();
-    let id_rename_blur = cred.id.clone();
-    let provider = cred.provider;
-    let stored_label = cred.label.clone();
-    let stored_label_enter = stored_label.clone();
-    let stored_label_blur = stored_label;
     let saved_name = display_credential_name(&cred);
-    let mut name_draft = use_signal(|| saved_name.clone());
     let masked = mask_api_key(&cred.api_key);
     let base = cred.openai_v1_base.clone();
     let switch_title = if is_on { "关闭此密钥" } else { "开启此密钥" };
+    let mut editing = use_signal(|| false);
+    let mut edit_provider = use_signal(|| cred.provider);
+    let mut edit_label = use_signal(|| cred.label.clone());
+    let mut edit_key = use_signal(String::new);
+    let mut edit_base = use_signal(|| cred.openai_v1_base.clone());
+    let seed_provider = cred.provider;
+    let seed_label = cred.label.clone();
+    let seed_base = cred.openai_v1_base.clone();
+    let kept_api_key = cred.api_key.clone();
+    let stored_label_save = cred.label.clone();
 
     rsx! {
         li {
@@ -401,57 +404,48 @@ fn LlmCredentialCard(
             } else {
                 "ac-llm-cred-card"
             },
+            div { class: "ac-llm-cred-row",
             div { class: "ac-llm-cred-main",
                 div { class: "ac-llm-cred-top",
-                    input {
-                        r#type: "text",
-                        class: "ac-llm-cred-provider-input",
-                        value: "{name_draft()}",
-                        aria_label: "密钥名称",
-                        title: "点击修改名称",
-                        oninput: move |e| name_draft.set(e.value()),
-                        onkeydown: move |e| {
-                            if e.key() != Key::Enter {
-                                return;
-                            }
-                            if name_draft().trim().is_empty() {
-                                name_draft.set(display_name(provider, &stored_label_enter));
-                                return;
-                            }
-                            if let Some(next) =
-                                renamed_label(&name_draft(), &stored_label_enter, provider)
-                            {
-                                on_rename.call((id_rename_enter.clone(), next));
-                            }
-                        },
-                        onblur: move |_| {
-                            if name_draft().trim().is_empty() {
-                                name_draft.set(display_name(provider, &stored_label_blur));
-                                return;
-                            }
-                            if let Some(next) =
-                                renamed_label(&name_draft(), &stored_label_blur, provider)
-                            {
-                                on_rename.call((id_rename_blur.clone(), next));
-                            }
-                        },
-                    }
+                    span { class: "ac-llm-cred-provider", "{saved_name}" }
                 }
                 div { class: "ac-llm-cred-key", "{masked}" }
                 div { class: "ac-llm-cred-base", "{base}" }
             }
             div { class: "ac-llm-cred-actions",
-                button {
-                    r#type: "button",
-                    class: "ac-llm-cred-icon-btn ac-llm-cred-icon-btn--danger",
-                    title: "删除",
-                    aria_label: "删除",
-                    onclick: move |_| on_delete.call(id_delete.clone()),
-                    Icon {
-                        icon: LdTrash2,
-                        width: 15,
-                        height: 15,
-                        fill: "currentColor",
+                if editing() {
+                    button {
+                        r#type: "button",
+                        class: "ac-llm-cred-icon-btn ac-llm-cred-icon-btn--danger",
+                        title: "删除",
+                        aria_label: "删除",
+                        onclick: move |_| on_delete.call(id_delete.clone()),
+                        Icon {
+                            icon: LdTrash2,
+                            width: 15,
+                            height: 15,
+                            fill: "currentColor",
+                        }
+                    }
+                } else {
+                    button {
+                        r#type: "button",
+                        class: "ac-llm-cred-icon-btn",
+                        title: "编辑密钥",
+                        aria_label: "编辑密钥",
+                        onclick: move |_| {
+                            edit_provider.set(seed_provider);
+                            edit_label.set(seed_label.clone());
+                            edit_key.set(String::new());
+                            edit_base.set(seed_base.clone());
+                            editing.set(true);
+                        },
+                        Icon {
+                            icon: LdPencil,
+                            width: 15,
+                            height: 15,
+                            fill: "currentColor",
+                        }
                     }
                 }
                 button {
@@ -468,6 +462,138 @@ fn LlmCredentialCard(
                     onclick: move |_| on_toggle.call((id_toggle.clone(), !is_on)),
                     span { class: "ac-llm-switch-track",
                         span { class: "ac-llm-switch-knob" }
+                    }
+                }
+            }
+            }
+            if editing() {
+                {
+                    let provider_now = edit_provider();
+                    let local_or_private_base = is_local_or_private_openai_base(&edit_base());
+                    let id_save = cred.id.clone();
+                    rsx! {
+                        div { class: "ac-llm-cred-edit",
+                            div { class: "ac-settings-provider", role: "tablist", aria_label: "API 类型",
+                                button {
+                                    r#type: "button",
+                                    role: "tab",
+                                    class: if provider_now == LlmApiProvider::Openai {
+                                        "ac-settings-provider-btn is-active"
+                                    } else {
+                                        "ac-settings-provider-btn"
+                                    },
+                                    aria_selected: provider_now == LlmApiProvider::Openai,
+                                    onclick: move |_| {
+                                        if edit_provider() == LlmApiProvider::Openai {
+                                            return;
+                                        }
+                                        edit_provider.set(LlmApiProvider::Openai);
+                                        if edit_base().trim().is_empty()
+                                            || edit_base().trim() == LlmApiProvider::Anthropic.default_v1_base()
+                                        {
+                                            edit_base.set(LlmApiProvider::Openai.default_v1_base().to_string());
+                                        }
+                                    },
+                                    "OpenAI"
+                                }
+                                button {
+                                    r#type: "button",
+                                    role: "tab",
+                                    class: if provider_now == LlmApiProvider::Anthropic {
+                                        "ac-settings-provider-btn is-active"
+                                    } else {
+                                        "ac-settings-provider-btn"
+                                    },
+                                    aria_selected: provider_now == LlmApiProvider::Anthropic,
+                                    onclick: move |_| {
+                                        if edit_provider() == LlmApiProvider::Anthropic {
+                                            return;
+                                        }
+                                        edit_provider.set(LlmApiProvider::Anthropic);
+                                        if edit_base().trim().is_empty()
+                                            || edit_base().trim() == LlmApiProvider::Openai.default_v1_base()
+                                        {
+                                            edit_base.set(LlmApiProvider::Anthropic.default_v1_base().to_string());
+                                        }
+                                    },
+                                    "Anthropic"
+                                }
+                            }
+                            label { class: "ac-settings-label", "名称"
+                                input {
+                                    r#type: "text",
+                                    class: "ac-settings-input",
+                                    placeholder: "{provider_label(provider_now)}",
+                                    value: "{edit_label()}",
+                                    oninput: move |e| edit_label.set(e.value()),
+                                }
+                            }
+                            label { class: "ac-settings-label", "API Key（可选）"
+                                input {
+                                    r#type: "password",
+                                    class: "ac-settings-input",
+                                    placeholder: if local_or_private_base {
+                                        "留空则不修改（本地 / 内网）"
+                                    } else {
+                                        "留空则不修改"
+                                    },
+                                    value: "{edit_key()}",
+                                    oninput: move |e| edit_key.set(e.value()),
+                                }
+                            }
+                            label { class: "ac-settings-label", "Base URL（以 /v1 结尾）"
+                                input {
+                                    r#type: "text",
+                                    class: "ac-settings-input",
+                                    placeholder: "{provider_now.default_v1_base()}",
+                                    value: "{edit_base()}",
+                                    oninput: move |e| edit_base.set(e.value()),
+                                }
+                            }
+                            div { class: "ac-settings-actions ac-settings-actions--row",
+                                button {
+                                    r#type: "button",
+                                    class: "ac-settings-cancel",
+                                    onclick: move |_| editing.set(false),
+                                    "取消"
+                                }
+                                button {
+                                    r#type: "button",
+                                    class: "ac-settings-submit",
+                                    onclick: move |_| {
+                                        let provider = edit_provider();
+                                        let typed_key = edit_key().trim().to_string();
+                                        let api_key = if typed_key.is_empty() {
+                                            kept_api_key.clone()
+                                        } else {
+                                            typed_key
+                                        };
+                                        let openai_v1_base = if edit_base().trim().is_empty() {
+                                            provider.default_v1_base().to_string()
+                                        } else {
+                                            edit_base().trim().to_string()
+                                        };
+                                        let label = {
+                                            let t = edit_label().trim().to_string();
+                                            if t.is_empty() {
+                                                stored_label_save.clone()
+                                            } else {
+                                                t
+                                            }
+                                        };
+                                        on_update.call(LlmCredentialUpsertBody {
+                                            id: Some(id_save.clone()),
+                                            provider,
+                                            api_key,
+                                            openai_v1_base,
+                                            label,
+                                        });
+                                        editing.set(false);
+                                    },
+                                    "保存"
+                                }
+                            }
+                        }
                     }
                 }
             }

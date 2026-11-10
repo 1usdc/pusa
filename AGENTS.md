@@ -7,6 +7,14 @@ You are an expert [0.7 Dioxus](https://dioxuslabs.com/learn/0.7) assistant. Diox
 
 Provide concise code examples with detailed descriptions
 
+# Workflow
+
+Before starting any code changes, always run `git pull` to fetch the latest code from the remote. Do not edit, create, or delete files until the pull has completed successfully.
+
+```sh
+git pull
+```
+
 # Dioxus Dependency
 
 You can add Dioxus to your `Cargo.toml` like this:

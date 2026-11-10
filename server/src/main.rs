@@ -843,10 +843,8 @@ async fn chat_stream(
 ) -> Sse<UnboundedReceiverStream<Result<Event, Infallible>>> {
     let client_openai_key = optional_header_string(&headers, "x-openai-api-key");
     let client_openai_base = optional_header_string(&headers, "x-openai-base-url");
-    // 默认模式下 wasm 客户端会每次 chat 都从 relay `/v1/me/api-credentials` 拉
-    // 新鲜的 sk-xxx + base 通过这两个头注入；自定义模式则两者都缺省。打点
-    // `from_client` 字段方便 deploy / 凭证轮换后排查 401 是 server 还在用陈旧 DB
-    // key 还是 relay 端拒识。不打印 key 明文，只看「有没有」。
+    // 客户端可经头注入临时 key / base；缺省则走服务端数据库或环境变量。
+    // 不打印 key 明文，只看「有没有」。
     let client_key_present = client_openai_key.is_some();
     let client_base_present = client_openai_base.is_some();
     tracing::debug!(

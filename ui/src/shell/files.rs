@@ -7,8 +7,9 @@ use dioxus::html::point_interaction::ModifiersInteraction;
 use dioxus::prelude::*;
 use dioxus_free_icons::Icon;
 use dioxus_free_icons::icons::ld_icons::{
-    LdChevronDown, LdChevronRight, LdFile, LdFilePlus, LdFolder, LdFolderPlus, LdMonitor,
-    LdRefreshCw, LdRotateCcw, LdSmartphone,
+    LdCaseSensitive, LdCaseUpper, LdChevronDown, LdChevronRight, LdChevronUp, LdFile, LdFilePlus,
+    LdFolder, LdFolderPlus, LdMonitor, LdPause, LdPlay, LdRegex, LdReplace, LdReplaceAll,
+    LdRefreshCw, LdRotateCcw, LdSmartphone, LdWholeWord, LdX,
 };
 use keyboard_types::{Key, Modifiers};
 
@@ -178,6 +179,39 @@ pub fn fs_confirm_delete(_path: &str) -> bool {
 }
 
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+pub fn fs_confirm_delete_many(paths: &[String]) -> bool {
+    match paths.len() {
+        0 => false,
+        1 => fs_confirm_delete(&paths[0]),
+        n => crate::desktop::files::confirm_delete_many(n),
+    }
+}
+
+#[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+pub fn fs_confirm_delete_many(_paths: &[String]) -> bool {
+    false
+}
+
+/// 多选删除时去掉已被父路径覆盖的子项，并按深度从深到浅排序。
+fn fs_order_delete_paths(paths: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = paths
+        .iter()
+        .filter(|p| {
+            let path = Path::new(p.as_str());
+            !paths.iter().any(|other| {
+                if other == *p {
+                    return false;
+                }
+                path.starts_with(Path::new(other.as_str()))
+            })
+        })
+        .cloned()
+        .collect();
+    out.sort_by_key(|p| std::cmp::Reverse(Path::new(p).components().count()));
+    out
+}
+
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 pub fn fs_reveal_in_os(path: &str) -> Result<(), String> {
     crate::desktop::files::reveal_in_os(Path::new(path))
 }
@@ -185,6 +219,17 @@ pub fn fs_reveal_in_os(path: &str) -> Result<(), String> {
 #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
 pub fn fs_reveal_in_os(_path: &str) -> Result<(), String> {
     Err("Web 端无法在系统中显示。".into())
+}
+
+/// 用系统默认应用打开文件或目录。
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+pub fn fs_open_in_default_app(path: &str) -> Result<(), String> {
+    crate::desktop::files::open_in_default_app(Path::new(path))
+}
+
+#[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+pub fn fs_open_in_default_app(_path: &str) -> Result<(), String> {
+    Err("Web 端无法用系统默认应用打开。".into())
 }
 
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
@@ -264,6 +309,83 @@ pub fn fs_is_pdf_path(path: &str) -> bool {
         .is_some_and(|e| e.eq_ignore_ascii_case("pdf"))
 }
 
+pub fn fs_is_image_path(path: &str) -> bool {
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        crate::desktop::html_preview::is_image_path(Path::new(path))
+    }
+    #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+    {
+        Path::new(path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| {
+                matches!(
+                    e.to_ascii_lowercase().as_str(),
+                    "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "ico" | "bmp" | "avif"
+                )
+            })
+    }
+}
+
+pub fn fs_is_audio_path(path: &str) -> bool {
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        crate::desktop::html_preview::is_audio_path(Path::new(path))
+    }
+    #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+    {
+        Path::new(path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| {
+                matches!(
+                    e.to_ascii_lowercase().as_str(),
+                    "mp3" | "wav" | "ogg" | "oga" | "m4a" | "aac" | "flac" | "opus" | "webm"
+                )
+            })
+    }
+}
+
+/// 图片预览 `<img>` 的 `src`（走 `pusapreview` 协议）。
+pub fn fs_image_preview_src(path: &str) -> Result<String, String> {
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        crate::desktop::html_preview::image_preview_src(Path::new(path))
+    }
+    #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+    {
+        let _ = path;
+        Err("Web 端暂不支持图片预览。".into())
+    }
+}
+
+/// 音频预览 `<audio>` 的 `src`（走 `pusapreview` 协议）。
+pub fn fs_audio_preview_src(path: &str) -> Result<String, String> {
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        crate::desktop::html_preview::audio_preview_src(Path::new(path))
+    }
+    #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+    {
+        let _ = path;
+        Err("Web 端暂不支持音频预览。".into())
+    }
+}
+
+/// 本地解析音频时长（秒）；Web 端返回 `None`。
+pub fn fs_audio_duration_secs(path: &str) -> Option<f64> {
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        crate::desktop::html_preview::audio_duration_secs(Path::new(path))
+    }
+    #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+    {
+        let _ = path;
+        None
+    }
+}
+
 /// PDF 预览 iframe 的 `src`（走 `pusapreview` 协议，由 WebView 自带的 PDF 渲染器显示）。
 pub fn fs_pdf_preview_src(path: &str) -> Result<String, String> {
     #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
@@ -302,6 +424,100 @@ pub fn fs_stl_preview_frame(path: &str) -> Result<HtmlPreviewFrame, String> {
 #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
 pub fn fs_stl_preview_frame(_path: &str) -> Result<HtmlPreviewFrame, String> {
     Err("Web 端暂不支持 STL 预览。".into())
+}
+
+pub fn fs_is_docx_path(path: &str) -> bool {
+    Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("docx"))
+}
+
+pub fn fs_is_xlsx_path(path: &str) -> bool {
+    Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("xlsx"))
+}
+
+pub fn fs_is_pptx_path(path: &str) -> bool {
+    Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("pptx"))
+}
+
+pub fn fs_is_doc_path(path: &str) -> bool {
+    Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("doc"))
+}
+
+pub fn fs_is_xls_path(path: &str) -> bool {
+    Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("xls"))
+}
+
+pub fn fs_is_ppt_path(path: &str) -> bool {
+    Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("ppt"))
+}
+
+/// 可预览 Office：OOXML + 旧版 .doc / .xls / .ppt。
+pub fn fs_is_office_path(path: &str) -> bool {
+    fs_is_docx_path(path)
+        || fs_is_xlsx_path(path)
+        || fs_is_pptx_path(path)
+        || fs_is_doc_path(path)
+        || fs_is_xls_path(path)
+        || fs_is_ppt_path(path)
+}
+
+/// 旧版 .doc / .ppt 可能触发 LibreOffice / textutil 转换（阻塞）。
+pub fn fs_office_preview_may_convert(path: &str) -> bool {
+    fs_is_doc_path(path) || fs_is_ppt_path(path)
+}
+
+/// Office 预览 iframe：内置 JS 查看器（走 `pusapreview` 协议，同源 `fetch` 源文件）。
+/// Windows 与 HTML / STL 预览一样改走 `srcdoc`。旧版格式可能先做系统转换。
+/// `theme`：应用当前 `data-theme`（`light` / `dark`），写入查看器首屏配置。
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+pub fn fs_office_preview_frame(path: &str, theme: &str) -> Result<HtmlPreviewFrame, String> {
+    let p = Path::new(path);
+    #[cfg(target_os = "windows")]
+    {
+        crate::desktop::html_preview::office_preview_srcdoc(p, theme).map(HtmlPreviewFrame::SrcDoc)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        crate::desktop::html_preview::office_preview_src(p, theme).map(HtmlPreviewFrame::Url)
+    }
+}
+
+#[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+pub fn fs_office_preview_frame(_path: &str, _theme: &str) -> Result<HtmlPreviewFrame, String> {
+    Err("Web 端暂不支持 Office 预览。".into())
+}
+
+fn office_preview_post_theme_js(theme: &str) -> String {
+    let theme = if theme.eq_ignore_ascii_case("dark") {
+        "dark"
+    } else {
+        "light"
+    };
+    format!(
+        r#"(() => {{
+  const theme = '{theme}';
+  document.querySelectorAll('.ac-office-preview-pane iframe.ac-html-preview-frame').forEach((frame) => {{
+    try {{ frame.contentWindow.postMessage({{ type: 'pusa-theme', theme }}, '*'); }} catch (_) {{}}
+  }});
+}})();"#
+    )
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -801,8 +1017,14 @@ pub fn SidebarFileExplorer(
     /// HTML 文件/站点在中间栏内置浏览器打开。
     on_open_html_preview: EventHandler<String>,
     on_open_pdf_preview: EventHandler<String>,
+    /// 图片在中间栏内置查看器打开。
+    on_open_image_preview: EventHandler<String>,
+    /// 音频在中间栏内置播放器打开（播放按钮 + 声纹）。
+    on_open_audio_preview: EventHandler<String>,
     /// STL 模型在中间栏内置 3D 查看器打开。
     on_open_stl_preview: EventHandler<String>,
+    /// Office（含旧版 doc/xls/ppt）在中间栏内置 JS 查看器打开。
+    on_open_office_preview: EventHandler<String>,
     /// 打开终端并 cd 到目录（文件则父目录）。
     on_open_in_terminal: EventHandler<String>,
     /// 将路径加入当前 pusa 聊天草稿（支持多选）。
@@ -822,6 +1044,8 @@ pub fn SidebarFileExplorer(
     let mut file_clipboard = use_signal(|| None::<FsFileClipboard>);
     let mut renaming_path = use_signal(|| None::<String>);
     let mut rename_draft = use_signal(String::new);
+    /// 右键「重命名」后强制聚焦输入框（桌面 WebView 上 autofocus 不可靠）。
+    let mut rename_focus_tick = use_signal(|| 0u64);
     // Shift 范围多选；`selected_path` 为主选中 / 锚点。
     let mut selected_paths = use_signal(HashSet::<String>::new);
 
@@ -836,6 +1060,13 @@ pub fn SidebarFileExplorer(
             });
         }
         None => selected_paths.set(HashSet::new()),
+    });
+
+    use_effect(move || {
+        let _ = rename_focus_tick();
+        if renaming_path().is_some() {
+            focus_sidebar_rename_input();
+        }
     });
 
     use_effect({
@@ -1020,6 +1251,7 @@ pub fn SidebarFileExplorer(
                             onkeydown: move |e: KeyboardEvent| {
                                 if e.key() == Key::Escape {
                                     e.prevent_default();
+                                    e.stop_propagation();
                                     create_mode.set(None);
                                     create_name.set(String::new());
                                     return;
@@ -1028,6 +1260,7 @@ pub fn SidebarFileExplorer(
                                     return;
                                 }
                                 e.prevent_default();
+                                e.stop_propagation();
                                 let name = create_name();
                                 let parent = create_parent()
                                     .unwrap_or_else(|| root_create.clone());
@@ -1067,7 +1300,29 @@ pub fn SidebarFileExplorer(
                     }
                 }
 
-                div { class: "ac-sidebar-files-tree", role: "tree",
+                div {
+                    class: "ac-sidebar-files-tree",
+                    role: "tree",
+                    tabindex: "0",
+                    // 焦点在树上时：回车重命名当前主选中项。
+                    onkeydown: move |e: KeyboardEvent| {
+                        if e.key() != Key::Enter {
+                            return;
+                        }
+                        if renaming_path().is_some() || create_mode().is_some() {
+                            return;
+                        }
+                        let Some(path) = selected_path() else {
+                            return;
+                        };
+                        e.prevent_default();
+                        begin_sidebar_rename(
+                            &path,
+                            renaming_path,
+                            rename_draft,
+                            rename_focus_tick,
+                        );
+                    },
                     {
                         match children_cache().get(&root_tree) {
                             Some(Err(err)) => rsx! {
@@ -1084,6 +1339,7 @@ pub fn SidebarFileExplorer(
                                         let path_toggle = entry.path.clone();
                                         let path_ctx = entry.path.clone();
                                         let path_rename = entry.path.clone();
+                                        let path_enter_rename = entry.path.clone();
                                         let root_fallback = root_for_menu.clone();
                                         let root_shift = root_for_menu.clone();
                                         let is_dir = entry.is_dir;
@@ -1140,10 +1396,14 @@ pub fn SidebarFileExplorer(
                                                         class: "ac-sidebar-files-rename-input",
                                                         value: "{rename_draft()}",
                                                         autofocus: true,
+                                                        onmounted: move |_| {
+                                                            focus_sidebar_rename_input();
+                                                        },
                                                         oninput: move |e| rename_draft.set(e.value()),
                                                         onkeydown: move |e: KeyboardEvent| {
                                                             if e.key() == Key::Escape {
                                                                 e.prevent_default();
+                                                                e.stop_propagation();
                                                                 renaming_path.set(None);
                                                                 rename_draft.set(String::new());
                                                                 return;
@@ -1151,7 +1411,10 @@ pub fn SidebarFileExplorer(
                                                             if e.key() != Key::Enter {
                                                                 return;
                                                             }
+                                                            // 必须 stop：否则冒泡到树的 Enter 会在 renaming_path
+                                                            // 已清空后再次 begin_sidebar_rename，输入框还会出现。
                                                             e.prevent_default();
+                                                            e.stop_propagation();
                                                             let old = path_rename.clone();
                                                             let new_name = rename_draft();
                                                             match fs_rename(&old, &new_name) {
@@ -1179,8 +1442,28 @@ pub fn SidebarFileExplorer(
                                                             }
                                                         },
                                                         onblur: move |_| {
-                                                            renaming_path.set(None);
-                                                            rename_draft.set(String::new());
+                                                            // 菜单关闭 / 强制 focus 可能抢焦点；等两帧后再判断是否真的离开。
+                                                            spawn(async move {
+                                                                let _ = document::eval(
+                                                                    r#"return await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true))));"#,
+                                                                )
+                                                                .join::<bool>()
+                                                                .await;
+                                                                if renaming_path().is_none() {
+                                                                    return;
+                                                                }
+                                                                let keep = document::eval(
+                                                                    r#"return !!(document.activeElement && document.activeElement.classList && document.activeElement.classList.contains('ac-sidebar-files-rename-input'));"#,
+                                                                )
+                                                                .join::<bool>()
+                                                                .await
+                                                                .unwrap_or(false);
+                                                                if keep {
+                                                                    return;
+                                                                }
+                                                                renaming_path.set(None);
+                                                                rename_draft.set(String::new());
+                                                            });
                                                         },
                                                     }
                                                 }
@@ -1192,6 +1475,25 @@ pub fn SidebarFileExplorer(
                                                     style: "{pad_style}",
                                                     role: "treeitem",
                                                     title: "{path}",
+                                                    onkeydown: move |e: KeyboardEvent| {
+                                                        if e.key() != Key::Enter {
+                                                            return;
+                                                        }
+                                                        // 选中行回车：进入重命名（勿触发按钮默认「点击打开」）。
+                                                        if renaming_path().is_some()
+                                                            || create_mode().is_some()
+                                                        {
+                                                            return;
+                                                        }
+                                                        e.prevent_default();
+                                                        e.stop_propagation();
+                                                        begin_sidebar_rename(
+                                                            &path_enter_rename,
+                                                            renaming_path,
+                                                            rename_draft,
+                                                            rename_focus_tick,
+                                                        );
+                                                    },
                                                     onclick: move |evt| {
                                                         let shift = evt.modifiers().contains(Modifiers::SHIFT);
                                                         if shift {
@@ -1326,14 +1628,20 @@ pub fn SidebarFileExplorer(
                     };
                     let clip_targets = add_targets.clone();
                     let add_label = if add_targets.len() > 1 {
-                        format!("将 {} 个文件加入 Chat", add_targets.len())
+                        format!("将 {} 个文件加入对话", add_targets.len())
                     } else {
-                        "加入 Chat".into()
+                        "加入对话".into()
                     };
                     let add_new_label = if add_targets.len() > 1 {
-                        format!("将 {} 个文件加入新的 Chat", add_targets.len())
+                        format!("将 {} 个文件加入新的对话", add_targets.len())
                     } else {
-                        "加入新的 Chat".into()
+                        "加入新的对话".into()
+                    };
+                    let delete_targets = add_targets.clone();
+                    let delete_label = if delete_targets.len() > 1 {
+                        format!("删除 {} 项", delete_targets.len())
+                    } else {
+                        "删除".into()
                     };
                     let paste_target = if is_dir {
                         path.clone()
@@ -1347,6 +1655,8 @@ pub fn SidebarFileExplorer(
                         "left: {:.0}px; top: {:.0}px; right: auto;",
                         ctx.x, ctx.y
                     );
+                    let anchor_x = ctx.x;
+                    let anchor_y = ctx.y;
                     rsx! {
                         div {
                             class: "ac-chat-history-ctx-backdrop",
@@ -1357,15 +1667,57 @@ pub fn SidebarFileExplorer(
                             },
                         }
                         div {
+                            id: "ac-fs-ctx-menu",
                             class: "ac-chat-history-ctx-menu ac-fs-ctx-menu",
                             role: "menu",
                             style: "{menu_style}",
                             onclick: move |evt| evt.stop_propagation(),
+                            onmounted: move |_| {
+                                // 超出视口底/右边缘时上移或左移，避免菜单被裁切。
+                                let _ = document::eval(&format!(
+                                    r#"(() => {{
+  const place = () => {{
+    const el = document.getElementById('ac-fs-ctx-menu');
+    if (!el) return false;
+    const margin = 8;
+    const vh = window.innerHeight || document.documentElement.clientHeight || 800;
+    const vw = window.innerWidth || document.documentElement.clientWidth || 1200;
+    const rect = el.getBoundingClientRect();
+    let top = {anchor_y};
+    let left = {anchor_x};
+    const h = Math.max(rect.height, 1);
+    const w = Math.max(rect.width, 1);
+    if (top + h > vh - margin) {{
+      top = Math.max(margin, {anchor_y} - h);
+    }}
+    if (top + h > vh - margin) {{
+      top = Math.max(margin, vh - h - margin);
+    }}
+    if (left + w > vw - margin) {{
+      left = Math.max(margin, vw - w - margin);
+    }}
+    if (left < margin) left = margin;
+    if (top < margin) top = margin;
+    el.style.top = top + 'px';
+    el.style.left = left + 'px';
+    el.style.right = 'auto';
+    el.style.maxHeight = Math.max(120, vh - top - margin) + 'px';
+    return true;
+  }};
+  if (!place()) {{
+    requestAnimationFrame(() => {{ if (!place()) requestAnimationFrame(place); }});
+  }}
+}})()"#
+                                ));
+                            },
 
                             {
                                 let html_preview = fs_resolve_html_preview(&path, is_dir);
                                 let is_pdf = !is_dir && fs_is_pdf_path(&path);
+                                let is_image = !is_dir && fs_is_image_path(&path);
+                                let is_audio = !is_dir && fs_is_audio_path(&path);
                                 let is_stl = !is_dir && fs_is_stl_path(&path);
+                                let is_office = !is_dir && fs_is_office_path(&path);
                                 rsx! {
                                     if let Some(html) = html_preview.clone() {
                                         button {
@@ -1375,6 +1727,50 @@ pub fn SidebarFileExplorer(
                                             onclick: move |_| {
                                                 ctx_menu.set(None);
                                                 on_open_html_preview.call(html.clone());
+                                            },
+                                            "在Pusa中预览"
+                                        }
+                                    } else if is_image {
+                                        button {
+                                            r#type: "button",
+                                            class: "ac-chat-history-ctx-menu__item",
+                                            role: "menuitem",
+                                            onclick: {
+                                                let path = path.clone();
+                                                move |_| {
+                                                    ctx_menu.set(None);
+                                                    on_open_image_preview.call(path.clone());
+                                                }
+                                            },
+                                            "在Pusa中预览"
+                                        }
+                                        button {
+                                            r#type: "button",
+                                            class: "ac-chat-history-ctx-menu__item",
+                                            role: "menuitem",
+                                            onclick: {
+                                                let path = path.clone();
+                                                move |_| {
+                                                    ctx_menu.set(None);
+                                                    match fs_open_in_browser(&path) {
+                                                        Ok(()) => notice.set(None),
+                                                        Err(e) => notice.set(Some(e)),
+                                                    }
+                                                }
+                                            },
+                                            "在浏览器中打开"
+                                        }
+                                    } else if is_audio {
+                                        button {
+                                            r#type: "button",
+                                            class: "ac-chat-history-ctx-menu__item",
+                                            role: "menuitem",
+                                            onclick: {
+                                                let path = path.clone();
+                                                move |_| {
+                                                    ctx_menu.set(None);
+                                                    on_open_audio_preview.call(path.clone());
+                                                }
                                             },
                                             "在Pusa中预览"
                                         }
@@ -1418,6 +1814,36 @@ pub fn SidebarFileExplorer(
                                                 move |_| {
                                                     ctx_menu.set(None);
                                                     on_open_stl_preview.call(path.clone());
+                                                }
+                                            },
+                                            "在Pusa中预览"
+                                        }
+                                        button {
+                                            r#type: "button",
+                                            class: "ac-chat-history-ctx-menu__item",
+                                            role: "menuitem",
+                                            onclick: {
+                                                let path = path.clone();
+                                                move |_| {
+                                                    ctx_menu.set(None);
+                                                    match fs_open_in_browser(&path) {
+                                                        Ok(()) => notice.set(None),
+                                                        Err(e) => notice.set(Some(e)),
+                                                    }
+                                                }
+                                            },
+                                            "在浏览器中打开"
+                                        }
+                                    } else if is_office {
+                                        button {
+                                            r#type: "button",
+                                            class: "ac-chat-history-ctx-menu__item",
+                                            role: "menuitem",
+                                            onclick: {
+                                                let path = path.clone();
+                                                move |_| {
+                                                    ctx_menu.set(None);
+                                                    on_open_office_preview.call(path.clone());
                                                 }
                                             },
                                             "在Pusa中预览"
@@ -1676,50 +2102,84 @@ pub fn SidebarFileExplorer(
                                     let path = path.clone();
                                     move |_| {
                                         ctx_menu.set(None);
-                                        let name = fs_file_title(&path);
-                                        rename_draft.set(name);
-                                        renaming_path.set(Some(path.clone()));
+                                        begin_sidebar_rename(
+                                            &path,
+                                            renaming_path,
+                                            rename_draft,
+                                            rename_focus_tick,
+                                        );
                                     }
                                 },
                                 "重命名…"
                             }
                             button {
                                 r#type: "button",
-                                class: "ac-chat-history-ctx-menu__item",
+                                class: "ac-chat-history-ctx-menu__item is-danger",
                                 role: "menuitem",
                                 onclick: {
-                                    let path = path.clone();
+                                    let targets = delete_targets.clone();
                                     let root = root.clone();
                                     move |_| {
                                         ctx_menu.set(None);
-                                        if !fs_confirm_delete(&path) {
+                                        if targets.is_empty() {
                                             return;
                                         }
-                                        match fs_delete(&path) {
-                                            Ok(()) => {
-                                                let parent = Path::new(&path)
-                                                    .parent()
-                                                    .map(|p| p.to_string_lossy().into_owned())
-                                                    .unwrap_or_else(|| root.clone());
-                                                children_cache.with_mut(|cache| {
-                                                    fs_cache_reload(cache, &parent);
-                                                });
-                                                expanded.with_mut(|set| {
-                                                    set.remove(&path);
-                                                });
-                                                if selected_path().as_deref() == Some(path.as_str()) {
-                                                    selected_path.set(None);
-                                                }
-                                                selected_paths.with_mut(|set| {
-                                                    set.remove(&path);
-                                                });
-                                                notice.set(None);
-                                            }
-                                            Err(e) => notice.set(Some(e)),
+                                        if !fs_confirm_delete_many(&targets) {
+                                            return;
                                         }
+                                        let ordered = fs_order_delete_paths(&targets);
+                                        let mut parents = HashSet::<String>::new();
+                                        let mut err: Option<String> = None;
+                                        for path in &ordered {
+                                            match fs_delete(path) {
+                                                Ok(()) => {
+                                                    if let Some(parent) = Path::new(path).parent() {
+                                                        parents.insert(
+                                                            parent.to_string_lossy().into_owned(),
+                                                        );
+                                                    } else {
+                                                        parents.insert(root.clone());
+                                                    }
+                                                    expanded.with_mut(|set| {
+                                                        set.remove(path);
+                                                    });
+                                                    selected_paths.with_mut(|set| {
+                                                        set.remove(path);
+                                                    });
+                                                    if selected_path().as_deref()
+                                                        == Some(path.as_str())
+                                                    {
+                                                        selected_path.set(None);
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    err = Some(e);
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        children_cache.with_mut(|cache| {
+                                            for parent in &parents {
+                                                fs_cache_reload(cache, parent);
+                                            }
+                                            if parents.is_empty() {
+                                                fs_cache_reload(cache, &root);
+                                            }
+                                        });
+                                        if selected_paths().is_empty() {
+                                            selected_path.set(None);
+                                        } else if selected_path()
+                                            .as_ref()
+                                            .is_none_or(|p| !selected_paths().contains(p))
+                                        {
+                                            selected_path.set(
+                                                selected_paths().iter().next().cloned(),
+                                            );
+                                        }
+                                        notice.set(err);
                                     }
                                 },
-                                "删除"
+                                "{delete_label}"
                             }
                         }
                     }
@@ -1752,24 +2212,487 @@ fn file_editor_try_save(
     }
 }
 
-fn is_save_shortcut(e: &KeyboardEvent) -> bool {
-    let Key::Character(c) = e.key() else {
-        return false;
-    };
-    if !c.eq_ignore_ascii_case("s") {
-        return false;
+fn begin_sidebar_rename(
+    path: &str,
+    mut renaming_path: Signal<Option<String>>,
+    mut rename_draft: Signal<String>,
+    mut rename_focus_tick: Signal<u64>,
+) {
+    rename_draft.set(fs_file_title(path));
+    renaming_path.set(Some(path.to_string()));
+    rename_focus_tick.with_mut(|n| *n = n.wrapping_add(1));
+}
+
+/// 聚焦侧栏重命名输入框，并选中文件名主干（不含扩展名）。
+fn focus_sidebar_rename_input() {
+    let _ = document::eval(
+        r#"(() => {
+  const run = () => {
+    const el = document.querySelector('input.ac-sidebar-files-rename-input');
+    if (!el) return false;
+    el.focus();
+    const v = el.value || '';
+    const base = v.includes('/') ? v.slice(v.lastIndexOf('/') + 1) : v;
+    const dot = base.lastIndexOf('.');
+    if (dot > 0) {
+      const start = v.length - base.length;
+      el.setSelectionRange(start, start + dot);
+    } else {
+      el.select();
     }
-    let mods = e.modifiers();
-    // macOS Cmd ≈ SUPER；Windows/Linux 用 CONTROL。也接受 META。
+    return true;
+  };
+  if (!run()) {
+    requestAnimationFrame(() => {
+      if (!run()) requestAnimationFrame(run);
+    });
+  }
+})()"#,
+    );
+}
+
+fn is_primary_mod(mods: Modifiers) -> bool {
     mods.contains(Modifiers::SUPER)
         || mods.contains(Modifiers::CONTROL)
         || mods.contains(Modifiers::META)
 }
 
+fn is_save_shortcut(e: &KeyboardEvent) -> bool {
+    let Key::Character(c) = e.key() else {
+        return false;
+    };
+    c.eq_ignore_ascii_case("s") && is_primary_mod(e.modifiers())
+}
+
+fn is_find_shortcut(e: &KeyboardEvent) -> bool {
+    let Key::Character(c) = e.key() else {
+        return false;
+    };
+    c.eq_ignore_ascii_case("f") && is_primary_mod(e.modifiers())
+}
+
+fn is_replace_shortcut(e: &KeyboardEvent) -> bool {
+    let Key::Character(c) = e.key() else {
+        return false;
+    };
+    c.eq_ignore_ascii_case("h") && is_primary_mod(e.modifiers())
+}
+
+fn is_chat_shortcut(e: &KeyboardEvent) -> bool {
+    let Key::Character(c) = e.key() else {
+        return false;
+    };
+    c.eq_ignore_ascii_case("l") && is_primary_mod(e.modifiers())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct FindMatch {
+    /// UTF-8 byte offset
+    start: usize,
+    end: usize,
+}
+
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+fn is_whole_word_at(text: &str, start: usize, end: usize) -> bool {
+    let before_ok = text
+        .get(..start)
+        .and_then(|s| s.chars().next_back())
+        .is_none_or(|c| !is_word_char(c));
+    let after_ok = text
+        .get(end..)
+        .and_then(|s| s.chars().next())
+        .is_none_or(|c| !is_word_char(c));
+    before_ok && after_ok
+}
+
+fn collect_find_matches(
+    text: &str,
+    query: &str,
+    case_sensitive: bool,
+    whole_word: bool,
+    use_regex: bool,
+) -> Result<Vec<FindMatch>, String> {
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+    const MAX: usize = 10_000;
+    let mut out = Vec::new();
+    if use_regex {
+        let re = regex::RegexBuilder::new(query)
+            .case_insensitive(!case_sensitive)
+            .multi_line(true)
+            .build()
+            .map_err(|e| format!("无效正则：{e}"))?;
+        for m in re.find_iter(text) {
+            if whole_word && !is_whole_word_at(text, m.start(), m.end()) {
+                continue;
+            }
+            out.push(FindMatch {
+                start: m.start(),
+                end: m.end(),
+            });
+            if out.len() >= MAX {
+                break;
+            }
+        }
+        return Ok(out);
+    }
+
+    if case_sensitive {
+        let mut from = 0;
+        while let Some(rel) = text[from..].find(query) {
+            let start = from + rel;
+            let end = start + query.len();
+            if !whole_word || is_whole_word_at(text, start, end) {
+                out.push(FindMatch { start, end });
+                if out.len() >= MAX {
+                    break;
+                }
+            }
+            from = start + query.len().max(1);
+            if from > text.len() {
+                break;
+            }
+        }
+    } else {
+        let lower_q = query.to_lowercase();
+        let lower_t = text.to_lowercase();
+        // 大小写折叠后字节偏移与原文不完全一致（非 ASCII）；对常见代码 ASCII 足够。
+        // 非 ASCII 内容回退按字符扫描。
+        if text.is_ascii() && query.is_ascii() {
+            let mut from = 0;
+            while let Some(rel) = lower_t[from..].find(&lower_q) {
+                let start = from + rel;
+                let end = start + query.len();
+                if !whole_word || is_whole_word_at(text, start, end) {
+                    out.push(FindMatch { start, end });
+                    if out.len() >= MAX {
+                        break;
+                    }
+                }
+                from = start + query.len().max(1);
+                if from > text.len() {
+                    break;
+                }
+            }
+        } else {
+            let chars: Vec<(usize, char)> = text.char_indices().collect();
+            let q_chars: Vec<char> = query.chars().collect();
+            let q_lower: Vec<char> = q_chars.iter().map(|c| c.to_lowercase().next().unwrap_or(*c)).collect();
+            let n = q_lower.len();
+            if n == 0 {
+                return Ok(out);
+            }
+            let mut i = 0;
+            while i + n <= chars.len() {
+                let matched = (0..n).all(|k| {
+                    chars[i + k]
+                        .1
+                        .to_lowercase()
+                        .next()
+                        .unwrap_or(chars[i + k].1)
+                        == q_lower[k]
+                });
+                if matched {
+                    let start = chars[i].0;
+                    let end = if i + n < chars.len() {
+                        chars[i + n].0
+                    } else {
+                        text.len()
+                    };
+                    if !whole_word || is_whole_word_at(text, start, end) {
+                        out.push(FindMatch { start, end });
+                        if out.len() >= MAX {
+                            break;
+                        }
+                    }
+                    i += n;
+                } else {
+                    i += 1;
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn utf16_offset(s: &str, byte_idx: usize) -> usize {
+    let idx = byte_idx.min(s.len());
+    s.get(..idx)
+        .map(|part| part.encode_utf16().count())
+        .unwrap_or(0)
+}
+
+fn escape_find_html(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// 在透明文本层上画出全部匹配高亮；当前项加 `is-current`。
+fn build_find_marks_html(source: &str, matches: &[FindMatch], current: usize) -> String {
+    if matches.is_empty() || source.is_empty() {
+        return String::new();
+    }
+    let mut out = String::with_capacity(source.len().saturating_mul(2));
+    let mut last = 0usize;
+    for (i, m) in matches.iter().enumerate() {
+        if m.start < last || m.end > source.len() || m.start > m.end {
+            continue;
+        }
+        out.push_str(&escape_find_html(&source[last..m.start]));
+        let cls = if i == current {
+            "ac-file-find-hit is-current"
+        } else {
+            "ac-file-find-hit"
+        };
+        out.push_str("<mark class=\"");
+        out.push_str(cls);
+        out.push_str("\">");
+        out.push_str(&escape_find_html(&source[m.start..m.end]));
+        out.push_str("</mark>");
+        last = m.end;
+    }
+    out.push_str(&escape_find_html(&source[last..]));
+    if !source.ends_with('\n') {
+        out.push('\n');
+    }
+    out
+}
+
+/// 选中当前匹配，并滚动到 `mark.ac-file-find-hit.is-current`（高亮层渲染后再定位）。
+fn select_find_match_in_editor(text: &str, m: FindMatch, focus_editor: bool) {
+    let start = utf16_offset(text, m.start);
+    let end = utf16_offset(text, m.end);
+    let focus_js = if focus_editor {
+        "ta.focus();"
+    } else {
+        ""
+    };
+    let _ = document::eval(&format!(
+        r#"(() => {{
+  const scrollToHit = () => {{
+    const scroll = document.querySelector('.ac-file-editor-scroll');
+    const hit = document.querySelector('mark.ac-file-find-hit.is-current');
+    if (scroll && hit) {{
+      const sRect = scroll.getBoundingClientRect();
+      const hRect = hit.getBoundingClientRect();
+      const top = hRect.top - sRect.top + scroll.scrollTop;
+      scroll.scrollTop = Math.max(0, top - Math.max(48, scroll.clientHeight / 3));
+      if (hRect.left < sRect.left + 8 || hRect.right > sRect.right - 8) {{
+        const left = hRect.left - sRect.left + scroll.scrollLeft;
+        scroll.scrollLeft = Math.max(0, left - 48);
+      }}
+      return true;
+    }}
+    // 高亮层尚未挂上时，按行号估算滚动。
+    const ta = document.querySelector('textarea.ac-file-editor-textarea');
+    if (!ta || !scroll) return false;
+    const before = ta.value.slice(0, {start});
+    const lines = before.split('\\n').length;
+    let lineHeight = parseFloat(getComputedStyle(ta).lineHeight);
+    if (!Number.isFinite(lineHeight) || lineHeight <= 0) {{
+      const fs = parseFloat(getComputedStyle(ta).fontSize) || 13;
+      lineHeight = fs * 1.45;
+    }}
+    const pad = parseFloat(getComputedStyle(ta).paddingTop) || 0;
+    scroll.scrollTop = Math.max(0, pad + (lines - 1) * lineHeight - scroll.clientHeight / 3);
+    return true;
+  }};
+  const ta = document.querySelector('textarea.ac-file-editor-textarea');
+  if (ta) {{
+    {focus_js}
+    try {{ ta.setSelectionRange({start}, {end}); }} catch (_) {{}}
+  }}
+  if (!scrollToHit()) {{
+    requestAnimationFrame(() => {{
+      if (!scrollToHit()) requestAnimationFrame(scrollToHit);
+    }});
+  }}
+}})()"#
+    ));
+}
+
+fn focus_file_find_input() {
+    let _ = document::eval(
+        r#"(() => {
+  const el = document.querySelector('input.ac-file-find-query');
+  if (!el) return;
+  el.focus();
+  el.select();
+})()"#,
+    );
+}
+
+fn apply_preserve_case(matched: &str, replacement: &str) -> String {
+    if replacement.is_empty() || matched.is_empty() {
+        return replacement.to_string();
+    }
+    let matched_alpha: String = matched.chars().filter(|c| c.is_alphabetic()).collect();
+    if matched_alpha.is_empty() {
+        return replacement.to_string();
+    }
+    if matched_alpha.chars().all(|c| c.is_uppercase()) {
+        return replacement.to_uppercase();
+    }
+    if matched_alpha.chars().all(|c| c.is_lowercase()) {
+        return replacement.to_lowercase();
+    }
+    let mut chars = replacement.chars();
+    let Some(first) = chars.next() else {
+        return replacement.to_string();
+    };
+    if matched
+        .chars()
+        .find(|c| c.is_alphabetic())
+        .is_some_and(|c| c.is_uppercase())
+    {
+        let mut out = first.to_uppercase().to_string();
+        out.extend(chars);
+        out
+    } else {
+        replacement.to_string()
+    }
+}
+
+fn set_editor_draft(
+    path: &str,
+    next: String,
+    mut drafts: Signal<HashMap<String, String>>,
+    baselines: Signal<HashMap<String, String>>,
+    mut dirty: Signal<HashSet<String>>,
+    mut save_notice: Signal<Option<String>>,
+) {
+    let matches_baseline = baselines().get(path).is_some_and(|b| b == &next);
+    drafts.with_mut(|m| {
+        m.insert(path.to_string(), next);
+    });
+    dirty.with_mut(|s| {
+        if matches_baseline {
+            s.remove(path);
+        } else {
+            s.insert(path.to_string());
+        }
+    });
+    save_notice.set(None);
+}
+
+fn editor_goto_find_match(delta: isize, matches: &[FindMatch], mut match_index: Signal<usize>) {
+    if matches.is_empty() {
+        return;
+    }
+    let len = matches.len() as isize;
+    let next = ((match_index() as isize + delta).rem_euclid(len)) as usize;
+    match_index.set(next);
+    // 选区 / 滚动在高亮层把 is-current 更新后由 use_effect 执行。
+}
+
+fn editor_replace_one(
+    path: &str,
+    drafts: Signal<HashMap<String, String>>,
+    baselines: Signal<HashMap<String, String>>,
+    dirty: Signal<HashSet<String>>,
+    save_notice: Signal<Option<String>>,
+    matches: &[FindMatch],
+    mut match_index: Signal<usize>,
+    query: &str,
+    replacement: &str,
+    case_sensitive: bool,
+    whole_word: bool,
+    use_regex: bool,
+    preserve_case: bool,
+) {
+    if matches.is_empty() {
+        return;
+    }
+    let idx = match_index().min(matches.len() - 1);
+    let m = matches[idx];
+    let Some(body) = drafts().get(path).cloned() else {
+        return;
+    };
+    if m.end > body.len() || m.start > m.end {
+        return;
+    }
+    let matched = &body[m.start..m.end];
+    let repl = if preserve_case {
+        apply_preserve_case(matched, replacement)
+    } else {
+        replacement.to_string()
+    };
+    let mut next = String::with_capacity(body.len() - (m.end - m.start) + repl.len());
+    next.push_str(&body[..m.start]);
+    next.push_str(&repl);
+    next.push_str(&body[m.end..]);
+    set_editor_draft(path, next.clone(), drafts, baselines, dirty, save_notice);
+    let new_matches =
+        collect_find_matches(&next, query, case_sensitive, whole_word, use_regex).unwrap_or_default();
+    if new_matches.is_empty() {
+        match_index.set(0);
+    } else {
+        match_index.set(idx.min(new_matches.len() - 1));
+    }
+}
+
+fn editor_replace_all(
+    path: &str,
+    drafts: Signal<HashMap<String, String>>,
+    baselines: Signal<HashMap<String, String>>,
+    dirty: Signal<HashSet<String>>,
+    save_notice: Signal<Option<String>>,
+    mut match_index: Signal<usize>,
+    query: &str,
+    replacement: &str,
+    case_sensitive: bool,
+    whole_word: bool,
+    use_regex: bool,
+    preserve_case: bool,
+) {
+    let Some(body) = drafts().get(path).cloned() else {
+        return;
+    };
+    let list = match collect_find_matches(&body, query, case_sensitive, whole_word, use_regex) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    if list.is_empty() {
+        return;
+    }
+    let mut out = String::with_capacity(body.len());
+    let mut last = 0usize;
+    for m in &list {
+        if m.start < last || m.end > body.len() {
+            continue;
+        }
+        out.push_str(&body[last..m.start]);
+        let matched = &body[m.start..m.end];
+        let repl = if preserve_case {
+            apply_preserve_case(matched, replacement)
+        } else {
+            replacement.to_string()
+        };
+        out.push_str(&repl);
+        last = m.end;
+    }
+    out.push_str(&body[last..]);
+    set_editor_draft(path, out, drafts, baselines, dirty, save_notice);
+    match_index.set(0);
+}
+
 /// 中间栏文本文件查看 / 编辑。
 ///
 /// `baselines` 保存上次加载或成功保存时的内容；编辑时与当前草稿比较以决定 dirty。
-/// 保存仅通过 Cmd/Ctrl+S，无可见保存按钮。
+/// 保存仅通过 Cmd/Ctrl+S，无可见保存按钮。Cmd/Ctrl+F 打开查找，Cmd/Ctrl+H 打开替换。
 #[component]
 pub fn FileEditorPane(
     path: String,
@@ -1780,6 +2703,19 @@ pub fn FileEditorPane(
     mut save_notice: Signal<Option<String>>,
 ) -> Element {
     let path_key = path.clone();
+    // key 随 path 重建；Signal 便于在多个 rsx 闭包中 Copy 读取路径。
+    let editor_path = use_signal(|| path.clone());
+    let mut find_open = use_signal(|| false);
+    let mut replace_open = use_signal(|| false);
+    let mut find_query = use_signal(String::new);
+    let mut replace_text = use_signal(String::new);
+    let mut case_sensitive = use_signal(|| false);
+    let mut whole_word = use_signal(|| false);
+    let mut use_regex = use_signal(|| false);
+    let mut preserve_case = use_signal(|| false);
+    let mut match_index = use_signal(|| 0usize);
+    let mut find_error = use_signal(|| Option::<String>::None);
+    let mut find_focus_tick = use_signal(|| 0u64);
 
     use_effect({
         let path = path.clone();
@@ -1808,6 +2744,13 @@ pub fn FileEditorPane(
         }
     });
 
+    use_effect(move || {
+        let _ = find_focus_tick();
+        if find_open() {
+            focus_file_find_input();
+        }
+    });
+
     let err = load_errors().get(&path_key).cloned();
     let content = drafts().get(&path_key).cloned();
     let is_dirty = dirty().contains(&path_key);
@@ -1816,22 +2759,340 @@ pub fn FileEditorPane(
     let path_edit = path.clone();
     let path_save = path.clone();
 
+    let find_matches = use_memo(move || {
+        if !find_open() {
+            return Vec::<FindMatch>::new();
+        }
+        let body = drafts()
+            .get(&editor_path())
+            .cloned()
+            .unwrap_or_default();
+        match collect_find_matches(
+            &body,
+            &find_query(),
+            case_sensitive(),
+            whole_word(),
+            use_regex(),
+        ) {
+            Ok(v) => v,
+            Err(_) => Vec::new(),
+        }
+    });
+
+    let find_err_msg = use_memo(move || {
+        if !find_open() || find_query().is_empty() || !use_regex() {
+            return None;
+        }
+        let body = drafts()
+            .get(&editor_path())
+            .cloned()
+            .unwrap_or_default();
+        collect_find_matches(
+            &body,
+            &find_query(),
+            case_sensitive(),
+            whole_word(),
+            true,
+        )
+        .err()
+    });
+
+    use_effect(move || {
+        find_error.set(find_err_msg());
+        let list = find_matches();
+        let len = list.len();
+        if !find_open() || len == 0 {
+            if match_index() != 0 {
+                match_index.set(0);
+            }
+            return;
+        }
+        let idx = match_index().min(len - 1);
+        if idx != match_index() {
+            match_index.set(idx);
+            return; // 等下一次 effect：高亮层 is-current 已更新后再滚
+        }
+        if let Some(body) = drafts().get(&editor_path()) {
+            select_find_match_in_editor(body, list[idx], false);
+        }
+    });
+
+    let match_count = find_matches().len();
+    let match_label = if find_query().is_empty() {
+        String::new()
+    } else if let Some(err) = find_error() {
+        err
+    } else if match_count == 0 {
+        "无结果".into()
+    } else {
+        format!("第 {} 项，共 {match_count} 项", match_index() + 1)
+    };
+
     rsx! {
         section {
             class: "ac-file-editor",
             onkeydown: move |e: KeyboardEvent| {
-                if !is_save_shortcut(&e) {
+                if is_save_shortcut(&e) {
+                    e.prevent_default();
+                    file_editor_try_save(
+                        &path_save,
+                        drafts,
+                        baselines,
+                        dirty,
+                        save_notice,
+                    );
                     return;
                 }
-                e.prevent_default();
-                file_editor_try_save(
-                    &path_save,
-                    drafts,
-                    baselines,
-                    dirty,
-                    save_notice,
-                );
+                if is_find_shortcut(&e) {
+                    e.prevent_default();
+                    find_open.set(true);
+                    find_focus_tick.with_mut(|n| *n = n.wrapping_add(1));
+                    return;
+                }
+                if is_replace_shortcut(&e) {
+                    e.prevent_default();
+                    find_open.set(true);
+                    replace_open.set(true);
+                    find_focus_tick.with_mut(|n| *n = n.wrapping_add(1));
+                    return;
+                }
+                // Cmd/Ctrl+L 由外层 Console 打开 Chat；此处仅拦截浏览器默认行为。
+                if is_chat_shortcut(&e) {
+                    e.prevent_default();
+                }
+                if find_open() && e.key() == Key::Escape {
+                    e.prevent_default();
+                    find_open.set(false);
+                    replace_open.set(false);
+                }
             },
+            if find_open() {
+                div {
+                    class: if replace_open() {
+                        "ac-file-find is-replace"
+                    } else {
+                        "ac-file-find"
+                    },
+                    role: "search",
+                    div { class: "ac-file-find-row",
+                        button {
+                            r#type: "button",
+                            class: "ac-file-find-toggle",
+                            title: if replace_open() { "收起替换" } else { "展开替换" },
+                            aria_label: if replace_open() { "收起替换" } else { "展开替换" },
+                            aria_expanded: replace_open(),
+                            onclick: move |_| {
+                                replace_open.with_mut(|v| *v = !*v);
+                            },
+                            if replace_open() {
+                                Icon { icon: LdChevronDown, width: 14, height: 14, fill: "currentColor" }
+                            } else {
+                                Icon { icon: LdChevronRight, width: 14, height: 14, fill: "currentColor" }
+                            }
+                        }
+                        div { class: "ac-file-find-input-wrap",
+                            input {
+                                r#type: "text",
+                                class: "ac-file-find-query",
+                                value: "{find_query}",
+                                placeholder: "查找",
+                                spellcheck: false,
+                                oninput: move |e| {
+                                    find_query.set(e.value());
+                                    match_index.set(0);
+                                },
+                                onkeydown: move |e: KeyboardEvent| {
+                                    if e.key() == Key::Enter {
+                                        e.prevent_default();
+                                        let delta: isize = if e.modifiers().contains(Modifiers::SHIFT) {
+                                            -1
+                                        } else {
+                                            1
+                                        };
+                                        editor_goto_find_match(delta, &find_matches(), match_index);
+                                    }
+                                },
+                            }
+                            button {
+                                r#type: "button",
+                                class: if case_sensitive() { "ac-file-find-opt is-active" } else { "ac-file-find-opt" },
+                                title: "区分大小写",
+                                aria_label: "区分大小写",
+                                aria_pressed: case_sensitive(),
+                                onclick: move |_| {
+                                    case_sensitive.with_mut(|v| *v = !*v);
+                                    match_index.set(0);
+                                },
+                                Icon { icon: LdCaseSensitive, width: 13, height: 13, fill: "currentColor" }
+                            }
+                            button {
+                                r#type: "button",
+                                class: if whole_word() { "ac-file-find-opt is-active" } else { "ac-file-find-opt" },
+                                title: "全字匹配",
+                                aria_label: "全字匹配",
+                                aria_pressed: whole_word(),
+                                onclick: move |_| {
+                                    whole_word.with_mut(|v| *v = !*v);
+                                    match_index.set(0);
+                                },
+                                Icon { icon: LdWholeWord, width: 13, height: 13, fill: "currentColor" }
+                            }
+                            button {
+                                r#type: "button",
+                                class: if use_regex() { "ac-file-find-opt is-active" } else { "ac-file-find-opt" },
+                                title: "使用正则表达式",
+                                aria_label: "使用正则表达式",
+                                aria_pressed: use_regex(),
+                                onclick: move |_| {
+                                    use_regex.with_mut(|v| *v = !*v);
+                                    match_index.set(0);
+                                },
+                                Icon { icon: LdRegex, width: 13, height: 13, fill: "currentColor" }
+                            }
+                        }
+                        div { class: "ac-file-find-actions",
+                            span {
+                                class: if find_error().is_some() || (match_count == 0 && !find_query().is_empty()) {
+                                    "ac-file-find-count is-empty"
+                                } else {
+                                    "ac-file-find-count"
+                                },
+                                "{match_label}"
+                            }
+                            button {
+                                r#type: "button",
+                                class: "ac-file-find-btn",
+                                title: "上一个",
+                                aria_label: "上一个",
+                                disabled: match_count == 0,
+                                onclick: move |_| {
+                                    editor_goto_find_match(-1, &find_matches(), match_index);
+                                },
+                                Icon { icon: LdChevronUp, width: 14, height: 14, fill: "currentColor" }
+                            }
+                            button {
+                                r#type: "button",
+                                class: "ac-file-find-btn",
+                                title: "下一个",
+                                aria_label: "下一个",
+                                disabled: match_count == 0,
+                                onclick: move |_| {
+                                    editor_goto_find_match(1, &find_matches(), match_index);
+                                },
+                                Icon { icon: LdChevronDown, width: 14, height: 14, fill: "currentColor" }
+                            }
+                            button {
+                                r#type: "button",
+                                class: "ac-file-find-btn",
+                                title: "关闭",
+                                aria_label: "关闭",
+                                onclick: move |_| {
+                                    find_open.set(false);
+                                    replace_open.set(false);
+                                },
+                                Icon { icon: LdX, width: 14, height: 14, fill: "currentColor" }
+                            }
+                        }
+                    }
+                    if replace_open() {
+                        div { class: "ac-file-find-row",
+                            span { class: "ac-file-find-toggle-spacer", aria_hidden: "true" }
+                            div { class: "ac-file-find-input-wrap",
+                                input {
+                                    r#type: "text",
+                                    class: "ac-file-find-replace",
+                                    value: "{replace_text}",
+                                    placeholder: "替换",
+                                    spellcheck: false,
+                                    oninput: move |e| replace_text.set(e.value()),
+                                    onkeydown: move |e: KeyboardEvent| {
+                                        if e.key() == Key::Enter {
+                                            e.prevent_default();
+                                            editor_replace_one(
+                                                &editor_path(),
+                                                drafts,
+                                                baselines,
+                                                dirty,
+                                                save_notice,
+                                                &find_matches(),
+                                                match_index,
+                                                &find_query(),
+                                                &replace_text(),
+                                                case_sensitive(),
+                                                whole_word(),
+                                                use_regex(),
+                                                preserve_case(),
+                                            );
+                                        }
+                                    },
+                                }
+                                button {
+                                    r#type: "button",
+                                    class: if preserve_case() { "ac-file-find-opt is-active" } else { "ac-file-find-opt" },
+                                    title: "保留大小写",
+                                    aria_label: "保留大小写",
+                                    aria_pressed: preserve_case(),
+                                    onclick: move |_| {
+                                        preserve_case.with_mut(|v| *v = !*v);
+                                    },
+                                    Icon { icon: LdCaseUpper, width: 13, height: 13, fill: "currentColor" }
+                                }
+                            }
+                            div { class: "ac-file-find-actions",
+                                button {
+                                    r#type: "button",
+                                    class: "ac-file-find-btn",
+                                    title: "替换",
+                                    aria_label: "替换",
+                                    disabled: match_count == 0,
+                                    onclick: move |_| {
+                                        editor_replace_one(
+                                            &editor_path(),
+                                            drafts,
+                                            baselines,
+                                            dirty,
+                                            save_notice,
+                                            &find_matches(),
+                                            match_index,
+                                            &find_query(),
+                                            &replace_text(),
+                                            case_sensitive(),
+                                            whole_word(),
+                                            use_regex(),
+                                            preserve_case(),
+                                        );
+                                    },
+                                    Icon { icon: LdReplace, width: 14, height: 14, fill: "currentColor" }
+                                }
+                                button {
+                                    r#type: "button",
+                                    class: "ac-file-find-btn",
+                                    title: "全部替换",
+                                    aria_label: "全部替换",
+                                    disabled: match_count == 0,
+                                    onclick: move |_| {
+                                        editor_replace_all(
+                                            &editor_path(),
+                                            drafts,
+                                            baselines,
+                                            dirty,
+                                            save_notice,
+                                            match_index,
+                                            &find_query(),
+                                            &replace_text(),
+                                            case_sensitive(),
+                                            whole_word(),
+                                            use_regex(),
+                                            preserve_case(),
+                                        );
+                                    },
+                                    Icon { icon: LdReplaceAll, width: 14, height: 14, fill: "currentColor" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             if show_status {
                 div { class: "ac-file-editor-toolbar",
                     div { class: "ac-file-editor-actions",
@@ -1854,6 +3115,13 @@ pub fn FileEditorPane(
                     if !body.ends_with('\n') && !body.is_empty() {
                         highlight.push('\n');
                     }
+                    let find_list = find_matches();
+                    let find_marks = if find_open() && !find_list.is_empty() {
+                        let idx = match_index().min(find_list.len() - 1);
+                        build_find_marks_html(&body, &find_list, idx)
+                    } else {
+                        String::new()
+                    };
                     rsx! {
                         div { class: "ac-file-editor-scroll",
                             div {
@@ -1871,6 +3139,13 @@ pub fn FileEditorPane(
                                     }
                                 }
                                 div { class: "ac-file-editor-surface",
+                                    if !find_marks.is_empty() {
+                                        pre {
+                                            class: "ac-file-editor-find-marks",
+                                            aria_hidden: "true",
+                                            dangerous_inner_html: "{find_marks}",
+                                        }
+                                    }
                                     pre {
                                         class: "ac-file-editor-highlight",
                                         dangerous_inner_html: "{highlight}",
@@ -1881,20 +3156,14 @@ pub fn FileEditorPane(
                                         spellcheck: "false",
                                         oninput: move |e| {
                                             let v = e.value();
-                                            let matches_baseline = baselines()
-                                                .get(&path_edit)
-                                                .is_some_and(|b| b == &v);
-                                            drafts.with_mut(|m| {
-                                                m.insert(path_edit.clone(), v);
-                                            });
-                                            dirty.with_mut(|s| {
-                                                if matches_baseline {
-                                                    s.remove(&path_edit);
-                                                } else {
-                                                    s.insert(path_edit.clone());
-                                                }
-                                            });
-                                            save_notice.set(None);
+                                            set_editor_draft(
+                                                &path_edit,
+                                                v,
+                                                drafts,
+                                                baselines,
+                                                dirty,
+                                                save_notice,
+                                            );
                                         },
                                     }
                                 }
@@ -2473,6 +3742,370 @@ pub fn FileHtmlPreviewPane(path: String) -> Element {
     }
 }
 
+/// 图片内置预览：居中自适应，支持缩放容器滚动。
+#[component]
+pub fn FileImagePreviewPane(path: String) -> Element {
+    let path_key = path.clone();
+    let src = use_memo(move || fs_image_preview_src(&path_key));
+    let title = fs_file_title(&path);
+    let alt = format!("预览 {title}");
+
+    rsx! {
+        section { class: "ac-html-preview-pane ac-image-preview-pane",
+            div { class: "ac-html-preview-stage ac-image-preview-stage",
+                match src() {
+                    Ok(src) => rsx! {
+                        img {
+                            class: "ac-image-preview-img",
+                            src: "{src}",
+                            alt: "{alt}",
+                            draggable: "false",
+                        }
+                    },
+                    Err(err) => rsx! {
+                        div { class: "ac-file-editor-error", "{err}" }
+                    },
+                }
+            }
+        }
+    }
+}
+
+fn format_audio_clock(secs: f64) -> String {
+    if !secs.is_finite() || secs < 0.0 {
+        return "0:00".into();
+    }
+    let total = secs.floor() as u64;
+    let m = total / 60;
+    let s = total % 60;
+    format!("{m}:{s:02}")
+}
+
+/// 音频内置预览：播放按钮 + 进度条 + 时长。
+#[component]
+pub fn FileAudioPreviewPane(path: String) -> Element {
+    let path_key = path.clone();
+    let src = use_memo(move || fs_audio_preview_src(&path_key));
+    let title = fs_file_title(&path);
+    let audio_dom_id = {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        path.hash(&mut h);
+        format!("ac-audio-{}", h.finish())
+    };
+    let track_dom_id = format!("{audio_dom_id}-track");
+    let fill_dom_id = format!("{audio_dom_id}-fill");
+    let mut playing = use_signal(|| false);
+    let mut current_secs = use_signal(|| 0.0_f64);
+    // 首屏即用本地文件头解析时长，避免依赖 WebView `<audio>.duration`（自定义协议下常为 NaN）。
+    let initial_duration = fs_audio_duration_secs(&path).unwrap_or(0.0);
+    let mut duration_secs = use_signal(move || {
+        if initial_duration.is_finite() && initial_duration > 0.0 {
+            initial_duration
+        } else {
+            0.0
+        }
+    });
+    let mut load_error = use_signal(|| None::<String>);
+
+    // 绑定播放进度；eval 上下文里必须用注入的 `dioxus.send`，不是 `window.dioxus`。
+    // 进度条宽度由 JS 每帧直写 DOM，时钟文案节流回传，避免整卡重渲染卡顿。
+    {
+        let audio_dom_id = audio_dom_id.clone();
+        let fill_dom_id = fill_dom_id.clone();
+        let src_ok = src().is_ok();
+        let seed_duration = duration_secs();
+        use_effect(move || {
+            playing.set(false);
+            current_secs.set(0.0);
+            load_error.set(None);
+            if !src_ok {
+                return;
+            }
+            let audio_id_js = serde_json::to_string(&audio_dom_id).unwrap_or_else(|_| "\"\"".into());
+            let fill_id_js = serde_json::to_string(&fill_dom_id).unwrap_or_else(|_| "\"\"".into());
+            let seed_js = if seed_duration.is_finite() && seed_duration > 0.0 {
+                format!("{seed_duration:.6}")
+            } else {
+                "0".into()
+            };
+            spawn(async move {
+                let mut eval = document::eval(&format!(
+                    r#"
+(async () => {{
+  const audioId = {audio_id_js};
+  const fillId = {fill_id_js};
+  const send = (payload) => {{
+    try {{ dioxus.send(payload); }} catch (_) {{}}
+  }};
+  const cleanupKey = '__acAudioPreviewCleanup_' + audioId;
+  try {{
+    const prev = window[cleanupKey];
+    if (typeof prev === 'function') prev();
+  }} catch (_) {{}}
+
+  let raf = 0;
+  let aborted = false;
+  let knownDuration = {seed_js};
+  let lastUiMs = 0;
+
+  const audio = () => document.getElementById(audioId);
+  const fill = () => document.getElementById(fillId);
+  const finiteDuration = (el) => {{
+    const d = el && el.duration;
+    return (Number.isFinite(d) && d > 0) ? d : 0;
+  }};
+  const paint = (current) => {{
+    const el = fill();
+    if (!el) return;
+    const pct = knownDuration > 0
+      ? Math.min(100, Math.max(0, (current / knownDuration) * 100))
+      : 0;
+    el.style.width = pct.toFixed(3) + '%';
+  }};
+  const syncUi = (forcePlaying, force) => {{
+    if (aborted) return;
+    const el = audio();
+    if (!el) return;
+    const fromEl = finiteDuration(el);
+    if (fromEl > 0) knownDuration = fromEl;
+    const current = el.currentTime || 0;
+    paint(current);
+    const now = performance.now();
+    if (!force && now - lastUiMs < 200) return;
+    lastUiMs = now;
+    const playing = typeof forcePlaying === 'boolean' ? forcePlaying : !el.paused;
+    send({{
+      kind: 'time',
+      current,
+      duration: knownDuration,
+      playing,
+    }});
+  }};
+
+  const tick = () => {{
+    if (aborted) return;
+    const el = audio();
+    if (!el) return;
+    const fromEl = finiteDuration(el);
+    if (fromEl > 0) knownDuration = fromEl;
+    paint(el.currentTime || 0);
+    if (!el.paused) {{
+      // 时钟约 5Hz 回传；进度条跟 RAF。
+      syncUi(true, false);
+      raf = requestAnimationFrame(tick);
+    }}
+  }};
+
+  const onPlay = () => {{
+    send({{ kind: 'playing', playing: true }});
+    syncUi(true, true);
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(tick);
+  }};
+  const onPause = () => {{ syncUi(false, true); }};
+  const onEnded = () => {{
+    const el = audio();
+    if (el) try {{ el.currentTime = 0; }} catch (_) {{}}
+    paint(0);
+    send({{ kind: 'playing', playing: false }});
+    syncUi(false, true);
+  }};
+  const onMeta = () => syncUi(undefined, true);
+  const onError = () => {{ send({{ kind: 'error', message: '无法加载音频' }}); }};
+
+  const bindAudio = () => {{
+    const el = audio();
+    if (!el) return false;
+    for (const [ev, fn] of [
+      ['play', onPlay], ['pause', onPause], ['ended', onEnded],
+      ['loadedmetadata', onMeta], ['durationchange', onMeta],
+      ['loadeddata', onMeta], ['canplay', onMeta],
+      ['error', onError],
+    ]) {{
+      el.removeEventListener(ev, fn);
+      el.addEventListener(ev, fn);
+    }}
+    syncUi(undefined, true);
+    return true;
+  }};
+
+  window[cleanupKey] = () => {{
+    aborted = true;
+    try {{ cancelAnimationFrame(raf); }} catch (_) {{}}
+    const el = audio();
+    if (el) {{
+      try {{ el.pause(); }} catch (_) {{}}
+      for (const [ev, fn] of [
+        ['play', onPlay], ['pause', onPause], ['ended', onEnded],
+        ['loadedmetadata', onMeta], ['durationchange', onMeta],
+        ['loadeddata', onMeta], ['canplay', onMeta],
+        ['error', onError],
+      ]) el.removeEventListener(ev, fn);
+    }}
+  }};
+
+  await new Promise((r) => requestAnimationFrame(() => r()));
+  if (aborted) return;
+  bindAudio();
+  if (knownDuration > 0) send({{ kind: 'duration', duration: knownDuration }});
+  await new Promise(() => {{}});
+}})();
+"#,
+                    audio_id_js = audio_id_js,
+                    fill_id_js = fill_id_js,
+                    seed_js = seed_js,
+                ));
+                while let Ok(val) = eval.recv::<serde_json::Value>().await {
+                    let kind = val.get("kind").and_then(|k| k.as_str()).unwrap_or("");
+                    match kind {
+                        "duration" => {
+                            if let Some(d) = val.get("duration").and_then(|v| v.as_f64()) {
+                                if d.is_finite() && d > 0.0 {
+                                    duration_secs.set(d);
+                                }
+                            }
+                        }
+                        "time" => {
+                            current_secs
+                                .set(val.get("current").and_then(|v| v.as_f64()).unwrap_or(0.0));
+                            if let Some(d) = val.get("duration").and_then(|v| v.as_f64()) {
+                                if d.is_finite() && d > 0.0 {
+                                    duration_secs.set(d);
+                                }
+                            }
+                            if let Some(p) = val.get("playing").and_then(|v| v.as_bool()) {
+                                playing.set(p);
+                            }
+                        }
+                        "playing" => {
+                            if let Some(p) = val.get("playing").and_then(|v| v.as_bool()) {
+                                playing.set(p);
+                            }
+                        }
+                        "error" => {
+                            let msg = val
+                                .get("message")
+                                .and_then(|m| m.as_str())
+                                .unwrap_or("音频预览失败")
+                                .to_string();
+                            load_error.set(Some(msg));
+                        }
+                        _ => {}
+                    }
+                }
+            });
+        });
+    }
+
+    let toggle_play = {
+        let audio_dom_id = audio_dom_id.clone();
+        move |_| {
+            let id_js = serde_json::to_string(&audio_dom_id).unwrap_or_else(|_| "\"\"".into());
+            let _ = document::eval(&format!(
+                r#"(() => {{
+  const el = document.getElementById({id_js});
+  if (!el) return;
+  if (el.paused) {{ el.play().catch(() => {{}}); }}
+  else {{ el.pause(); }}
+}})();"#
+            ));
+        }
+    };
+
+    let seek = {
+        let audio_dom_id = audio_dom_id.clone();
+        let track_dom_id = track_dom_id.clone();
+        let fill_dom_id = fill_dom_id.clone();
+        move |evt: MouseEvent| {
+            let id_js = serde_json::to_string(&audio_dom_id).unwrap_or_else(|_| "\"\"".into());
+            let track_js = serde_json::to_string(&track_dom_id).unwrap_or_else(|_| "\"\"".into());
+            let fill_js = serde_json::to_string(&fill_dom_id).unwrap_or_else(|_| "\"\"".into());
+            let fallback = duration_secs();
+            let coords = evt.data.client_coordinates();
+            let _ = document::eval(&format!(
+                r#"(() => {{
+  const el = document.getElementById({id_js});
+  const track = document.getElementById({track_js});
+  const fill = document.getElementById({fill_js});
+  if (!el || !track) return;
+  const dur = (Number.isFinite(el.duration) && el.duration > 0) ? el.duration : {fallback};
+  if (!(dur > 0)) return;
+  const rect = track.getBoundingClientRect();
+  const x = Math.min(Math.max({client_x} - rect.left, 0), rect.width || 1);
+  const ratio = x / (rect.width || 1);
+  el.currentTime = ratio * dur;
+  if (fill) fill.style.width = (ratio * 100).toFixed(3) + '%';
+}})();"#,
+                id_js = id_js,
+                track_js = track_js,
+                fill_js = fill_js,
+                fallback = if fallback.is_finite() && fallback > 0.0 {
+                    fallback
+                } else {
+                    0.0
+                },
+                client_x = coords.x,
+            ));
+        }
+    };
+
+    rsx! {
+        section { class: "ac-html-preview-pane ac-audio-preview-pane",
+            div { class: "ac-html-preview-stage ac-audio-preview-stage",
+                match src() {
+                    Ok(src) => rsx! {
+                        audio {
+                            id: "{audio_dom_id}",
+                            class: "ac-audio-preview-el",
+                            src: "{src}",
+                            preload: "metadata",
+                        }
+                        div { class: "ac-audio-preview-card",
+                            div { class: "ac-audio-preview-title", "{title}" }
+                            button {
+                                r#type: "button",
+                                class: "ac-audio-preview-play",
+                                title: if playing() { "暂停" } else { "播放" },
+                                aria_label: if playing() { "暂停" } else { "播放" },
+                                onclick: toggle_play,
+                                if playing() {
+                                    Icon { icon: LdPause, width: 28, height: 28, fill: "currentColor" }
+                                } else {
+                                    Icon { icon: LdPlay, width: 28, height: 28, fill: "currentColor" }
+                                }
+                            }
+                            div {
+                                id: "{track_dom_id}",
+                                class: "ac-audio-preview-track",
+                                role: "slider",
+                                aria_label: "音频进度",
+                                aria_valuemin: "0",
+                                aria_valuemax: "100",
+                                onclick: seek,
+                                div {
+                                    id: "{fill_dom_id}",
+                                    class: "ac-audio-preview-track-fill",
+                                }
+                            }
+                            div { class: "ac-audio-preview-meta",
+                                span { "{format_audio_clock(current_secs())}" }
+                                span { "{format_audio_clock(duration_secs())}" }
+                            }
+                            if let Some(err) = load_error() {
+                                div { class: "ac-audio-preview-error", "{err}" }
+                            }
+                        }
+                    },
+                    Err(err) => rsx! {
+                        div { class: "ac-file-editor-error", "{err}" }
+                    },
+                }
+            }
+        }
+    }
+}
+
 /// PDF 内置预览：整页 iframe，渲染交给 WebView（WKWebView / WebView2 均内置 PDF 阅读器）。
 #[component]
 pub fn FilePdfPreviewPane(path: String) -> Element {
@@ -2528,6 +4161,122 @@ pub fn FileStlPreviewPane(path: String) -> Element {
                         }
                     },
                     Err(err) => rsx! {
+                        div { class: "ac-file-editor-error", "{err}" }
+                    },
+                }
+            }
+        }
+    }
+}
+
+/// Office 内置预览：整页 iframe 载入 JS 查看器（docx/xlsx/pptx；旧版 doc/xls/ppt）。
+/// `.doc` / `.ppt` 可能阻塞转换，放到后台线程并显示加载态。
+/// 主题跟随应用 `html[data-theme]`：首屏写入 query/`__PUSA_OFFICE__`，切换时 `postMessage`。
+#[component]
+pub fn FileOfficePreviewPane(path: String) -> Element {
+    let path_key = path.clone();
+    let mut frame = use_signal(|| None::<Result<HtmlPreviewFrame, String>>);
+    let mut ui_theme = use_signal(crate::shell::theme::load);
+    let title = fs_file_title(&path);
+    let iframe_title = format!("预览 {title}");
+    let loading_hint = if fs_office_preview_may_convert(&path) {
+        "正在转换旧版 Office 文档…".to_string()
+    } else {
+        "正在准备预览…".to_string()
+    };
+
+    // 与终端一致：监听主文档 `data-theme`；并应答 iframe 的 `pusa-theme-request`。
+    use_effect(move || {
+        let mut eval = document::eval(
+            r#"(() => {
+  const read = () => {
+    const v = (document.documentElement.getAttribute('data-theme') || 'light').toLowerCase();
+    return v === 'dark' ? 'dark' : 'light';
+  };
+  const push = () => { try { dioxus.send(read()); } catch (_) {} };
+  const reply = (source) => {
+    try {
+      if (source) source.postMessage({ type: 'pusa-theme', theme: read() }, '*');
+    } catch (_) {}
+  };
+  const onMsg = (ev) => {
+    if (ev && ev.data && ev.data.type === 'pusa-theme-request') reply(ev.source);
+  };
+  window.addEventListener('message', onMsg);
+  push();
+  const obs = new MutationObserver(push);
+  obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+})();"#,
+        );
+        spawn(async move {
+            loop {
+                let Ok(raw) = eval.recv::<String>().await else {
+                    break;
+                };
+                let next = crate::shell::theme::UiTheme::from_stored(&raw);
+                if ui_theme() != next {
+                    ui_theme.set(next);
+                }
+            }
+        });
+    });
+
+    // 路径变化时重建 iframe；主题用 peek，避免切主题触发旧版转换重跑。
+    use_effect({
+        let path = path_key.clone();
+        move || {
+            frame.set(None);
+            let theme = ui_theme.peek().as_attr().to_string();
+            #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+            {
+                let path = path.clone();
+                spawn(async move {
+                    let result =
+                        tokio::task::spawn_blocking(move || fs_office_preview_frame(&path, &theme))
+                            .await
+                            .unwrap_or_else(|e| Err(format!("预览任务失败：{e}")));
+                    frame.set(Some(result));
+                });
+            }
+            #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+            {
+                frame.set(Some(fs_office_preview_frame(&path, &theme)));
+            }
+        }
+    });
+
+    // iframe 就绪或主题变更：向查看器 postMessage（不重载，保留滚动位置）。
+    use_effect(move || {
+        let theme = ui_theme().as_attr();
+        let ready = matches!(frame(), Some(Ok(_)));
+        if !ready {
+            return;
+        }
+        let _ = document::eval(&office_preview_post_theme_js(theme));
+    });
+
+    rsx! {
+        section { class: "ac-html-preview-pane ac-office-preview-pane",
+            div { class: "ac-html-preview-stage",
+                match frame() {
+                    None => rsx! {
+                        div { class: "ac-file-editor-loading", "{loading_hint}" }
+                    },
+                    Some(Ok(HtmlPreviewFrame::Url(src))) => rsx! {
+                        iframe {
+                            class: "ac-html-preview-frame",
+                            src: "{src}",
+                            title: "{iframe_title}",
+                        }
+                    },
+                    Some(Ok(HtmlPreviewFrame::SrcDoc(srcdoc))) => rsx! {
+                        iframe {
+                            class: "ac-html-preview-frame",
+                            srcdoc: "{srcdoc}",
+                            title: "{iframe_title}",
+                        }
+                    },
+                    Some(Err(err)) => rsx! {
                         div { class: "ac-file-editor-error", "{err}" }
                     },
                 }

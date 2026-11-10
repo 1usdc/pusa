@@ -15,10 +15,10 @@ use dioxus_free_icons::icons::bs_icons::{
     BsLayoutSidebarReverse,
 };
 use dioxus_free_icons::icons::ld_icons::{
-    LdArrowUp, LdBug, LdCheck, LdChevronDown, LdChevronsDown, LdChevronUp, LdCopy, LdDownload,
-    LdEye, LdFileSearch, LdFolder, LdGlobe, LdInfinity, LdListTodo, LdMessageCircle,
-    LdMessageSquare, LdPaperclip, LdPencil, LdPlus, LdRefreshCw, LdSave, LdScrollText, LdSearch, LdShieldCheck,
-    LdSparkles, LdTrash2, LdWandSparkles, LdX,
+    LdArrowUp, LdBug, LdCheck, LdChevronDown, LdChevronRight, LdChevronsDown, LdChevronUp,
+    LdCopy, LdDownload, LdEye, LdFileSearch, LdFolder, LdGlobe, LdInfinity, LdListTodo,
+    LdMessageCircle, LdMessageSquare, LdPaperclip, LdPencil, LdPlus, LdRefreshCw, LdSave,
+    LdScrollText, LdSearch, LdShieldCheck, LdSparkles, LdTrash2, LdWandSparkles, LdWifi, LdX,
 };
 use dioxus_free_icons::Icon;
 use crate::icons::{
@@ -32,17 +32,19 @@ use crate::icons::{
 use keyboard_types::{Key, Modifiers};
 
 use crate::chat::{
-    activate_role, attachment_from_file_data, attachment_from_path, ce_clear, ce_focus_end,
-    ce_insert_chip, ce_insert_text, ce_serialize, ce_set_html, chip_html, compose_user_payload,
+    activate_role, attachment_from_file_data, attachment_from_path,
+    attachment_from_terminal_selection, ce_clear, ce_clear_now, ce_focus_end, ce_insert_chip,
+    ce_insert_text, ce_serialize, ce_set_html, chip_html, compose_user_payload,
     composer_seed_html, composer_seed_html_from_segs, create_conversation, create_role,
-    delete_conversation, delete_role, install_skill, list_chat_models, list_chat_models_from_credentials,
+    delete_conversation, delete_role, install_skill, list_chat_models_from_credentials,
     list_conversations,
     load_agent_run_detail, load_conversation_messages, load_equipped_skills, load_installed_skills,
     load_roles, load_skill_market, parse_user_message_segments, pending_has_path, pending_remove_ids,
-    run_chat_turn, toggle_skill_equip, uninstall_installed_skill, update_conversation_title,
-    update_role, ChatMarkdownBody, ChatPendingAttachment, ChatThinkingHydrator, ChatThinkingPanel,
-    ChatUserSeg, ComposerBridgeEvent, StepPhase, ThinkingStatus, ToolStatus, TraceFileOpen,
-    UiAgentThinking, UiChatMessage, UiThinkingStep, UiThinkingTool, COMPOSER_ROOT_EDIT,
+    probe_v1_models_endpoint, run_chat_turn, toggle_skill_equip, uninstall_installed_skill,
+    update_conversation_title, update_role, ChatMarkdownBody, ChatPendingAttachment,
+    ChatThinkingHydrator, ChatThinkingPanel, ChatUserSeg, ComposerBridgeEvent, StepPhase,
+    ThinkingStatus, ToolStatus, TraceFileOpen, UiAgentThinking, UiChatMessage, UiThinkingStep,
+    UiThinkingTool, COMPOSER_ROOT_EDIT,
     COMPOSER_ROOT_MAIN, INSTALL_BRIDGE_JS,
 };
 use crate::persona;
@@ -83,13 +85,6 @@ impl ChatAgentMode {
         }
     }
 
-    fn shortcut(self) -> Option<&'static str> {
-        match self {
-            Self::Agent => Some("⌘I"),
-            _ => None,
-        }
-    }
-
     fn allows_parallel(self) -> bool {
         matches!(self, Self::Multitask)
     }
@@ -117,15 +112,14 @@ impl ChatAgentMode {
 
 /// 聊天栏顶部"模型选择"下拉的一项。
 ///
-/// 数据来源：用户自定义（本地持久化）+ Relay `GET /v1/models`（成功时合并）。
-/// `base_url` 拉不到模型时**不**再塞本地默认列表，仅展示自定义项。
+/// 数据来源：用户自定义（本地持久化）+ 已开启密钥端点的 `GET {base}/models`（成功时合并）。
+/// 拉不到远端模型时**不**再塞本地默认列表，仅展示自定义项。
 /// - `id`：模型 ID，例如 `gpt-5.4`；既是按钮主标题（大写化后展示），也是
 ///   `chat_model` signal 存的值（与上游 `/v1/chat/completions` 的 `model`
 ///   参数一致）。
-/// - `display_name`：可选副标题（鉴权版 `/v1/me/models` 的 admin 描述）；
-///   公开列表通常为空，UI 不渲染副标题元素。
+/// - `display_name`：可选副标题；多数 OpenAI 兼容列表为空，UI 不渲染副标题元素。
 /// - `custom`：用户手动添加的模型，可删除。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct ChatModelEntry {
     id: String,
     display_name: Option<String>,
@@ -197,19 +191,85 @@ fn merge_chat_models(remote: Vec<ChatModelEntry>, custom: Vec<ChatModelEntry>) -
     out
 }
 
-fn push_unique_models(out: &mut Vec<ChatModelEntry>, extra: Vec<ChatModelEntry>) {
-    for m in extra {
-        if !out.iter().any(|x| x.id == m.id) {
-            out.push(m);
-        }
-    }
-}
-
 #[derive(Clone, PartialEq)]
 struct SavedLlmKey {
     id: String,
     label: String,
     base: String,
+}
+
+const MODEL_GROUP_CUSTOM: &str = "__custom__";
+const MODEL_GROUP_OTHER: &str = "__other__";
+
+/// 模型选择弹层中的一个分组（按 API 密钥名；自定义单独一组）。
+#[derive(Clone, PartialEq)]
+struct ChatModelGroup {
+    key: String,
+    title: String,
+    models: Vec<ChatModelEntry>,
+}
+
+fn chat_model_group_key(m: &ChatModelEntry, keys: &[SavedLlmKey]) -> String {
+    if m.custom {
+        return MODEL_GROUP_CUSTOM.to_string();
+    }
+    if let Some(cid) = m.source_credential_id.as_deref() {
+        if keys.iter().any(|k| k.id == cid) {
+            return format!("cred:{cid}");
+        }
+    }
+    MODEL_GROUP_OTHER.to_string()
+}
+
+fn build_chat_model_groups(
+    models: &[ChatModelEntry],
+    keys: &[SavedLlmKey],
+) -> Vec<ChatModelGroup> {
+    let mut used_ids = HashSet::new();
+    let mut groups = Vec::new();
+
+    for k in keys {
+        let items: Vec<ChatModelEntry> = models
+            .iter()
+            .filter(|m| !m.custom && m.source_credential_id.as_deref() == Some(k.id.as_str()))
+            .cloned()
+            .collect();
+        if items.is_empty() {
+            continue;
+        }
+        for m in &items {
+            used_ids.insert(m.id.clone());
+        }
+        groups.push(ChatModelGroup {
+            key: format!("cred:{}", k.id),
+            title: k.label.clone(),
+            models: items,
+        });
+    }
+
+    let other: Vec<ChatModelEntry> = models
+        .iter()
+        .filter(|m| !m.custom && !used_ids.contains(&m.id))
+        .cloned()
+        .collect();
+    if !other.is_empty() {
+        groups.push(ChatModelGroup {
+            key: MODEL_GROUP_OTHER.to_string(),
+            title: "其他".into(),
+            models: other,
+        });
+    }
+
+    let custom: Vec<ChatModelEntry> = models.iter().filter(|m| m.custom).cloned().collect();
+    if !custom.is_empty() {
+        groups.push(ChatModelGroup {
+            key: MODEL_GROUP_CUSTOM.to_string(),
+            title: "自定义".into(),
+            models: custom,
+        });
+    }
+
+    groups
 }
 
 struct LlmPickerSources {
@@ -309,6 +369,77 @@ async fn load_llm_picker_sources() -> LlmPickerSources {
     }
 }
 
+/// 探测用：返回配置里全部凭证 `(id, base, api_key)`（含未开启的），便于测自定义绑定。
+async fn load_llm_probe_credentials() -> Vec<(String, String, String)> {
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        let Ok(cfg) = async { crate::desktop::agent::runtime_ctx()?.llm_config_get().await }.await
+        else {
+            return Vec::new();
+        };
+        return cfg
+            .credentials
+            .into_iter()
+            .map(|c| (c.id, c.openai_v1_base, c.api_key))
+            .collect();
+    }
+    #[cfg(all(target_arch = "wasm32", feature = "web"))]
+    {
+        let Some(cfg) = crate::web::llm_config::fetch_llm_config().await else {
+            return Vec::new();
+        };
+        return cfg
+            .credentials
+            .into_iter()
+            .map(|c| (c.id, c.openai_v1_base, c.api_key))
+            .collect();
+    }
+    #[cfg(not(any(
+        all(feature = "native", not(target_arch = "wasm32")),
+        all(target_arch = "wasm32", feature = "web")
+    )))]
+    {
+        Vec::new()
+    }
+}
+
+/// 检测列表中每个模型对应端点是否可达：`model_id → ok`。
+/// 同一凭证只探测一次；未绑定凭证的模型记为不正常。
+async fn probe_chat_models_network(models: &[ChatModelEntry]) -> HashMap<String, bool> {
+    let creds = load_llm_probe_credentials().await;
+    let mut needed: HashSet<String> = HashSet::new();
+    for m in models {
+        if let Some(cid) = m.source_credential_id.as_deref() {
+            if !cid.trim().is_empty() {
+                needed.insert(cid.to_string());
+            }
+        }
+    }
+    let mut cred_ok: HashMap<String, bool> = HashMap::new();
+    for (id, base, key) in &creds {
+        if !needed.contains(id) {
+            continue;
+        }
+        if base.trim().is_empty() {
+            cred_ok.insert(id.clone(), false);
+            continue;
+        }
+        let ok = probe_v1_models_endpoint(base, key).await;
+        cred_ok.insert(id.clone(), ok);
+    }
+    let mut out = HashMap::new();
+    for m in models {
+        let ok = m
+            .source_credential_id
+            .as_deref()
+            .filter(|c| !c.trim().is_empty())
+            .and_then(|c| cred_ok.get(c).copied())
+            .unwrap_or(false);
+        out.insert(m.id.clone(), ok);
+    }
+    out
+}
+
 fn persist_custom_from_models(models: &[ChatModelEntry]) {
     let items: Vec<CustomChatModelPref> = models
         .iter()
@@ -324,24 +455,41 @@ fn persist_custom_from_models(models: &[ChatModelEntry]) {
 
 fn try_add_custom_chat_model(
     draft: &str,
+    cred_id: &str,
+    known_keys: &[SavedLlmKey],
     mut chat_models: Signal<Vec<ChatModelEntry>>,
     mut chat_model: Signal<String>,
     mut custom_model_draft: Signal<String>,
+    mut add_custom_cred: Signal<String>,
+    mut adding_custom: Signal<bool>,
     mut sheet_open: Signal<bool>,
 ) {
     let id = draft.trim().to_string();
     if id.is_empty() {
         return;
     }
+    let cred = cred_id.trim().to_string();
+    let cred = if cred.is_empty() || !known_keys.iter().any(|k| k.id == cred) {
+        None
+    } else {
+        Some(cred)
+    };
     let exists_custom = chat_models().iter().any(|m| m.id == id && m.custom);
     let exists_any = chat_models().iter().any(|m| m.id == id);
-    if !exists_custom && !exists_any {
+    if exists_custom {
+        chat_models.with_mut(|list| {
+            if let Some(m) = list.iter_mut().find(|m| m.id == id && m.custom) {
+                m.source_credential_id = cred;
+            }
+        });
+        persist_custom_from_models(&chat_models());
+    } else if !exists_any {
         chat_models.with_mut(|list| {
             list.push(ChatModelEntry {
                 id: id.clone(),
                 display_name: None,
                 custom: true,
-                source_credential_id: None,
+                source_credential_id: cred,
             });
         });
         persist_custom_from_models(&chat_models());
@@ -349,31 +497,49 @@ fn try_add_custom_chat_model(
     persist_chat_model(&id);
     chat_model.set(id);
     custom_model_draft.set(String::new());
+    add_custom_cred.set(String::new());
+    adding_custom.set(false);
     sheet_open.set(false);
 }
 
 fn apply_custom_chat_model_edit(
     id: &str,
-    name: &str,
+    model_id: &str,
     cred_id: &str,
     known_keys: &[SavedLlmKey],
     mut chat_models: Signal<Vec<ChatModelEntry>>,
+    mut chat_model: Signal<String>,
     mut editing_id: Signal<Option<String>>,
 ) {
-    let name = name.trim().to_string();
+    let next_id = model_id.trim().to_string();
     let cred = cred_id.trim().to_string();
     let cred = if cred.is_empty() || !known_keys.iter().any(|k| k.id == cred) {
         None
     } else {
         Some(cred)
     };
+    let rename = !next_id.is_empty()
+        && next_id != id
+        && !chat_models().iter().any(|m| m.id == next_id);
+    let applied_id = if rename {
+        next_id
+    } else {
+        id.to_string()
+    };
     chat_models.with_mut(|list| {
         if let Some(m) = list.iter_mut().find(|m| m.id == id && m.custom) {
-            m.display_name = if name.is_empty() { None } else { Some(name) };
+            if rename {
+                m.id = applied_id.clone();
+                m.display_name = None;
+            }
             m.source_credential_id = cred;
         }
     });
     persist_custom_from_models(&chat_models());
+    if chat_model() == id && applied_id != id {
+        persist_chat_model(&applied_id);
+        chat_model.set(applied_id);
+    }
     editing_id.set(None);
 }
 
@@ -449,8 +615,14 @@ enum CenterTabKind {
     FileHtmlPreview { path: String },
     /// PDF 内置预览（不写入操作缓存）。
     FilePdfPreview { path: String },
+    /// 图片内置预览（不写入操作缓存）。
+    FileImagePreview { path: String },
+    /// 音频内置预览（播放 + 进度条；不写入操作缓存）。
+    FileAudioPreview { path: String },
     /// STL 3D 模型内置预览（不写入操作缓存）。
     FileStlPreview { path: String },
+    /// Office（含旧版 doc/xls/ppt）内置预览（不写入操作缓存）。
+    FileOfficePreview { path: String },
     /// 工具轨迹中某次编辑的前后对比（不写入操作缓存）。
     FileDiff {
         path: String,
@@ -466,6 +638,17 @@ struct CenterTab {
     id: String,
     title: String,
     kind: CenterTabKind,
+    /// 预览态（斜体）：单击打开；未修改时可被下一次单击替换。编辑后会自动钉住。
+    preview: bool,
+}
+
+/// 中间栏标签右键菜单状态。
+#[derive(Clone, PartialEq)]
+struct CenterTabsCtxMenu {
+    x: f64,
+    y: f64,
+    /// 右键落在具体标签上时有值；点在标签栏空白处则为 `None`。
+    tab_id: Option<String>,
 }
 
 /// 操作缓存：上次打开的中间栏标签 + 选中项（Web `localStorage` / 桌面 `center_tabs.json`）。
@@ -511,7 +694,10 @@ impl CenterTabKindCache {
             | CenterTabKind::FileMdPreview { .. }
             | CenterTabKind::FileHtmlPreview { .. }
             | CenterTabKind::FilePdfPreview { .. }
-            | CenterTabKind::FileStlPreview { .. } => None,
+            | CenterTabKind::FileImagePreview { .. }
+            | CenterTabKind::FileAudioPreview { .. }
+            | CenterTabKind::FileStlPreview { .. }
+            | CenterTabKind::FileOfficePreview { .. } => None,
         }
     }
 }
@@ -545,6 +731,7 @@ impl From<CenterTabCacheEntry> for CenterTab {
             id: entry.id,
             title: entry.title,
             kind: CenterTabKind::from(entry.kind),
+            preview: false,
         }
     }
 }
@@ -873,103 +1060,140 @@ const CENTER_TAB_ROLE_ID: &str = "role";
 const CENTER_TAB_WEB_BROWSER_PREFIX: &str = "web-browser:";
 
 impl CenterTab {
-    fn role() -> Self {
+    fn new(id: String, title: String, kind: CenterTabKind) -> Self {
         Self {
-            id: CENTER_TAB_ROLE_ID.to_string(),
-            title: "角色设定".into(),
-            kind: CenterTabKind::Role,
+            id,
+            title,
+            kind,
+            preview: false,
         }
+    }
+
+    fn into_preview(mut self) -> Self {
+        self.preview = true;
+        self
+    }
+
+    fn role() -> Self {
+        Self::new(
+            CENTER_TAB_ROLE_ID.to_string(),
+            "角色设定".into(),
+            CenterTabKind::Role,
+        )
     }
 
     fn skill_installed(slug: String, title: String) -> Self {
         let id = format!("skill:installed:{slug}");
-        Self {
-            id,
-            title,
-            kind: CenterTabKind::SkillInstalled { slug },
-        }
+        Self::new(id, title, CenterTabKind::SkillInstalled { slug })
     }
 
     fn skill_market(key: String, title: String) -> Self {
         let id = format!("skill:market:{key}");
-        Self {
-            id,
-            title,
-            kind: CenterTabKind::SkillMarket { key },
-        }
+        Self::new(id, title, CenterTabKind::SkillMarket { key })
     }
 
     fn plugin(key: String, title: String) -> Self {
         let id = format!("plugin:{key}");
-        Self {
-            id,
-            title,
-            kind: CenterTabKind::Plugin { key },
-        }
+        Self::new(id, title, CenterTabKind::Plugin { key })
     }
 
     fn file(path: String) -> Self {
         let title = super::files::fs_file_title(&path);
         let id = format!("file:{path}");
-        Self {
-            id,
-            title,
-            kind: CenterTabKind::File { path },
+        Self::new(id, title, CenterTabKind::File { path })
+    }
+
+    /// 按扩展名打开：图片/音频/PDF/STL/Office 走内置预览，其余走文本编辑器。
+    fn file_or_preview(path: String) -> Self {
+        if super::files::fs_is_pdf_path(&path) {
+            Self::file_pdf_preview(path)
+        } else if super::files::fs_is_image_path(&path) {
+            Self::file_image_preview(path)
+        } else if super::files::fs_is_audio_path(&path) {
+            Self::file_audio_preview(path)
+        } else if super::files::fs_is_stl_path(&path) {
+            Self::file_stl_preview(path)
+        } else if super::files::fs_is_office_path(&path) {
+            Self::file_office_preview(path)
+        } else {
+            Self::file(path)
         }
     }
 
     fn file_diff(tool_id: String, path: String, old_text: String, new_text: String) -> Self {
         let name = super::files::fs_file_title(&path);
         let id = format!("file-diff:{tool_id}");
-        Self {
+        Self::new(
             id,
-            title: format!("编辑 · {name}"),
-            kind: CenterTabKind::FileDiff {
+            format!("编辑 · {name}"),
+            CenterTabKind::FileDiff {
                 path,
                 old_text,
                 new_text,
             },
-        }
+        )
     }
 
     fn file_md_preview(path: String) -> Self {
         let name = super::files::fs_file_title(&path);
         let id = format!("file-md-preview:{path}");
-        Self {
+        Self::new(
             id,
-            title: format!("预览 · {name}"),
-            kind: CenterTabKind::FileMdPreview { path },
-        }
+            format!("预览 · {name}"),
+            CenterTabKind::FileMdPreview { path },
+        )
     }
 
     fn file_html_preview(path: String) -> Self {
         let name = super::files::fs_file_title(&path);
         let id = format!("file-html-preview:{path}");
-        Self {
+        Self::new(
             id,
-            title: format!("预览 · {name}"),
-            kind: CenterTabKind::FileHtmlPreview { path },
-        }
+            format!("预览 · {name}"),
+            CenterTabKind::FileHtmlPreview { path },
+        )
     }
 
     fn file_pdf_preview(path: String) -> Self {
         let name = super::files::fs_file_title(&path);
         let id = format!("file-pdf-preview:{path}");
-        Self {
+        Self::new(
             id,
-            title: format!("预览 · {name}"),
-            kind: CenterTabKind::FilePdfPreview { path },
-        }
+            format!("预览 · {name}"),
+            CenterTabKind::FilePdfPreview { path },
+        )
+    }
+
+    fn file_image_preview(path: String) -> Self {
+        let name = super::files::fs_file_title(&path);
+        let id = format!("file-image-preview:{path}");
+        Self::new(id, name, CenterTabKind::FileImagePreview { path })
+    }
+
+    fn file_audio_preview(path: String) -> Self {
+        let name = super::files::fs_file_title(&path);
+        let id = format!("file-audio-preview:{path}");
+        Self::new(id, name, CenterTabKind::FileAudioPreview { path })
     }
 
     fn file_stl_preview(path: String) -> Self {
         let name = super::files::fs_file_title(&path);
         let id = format!("file-stl-preview:{path}");
-        Self {
+        Self::new(
             id,
-            title: format!("预览 · {name}"),
-            kind: CenterTabKind::FileStlPreview { path },
-        }
+            format!("预览 · {name}"),
+            CenterTabKind::FileStlPreview { path },
+        )
+    }
+
+    fn file_office_preview(path: String) -> Self {
+        let name = super::files::fs_file_title(&path);
+        let id = format!("file-office-preview:{path}");
+        Self::new(
+            id,
+            format!("预览 · {name}"),
+            CenterTabKind::FileOfficePreview { path },
+        )
     }
 
     /// 新建一个 Pusa 浏览器标签（每次调用都是新标签，不复用已有的）。
@@ -988,11 +1212,11 @@ impl CenterTab {
             })
             .max()
             .map_or(1, |n| n + 1);
-        Self {
-            id: format!("{CENTER_TAB_WEB_BROWSER_PREFIX}{next}"),
-            title: super::browser::browser_tab_title(""),
-            kind: CenterTabKind::WebBrowser { url: String::new() },
-        }
+        Self::new(
+            format!("{CENTER_TAB_WEB_BROWSER_PREFIX}{next}"),
+            super::browser::browser_tab_title(""),
+            CenterTabKind::WebBrowser { url: String::new() },
+        )
     }
 }
 
@@ -1000,11 +1224,174 @@ fn center_open_or_focus(tabs: &mut Vec<CenterTab>, active_id: &mut Option<String
     if let Some(existing) = tabs.iter_mut().find(|t| t.id == tab.id) {
         existing.title = tab.title;
         existing.kind = tab.kind;
+        if !tab.preview {
+            existing.preview = false;
+        }
         *active_id = Some(existing.id.clone());
         return;
     }
     *active_id = Some(tab.id.clone());
     tabs.push(tab);
+}
+
+fn center_tab_is_dirty(tab: &CenterTab, dirty: &HashSet<String>) -> bool {
+    center_tab_file_path(&tab.kind).is_some_and(|p| dirty.contains(p))
+}
+
+fn center_tab_is_file_content(kind: &CenterTabKind) -> bool {
+    matches!(
+        kind,
+        CenterTabKind::File { .. }
+            | CenterTabKind::FileMdPreview { .. }
+            | CenterTabKind::FileHtmlPreview { .. }
+            | CenterTabKind::FilePdfPreview { .. }
+            | CenterTabKind::FileImagePreview { .. }
+            | CenterTabKind::FileAudioPreview { .. }
+            | CenterTabKind::FileStlPreview { .. }
+            | CenterTabKind::FileOfficePreview { .. }
+    )
+}
+
+/// 单击打开文件：已打开则聚焦；否则复用「未修改的预览标签」；再否则新建预览标签。
+/// 返回被替换掉、需要清理草稿的旧文件路径。
+fn center_open_file_click(
+    tabs: &mut Vec<CenterTab>,
+    active_id: &mut Option<String>,
+    tab: CenterTab,
+    dirty: &HashSet<String>,
+) -> Option<String> {
+    let tab = tab.into_preview();
+    if let Some(existing) = tabs.iter_mut().find(|t| t.id == tab.id) {
+        existing.title = tab.title;
+        existing.kind = tab.kind;
+        *active_id = Some(existing.id.clone());
+        return None;
+    }
+    if let Some(idx) = tabs.iter().position(|t| {
+        t.preview && center_tab_is_file_content(&t.kind) && !center_tab_is_dirty(t, dirty)
+    }) {
+        let old_path = center_tab_file_path(&tabs[idx].kind).map(str::to_string);
+        let new_path = center_tab_file_path(&tab.kind).map(str::to_string);
+        let forget = match (old_path, new_path) {
+            (Some(old), Some(new)) if old != new => Some(old),
+            (Some(old), None) => Some(old),
+            _ => None,
+        };
+        tabs[idx] = tab;
+        *active_id = Some(tabs[idx].id.clone());
+        return forget;
+    }
+    *active_id = Some(tab.id.clone());
+    tabs.push(tab);
+    None
+}
+
+fn center_pin_dirty_tabs(tabs: &mut [CenterTab], dirty: &HashSet<String>) {
+    for tab in tabs.iter_mut() {
+        if tab.preview && center_tab_is_dirty(tab, dirty) {
+            tab.preview = false;
+        }
+    }
+}
+
+fn center_close_others(
+    tabs: &mut Vec<CenterTab>,
+    active_id: &mut Option<String>,
+    keep_id: &str,
+) -> Vec<CenterTab> {
+    let removed: Vec<CenterTab> = tabs.drain(..).filter(|t| t.id != keep_id).collect();
+    if tabs.is_empty() {
+        *active_id = None;
+    } else {
+        *active_id = Some(keep_id.to_string());
+    }
+    removed
+}
+
+fn center_close_to_the_right(
+    tabs: &mut Vec<CenterTab>,
+    active_id: &mut Option<String>,
+    from_id: &str,
+) -> Vec<CenterTab> {
+    let Some(idx) = tabs.iter().position(|t| t.id == from_id) else {
+        return Vec::new();
+    };
+    let removed: Vec<CenterTab> = tabs.drain((idx + 1)..).collect();
+    if active_id
+        .as_ref()
+        .is_some_and(|id| removed.iter().any(|t| t.id == *id))
+    {
+        *active_id = Some(from_id.to_string());
+    }
+    removed
+}
+
+fn center_close_saved(
+    tabs: &mut Vec<CenterTab>,
+    active_id: &mut Option<String>,
+    dirty: &HashSet<String>,
+) -> Vec<CenterTab> {
+    let mut removed = Vec::new();
+    let mut i = 0;
+    while i < tabs.len() {
+        if center_tab_is_dirty(&tabs[i], dirty) {
+            i += 1;
+            continue;
+        }
+        removed.push(tabs.remove(i));
+    }
+    if tabs.is_empty() {
+        *active_id = None;
+    } else if active_id
+        .as_ref()
+        .is_some_and(|id| removed.iter().any(|t| t.id == *id))
+    {
+        *active_id = tabs.first().map(|t| t.id.clone());
+    }
+    removed
+}
+
+fn center_close_all(tabs: &mut Vec<CenterTab>, active_id: &mut Option<String>) -> Vec<CenterTab> {
+    let removed = std::mem::take(tabs);
+    *active_id = None;
+    removed
+}
+
+fn center_apply_closed_tabs_side_effects(
+    removed: &[CenterTab],
+    mut selected_skill_key: Signal<Option<String>>,
+    mut selected_plugin_key: Signal<Option<String>>,
+    mut fs_drafts: Signal<HashMap<String, String>>,
+    mut fs_baselines: Signal<HashMap<String, String>>,
+    mut fs_dirty: Signal<HashSet<String>>,
+    mut fs_load_errors: Signal<HashMap<String, String>>,
+    mut fs_save_notice: Signal<Option<String>>,
+) {
+    for tab in removed {
+        if let Some(key) = center_tab_skill_key(&tab.kind) {
+            if selected_skill_key().as_deref() == Some(key.as_str()) {
+                selected_skill_key.set(None);
+            }
+        }
+        if let Some(key) = center_tab_plugin_key(&tab.kind) {
+            if selected_plugin_key().as_deref() == Some(key) {
+                selected_plugin_key.set(None);
+            }
+        }
+        if let Some(path) = center_tab_file_path(&tab.kind) {
+            let path = path.to_string();
+            fs_drafts.with_mut(|m| {
+                fs_baselines.with_mut(|b| {
+                    fs_dirty.with_mut(|d| {
+                        fs_load_errors.with_mut(|e| {
+                            fs_forget_open_file(&path, m, b, d, e);
+                        });
+                    });
+                });
+            });
+            fs_save_notice.set(None);
+        }
+    }
 }
 
 fn center_close_tab(
@@ -1039,7 +1426,10 @@ fn center_tab_skill_key(kind: &CenterTabKind) -> Option<String> {
         | CenterTabKind::FileMdPreview { .. }
         | CenterTabKind::FileHtmlPreview { .. }
         | CenterTabKind::FilePdfPreview { .. }
+        | CenterTabKind::FileImagePreview { .. }
+        | CenterTabKind::FileAudioPreview { .. }
         | CenterTabKind::FileStlPreview { .. }
+        | CenterTabKind::FileOfficePreview { .. }
         | CenterTabKind::FileDiff { .. }
         | CenterTabKind::WebBrowser { .. } => None,
     }
@@ -1066,7 +1456,10 @@ fn center_tab_display_path(kind: &CenterTabKind) -> Option<&str> {
         | CenterTabKind::FileMdPreview { path }
         | CenterTabKind::FileHtmlPreview { path }
         | CenterTabKind::FilePdfPreview { path }
+        | CenterTabKind::FileImagePreview { path }
+        | CenterTabKind::FileAudioPreview { path }
         | CenterTabKind::FileStlPreview { path }
+        | CenterTabKind::FileOfficePreview { path }
         | CenterTabKind::FileDiff { path, .. } => Some(path.as_str()),
         _ => None,
     }
@@ -1119,7 +1512,10 @@ fn apply_opened_project_root(
             | CenterTabKind::FileMdPreview { path }
             | CenterTabKind::FileHtmlPreview { path }
             | CenterTabKind::FilePdfPreview { path }
+            | CenterTabKind::FileImagePreview { path }
+            | CenterTabKind::FileAudioPreview { path }
             | CenterTabKind::FileStlPreview { path }
+            | CenterTabKind::FileOfficePreview { path }
             | CenterTabKind::FileDiff { path, .. } => {
                 Path::new(path).starts_with(Path::new(&root))
             }
@@ -1148,6 +1544,59 @@ fn is_mod_char_shortcut(e: &KeyboardEvent, ch: &str) -> bool {
         return false;
     };
     c.eq_ignore_ascii_case(ch) && is_primary_modifier(e.modifiers())
+}
+
+/// 读取中间栏文本编辑器当前选区（无选中则 `None`）。
+async fn read_file_editor_selection() -> Option<String> {
+    let script = r#"return (() => {
+  const ta = document.querySelector('textarea.ac-file-editor-textarea');
+  if (!ta || typeof ta.selectionStart !== 'number') return '';
+  if (ta.selectionStart === ta.selectionEnd) return '';
+  return ta.value.slice(ta.selectionStart, ta.selectionEnd);
+})();"#;
+    match document::eval(script).join::<String>().await {
+        Ok(s) if !s.trim().is_empty() => Some(s),
+        _ => None,
+    }
+}
+
+/// 将编辑器选区格式化为可带入 Chat 的 Markdown 代码块（含语言与相对路径）。
+fn format_editor_selection_for_chat(path: &str, workspace_root: &str, selected: &str) -> String {
+    let code = selected.trim_end();
+    let rel = std::path::Path::new(path)
+        .strip_prefix(std::path::Path::new(workspace_root))
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_else(|_| path.replace('\\', "/"));
+    let lang = super::syntax::language_from_path(path);
+    if lang == "plain" {
+        format!("```{rel}\n{code}\n```\n")
+    } else {
+        format!("```{lang} {rel}\n{code}\n```\n")
+    }
+}
+
+/// Cmd/Ctrl+L：打开侧边 Chat；若编辑器有选区则一并写入输入框。
+fn open_chat_with_optional_editor_selection(
+    mut show_chat: Signal<bool>,
+    mut chat_can_send: Signal<bool>,
+    file_path: Option<String>,
+    workspace_root: String,
+) {
+    spawn(async move {
+        // 先读选区，再 show_chat，避免布局重绘抢焦点导致选区丢失。
+        let selected = if file_path.is_some() {
+            read_file_editor_selection().await
+        } else {
+            None
+        };
+        show_chat.set(true);
+        if let (Some(path), Some(sel)) = (file_path.as_ref(), selected.as_ref()) {
+            let payload = format_editor_selection_for_chat(path, &workspace_root, sel);
+            ce_insert_text(COMPOSER_ROOT_MAIN, &payload);
+            chat_can_send.set(true);
+        }
+        ce_focus_end(COMPOSER_ROOT_MAIN);
+    });
 }
 
 /// 新建 `extensions/` 插件后：切到文件侧栏，展开并选中该目录；成功提示走全局 toast。
@@ -1416,7 +1865,7 @@ fn activate_pending_attachment_path(
     }
     center_tabs.with_mut(|tabs| {
         active_center_id.with_mut(|active| {
-            center_open_or_focus(tabs, active, CenterTab::file(resolved));
+            center_open_or_focus(tabs, active, CenterTab::file_or_preview(resolved));
         });
     });
 }
@@ -2010,7 +2459,7 @@ fn clear_chat_message_edit(
     chat_edit_can_send.set(false);
     chat_edit_seed_html.set(String::new());
     chat_edit_epoch += 1;
-    ce_clear(COMPOSER_ROOT_EDIT);
+    ce_clear_now(COMPOSER_ROOT_EDIT);
 }
 
 fn push_composer_attachment(
@@ -2445,6 +2894,12 @@ fn apply_chat_sse_event(
             with_assistant_at(msgs, assistant_idx, |_, thinking| {
                 thinking.status = ThinkingStatus::Error;
                 thinking.expanded = true;
+                // 超时/上游失败时收起「思考中」转圈，避免步骤停在 Thinking。
+                for step in &mut thinking.steps {
+                    if matches!(step.phase, StepPhase::Thinking | StepPhase::Observing) {
+                        step.phase = StepPhase::Done;
+                    }
+                }
             });
         }
         SseEvent::Done => {}
@@ -2517,6 +2972,8 @@ fn build_agent_run_full_text(detail: &AgentRunDetailDto) -> String {
 
 /// 单 contenteditable：文字与 chip 在 DOM 内混排；按键不写正文 signal。
 /// props 保持稳定（仅 epoch/disabled/seed 变化才重渲），避免虚拟 DOM 清空编辑器。
+/// `is-empty` 只由 JS `syncEmptyClass` 维护，**禁止**写进 VDOM class，否则父级重渲会
+/// 把 class 盖回 `is-empty`，占位符叠在尚未清掉的正文上（发送后残留字）。
 /// `disabled` 才会把 `contenteditable` 关掉；`busy` 只挡住 Enter 发送，不锁输入。
 /// **Enter** → `enter_tick += 1`；**Shift+Enter** 换行。
 /// Agent 模式 busy 时 Enter 吞掉、草稿保留；Multitask 可继续发并行任务。
@@ -2533,10 +2990,12 @@ fn ChatComposerCe(
 ) -> Element {
     let root_for_mount = root_id.clone();
     let seed_for_mount = seed_html.clone();
+    let root_for_keys = root_id.clone();
     rsx! {
         div {
+            // epoch 放进 key，发送后强制换新节点，避免 CE 复用旧 DOM 残留。
             key: "ce-{root_id}-{epoch}",
-            class: "ac-chat-composer-ce ac-chat-input-field is-empty",
+            class: "ac-chat-composer-ce ac-chat-input-field",
             "data-ac-composer": "{root_id}",
             "data-placeholder": "向它下达指令…",
             contenteditable: if disabled { "false" } else { "true" },
@@ -2547,7 +3006,7 @@ fn ChatComposerCe(
                 let seed = seed_for_mount.clone();
                 spawn(async move {
                     if seed.is_empty() {
-                        ce_clear(&root);
+                        ce_clear(&root).await;
                     } else {
                         ce_set_html(&root, &seed);
                     }
@@ -2563,16 +3022,21 @@ fn ChatComposerCe(
                 if e.key() != Key::Enter {
                     return;
                 }
-                if e.modifiers().contains(Modifiers::SHIFT) {
-                    return;
-                }
                 if e.is_composing() {
                     return;
                 }
                 if disabled {
                     return;
                 }
+                // Shift+Enter：显式插入换行（不依赖 CE 默认行为，避免被当成发送）。
+                if e.modifiers().contains(Modifiers::SHIFT) {
+                    e.prevent_default();
+                    e.stop_propagation();
+                    ce_insert_text(&root_for_keys, "\n");
+                    return;
+                }
                 e.prevent_default();
+                e.stop_propagation();
                 // 只在事件里读 busy，避免 props 随 chat_busy 变化把编辑器重渲清空。
                 if busy() && !allow_send_while_busy.map(|s| s()).unwrap_or(false) {
                     return;
@@ -2990,12 +3454,17 @@ pub fn Console(
     let mut fs_notice = use_signal(|| None::<String>);
     let recent_project_dirs = use_signal(super::files::fs_recent_project_dirs);
     // 中间栏标签栏右键菜单：视口坐标（position: fixed），None = 关闭。
-    let mut center_tabs_ctx_menu = use_signal(|| None::<(f64, f64)>);
+    let mut center_tabs_ctx_menu = use_signal(|| None::<CenterTabsCtxMenu>);
     let mut fs_drafts = use_signal(HashMap::<String, String>::new);
     let mut fs_baselines = use_signal(HashMap::<String, String>::new);
     let mut fs_dirty = use_signal(HashSet::<String>::new);
     let mut fs_load_errors = use_signal(HashMap::<String, String>::new);
     let mut fs_save_notice = use_signal(|| None::<String>);
+    // 文件一旦有未保存修改，自动钉住预览标签（不再被单击切换替换）。
+    use_effect(move || {
+        let dirty = fs_dirty();
+        center_tabs.with_mut(|tabs| center_pin_dirty_tabs(tabs, &dirty));
+    });
     let fs_just_written = use_signal(HashSet::<String>::new);
     let mut terminal_pending_cd = use_signal(|| None::<String>);
     #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
@@ -3140,7 +3609,7 @@ pub fn Console(
         chat_edit_can_send.set(false);
         chat_edit_seed.set(String::new());
         chat_edit_epoch += 1;
-        ce_clear(COMPOSER_ROOT_EDIT);
+        ce_clear_now(COMPOSER_ROOT_EDIT);
     });
 
     // contenteditable 桥：input / remove / activate 经 dioxus.send 回传。
@@ -3259,6 +3728,10 @@ pub fn Console(
         });
     });
     let mut chat_model_sheet_open = use_signal(|| false);
+    let mut chat_model_group_open = use_signal(|| None::<String>);
+    // 是否已有可恢复的分组状态（用户点过手风琴，或首次打开已写入默认）。
+    // 关闭弹层后再打开时优先恢复，而不是每次都跳回「当前选中模型」所在组。
+    let mut chat_model_group_remembered = use_signal(|| false);
     let mut chat_agent_mode = use_signal(initial_chat_agent_mode);
     let mut chat_agent_mode_sheet_open = use_signal(|| false);
     use_effect(move || {
@@ -3267,31 +3740,61 @@ pub fn Console(
     // 先只加载本地自定义；远端成功后再合并。失败/空列表不回退内置默认。
     let mut chat_models = use_signal(custom_chat_model_entries);
     let mut chat_models_load_hint = use_signal(|| None::<String>);
+    // 模型网络探测结果：model_id → 正常；未探测过为缺失（不显示圆点）。
+    let mut chat_model_net = use_signal(HashMap::<String, bool>::new);
+    let mut chat_model_net_checking = use_signal(|| false);
     let mut custom_model_draft = use_signal(String::new);
+    let mut adding_custom = use_signal(|| false);
+    let mut add_custom_cred = use_signal(String::new);
     let mut editing_custom_id = use_signal(|| None::<String>);
+    use_effect(move || {
+        if !chat_model_sheet_open() {
+            adding_custom.set(false);
+            custom_model_draft.set(String::new());
+            add_custom_cred.set(String::new());
+        }
+    });
     let mut edit_custom_name = use_signal(String::new);
     let mut edit_custom_cred = use_signal(String::new);
     let mut saved_llm_keys = use_signal(Vec::<SavedLlmKey>::new);
+    // 打开模型弹层：有记忆则恢复关闭前分组；否则展开当前选中模型所在组。
+    use_effect(move || {
+        if !chat_model_sheet_open() {
+            return;
+        }
+        let models = chat_models();
+        let keys = saved_llm_keys();
+        let groups = build_chat_model_groups(&models, &keys);
+        if groups.is_empty() {
+            chat_model_group_open.set(None);
+            return;
+        }
+        let remembered = *chat_model_group_remembered.peek();
+        let current = chat_model_group_open.peek().clone();
+        if remembered {
+            match current {
+                Some(ref k) if groups.iter().any(|g| g.key == *k) => return,
+                None => return, // 关闭前收起了全部分组，保持收起
+                Some(_) => {}   // 记忆的分组已不存在，回落默认
+            }
+        }
+        let cur = chat_model();
+        let key = models
+            .iter()
+            .find(|m| m.id == cur)
+            .map(|m| chat_model_group_key(m, &keys))
+            .or_else(|| groups.first().map(|g| g.key.clone()));
+        chat_model_group_open.set(key);
+        chat_model_group_remembered.set(true);
+    });
     let llm_models_refresh = use_context::<crate::shell::LlmModelsRefresh>();
     use_effect(move || {
         let _tick = llm_models_refresh.0();
         spawn(async move {
             let sources = load_llm_picker_sources().await;
             saved_llm_keys.set(sources.saved.clone());
-            let relay = match list_chat_models().await {
-                Ok(dtos) => dtos
-                    .into_iter()
-                    .map(|m| ChatModelEntry {
-                        id: m.id,
-                        display_name: m.display_name,
-                        custom: false,
-                        source_credential_id: None,
-                    })
-                    .collect::<Vec<_>>(),
-                Err(_) => Vec::new(),
-            };
             let sourced = list_chat_models_from_credentials(sources.endpoints).await;
-            let mut remote: Vec<ChatModelEntry> = sourced
+            let remote: Vec<ChatModelEntry> = sourced
                 .into_iter()
                 .map(|(cred_id, m)| ChatModelEntry {
                     id: m.id,
@@ -3300,7 +3803,6 @@ pub fn Console(
                     source_credential_id: Some(cred_id),
                 })
                 .collect();
-            push_unique_models(&mut remote, relay);
             if remote.is_empty() {
                 chat_models.set(custom_chat_model_entries());
                 chat_models_load_hint.set(Some("未获取到模型，仅显示自定义".into()));
@@ -3678,14 +4180,15 @@ pub fn Console(
             let conversation_id = active_conversation_id();
             chat_busy.set(true);
             if is_composer {
-                ce_clear(COMPOSER_ROOT_MAIN);
+                // 先等 DOM 清空，再 bump epoch 换新节点，避免残留正文 + 占位符叠字。
+                ce_clear(COMPOSER_ROOT_MAIN).await;
                 chat_pending.set(Vec::new());
                 chat_can_send.set(false);
                 chat_composer_seed.set(String::new());
                 chat_composer_epoch += 1;
             } else {
                 chat_editing_msg_idx.set(None);
-                ce_clear(COMPOSER_ROOT_EDIT);
+                ce_clear(COMPOSER_ROOT_EDIT).await;
                 chat_edit_pending.set(Vec::new());
                 chat_edit_can_send.set(false);
                 chat_edit_seed.set(String::new());
@@ -4163,6 +4666,20 @@ pub fn Console(
         div {
             class: "{console_class}",
             onkeydown: move |e: KeyboardEvent| {
+                if is_mod_char_shortcut(&e, "l") {
+                    e.prevent_default();
+                    let file_path = center_active_kind(&center_tabs(), &active_center_id())
+                        .as_ref()
+                        .and_then(center_tab_file_path)
+                        .map(str::to_string);
+                    open_chat_with_optional_editor_selection(
+                        show_chat,
+                        chat_can_send,
+                        file_path,
+                        fs_root_path(),
+                    );
+                    return;
+                }
                 if is_mod_char_shortcut(&e, "i") && show_chat() && !chat_busy() {
                     e.prevent_default();
                     chat_model_sheet_open.set(false);
@@ -4870,11 +5387,24 @@ pub fn Console(
                                         center_shutting_down.set(false);
                                     }
                                     show_center.set(true);
-                                    center_tabs.with_mut(|tabs| {
+                                    let tab = CenterTab::file_or_preview(path);
+                                    let dirty_now = fs_dirty();
+                                    let forget = center_tabs.with_mut(|tabs| {
                                         active_center_id.with_mut(|active| {
-                                            center_open_or_focus(tabs, active, CenterTab::file(path));
-                                        });
+                                            center_open_file_click(tabs, active, tab, &dirty_now)
+                                        })
                                     });
+                                    if let Some(old) = forget {
+                                        fs_drafts.with_mut(|m| {
+                                            fs_baselines.with_mut(|b| {
+                                                fs_dirty.with_mut(|d| {
+                                                    fs_load_errors.with_mut(|e| {
+                                                        fs_forget_open_file(&old, m, b, d, e);
+                                                    });
+                                                });
+                                            });
+                                        });
+                                    }
                                 },
                             }
                         } else if active_tab() == "files" {
@@ -4896,19 +5426,26 @@ pub fn Console(
                                         center_shutting_down.set(false);
                                     }
                                     show_center.set(true);
-                                    // PDF / STL 没有文本编辑器可看，单击直接进内置预览。
-                                    let tab = if super::files::fs_is_pdf_path(&path) {
-                                        CenterTab::file_pdf_preview(path)
-                                    } else if super::files::fs_is_stl_path(&path) {
-                                        CenterTab::file_stl_preview(path)
-                                    } else {
-                                        CenterTab::file(path)
-                                    };
-                                    center_tabs.with_mut(|tabs| {
+                                    // PDF / 图片 / STL / Office 没有文本编辑器可看，单击直接进内置预览。
+                                    // 未修改的预览标签会被替换；已修改则新开。
+                                    let tab = CenterTab::file_or_preview(path);
+                                    let dirty_now = fs_dirty();
+                                    let forget = center_tabs.with_mut(|tabs| {
                                         active_center_id.with_mut(|active| {
-                                            center_open_or_focus(tabs, active, tab);
-                                        });
+                                            center_open_file_click(tabs, active, tab, &dirty_now)
+                                        })
                                     });
+                                    if let Some(old) = forget {
+                                        fs_drafts.with_mut(|m| {
+                                            fs_baselines.with_mut(|b| {
+                                                fs_dirty.with_mut(|d| {
+                                                    fs_load_errors.with_mut(|e| {
+                                                        fs_forget_open_file(&old, m, b, d, e);
+                                                    });
+                                                });
+                                            });
+                                        });
+                                    }
                                 },
                                 on_open_pdf_preview: move |path: String| {
                                     fs_selected_path.set(Some(path.clone()));
@@ -4917,14 +5454,42 @@ pub fn Console(
                                         center_shutting_down.set(false);
                                     }
                                     show_center.set(true);
-                                    center_tabs.with_mut(|tabs| {
+                                    let tab = CenterTab::file_pdf_preview(path);
+                                    let dirty_now = fs_dirty();
+                                    let _ = center_tabs.with_mut(|tabs| {
                                         active_center_id.with_mut(|active| {
-                                            center_open_or_focus(
-                                                tabs,
-                                                active,
-                                                CenterTab::file_pdf_preview(path),
-                                            );
-                                        });
+                                            center_open_file_click(tabs, active, tab, &dirty_now)
+                                        })
+                                    });
+                                },
+                                on_open_image_preview: move |path: String| {
+                                    fs_selected_path.set(Some(path.clone()));
+                                    fs_save_notice.set(None);
+                                    if center_shutting_down() {
+                                        center_shutting_down.set(false);
+                                    }
+                                    show_center.set(true);
+                                    let tab = CenterTab::file_image_preview(path);
+                                    let dirty_now = fs_dirty();
+                                    let _ = center_tabs.with_mut(|tabs| {
+                                        active_center_id.with_mut(|active| {
+                                            center_open_file_click(tabs, active, tab, &dirty_now)
+                                        })
+                                    });
+                                },
+                                on_open_audio_preview: move |path: String| {
+                                    fs_selected_path.set(Some(path.clone()));
+                                    fs_save_notice.set(None);
+                                    if center_shutting_down() {
+                                        center_shutting_down.set(false);
+                                    }
+                                    show_center.set(true);
+                                    let tab = CenterTab::file_audio_preview(path);
+                                    let dirty_now = fs_dirty();
+                                    let _ = center_tabs.with_mut(|tabs| {
+                                        active_center_id.with_mut(|active| {
+                                            center_open_file_click(tabs, active, tab, &dirty_now)
+                                        })
                                     });
                                 },
                                 on_open_stl_preview: move |path: String| {
@@ -4934,14 +5499,27 @@ pub fn Console(
                                         center_shutting_down.set(false);
                                     }
                                     show_center.set(true);
-                                    center_tabs.with_mut(|tabs| {
+                                    let tab = CenterTab::file_stl_preview(path);
+                                    let dirty_now = fs_dirty();
+                                    let _ = center_tabs.with_mut(|tabs| {
                                         active_center_id.with_mut(|active| {
-                                            center_open_or_focus(
-                                                tabs,
-                                                active,
-                                                CenterTab::file_stl_preview(path),
-                                            );
-                                        });
+                                            center_open_file_click(tabs, active, tab, &dirty_now)
+                                        })
+                                    });
+                                },
+                                on_open_office_preview: move |path: String| {
+                                    fs_selected_path.set(Some(path.clone()));
+                                    fs_save_notice.set(None);
+                                    if center_shutting_down() {
+                                        center_shutting_down.set(false);
+                                    }
+                                    show_center.set(true);
+                                    let tab = CenterTab::file_office_preview(path);
+                                    let dirty_now = fs_dirty();
+                                    let _ = center_tabs.with_mut(|tabs| {
+                                        active_center_id.with_mut(|active| {
+                                            center_open_file_click(tabs, active, tab, &dirty_now)
+                                        })
                                     });
                                 },
                                 on_open_html_preview: move |path: String| {
@@ -4951,14 +5529,12 @@ pub fn Console(
                                         center_shutting_down.set(false);
                                     }
                                     show_center.set(true);
-                                    center_tabs.with_mut(|tabs| {
+                                    let tab = CenterTab::file_html_preview(path);
+                                    let dirty_now = fs_dirty();
+                                    let _ = center_tabs.with_mut(|tabs| {
                                         active_center_id.with_mut(|active| {
-                                            center_open_or_focus(
-                                                tabs,
-                                                active,
-                                                CenterTab::file_html_preview(path),
-                                            );
-                                        });
+                                            center_open_file_click(tabs, active, tab, &dirty_now)
+                                        })
                                     });
                                 },
                                 on_open_in_terminal: move |dir: String| {
@@ -5008,7 +5584,7 @@ pub fn Console(
                                                     chat_pending.set(Vec::new());
                                                     chat_can_send.set(false);
                                                     chat_composer_seed.set(String::new());
-                                                    ce_clear(COMPOSER_ROOT_MAIN);
+                                                    ce_clear_now(COMPOSER_ROOT_MAIN);
                                                     let mut atts = Vec::new();
                                                     for path in paths {
                                                         let att_id = chat_attachment_seq();
@@ -5230,7 +5806,11 @@ pub fn Console(
                                 oncontextmenu: move |evt| {
                                     evt.prevent_default();
                                     let coords = evt.data.client_coordinates();
-                                    center_tabs_ctx_menu.set(Some((coords.x, coords.y)));
+                                    center_tabs_ctx_menu.set(Some(CenterTabsCtxMenu {
+                                        x: coords.x,
+                                        y: coords.y,
+                                        tab_id: None,
+                                    }));
                                 },
                                 div { class: "ac-center-tabs-scroll",
                                     for tab in center_tabs() {
@@ -5238,22 +5818,36 @@ pub fn Console(
                                             let tab_id = tab.id.clone();
                                             let tab_id_close = tab.id.clone();
                                             let tab_id_middle = tab.id.clone();
+                                            let tab_id_ctx = tab.id.clone();
                                             let is_active = active_center_id().as_deref() == Some(tab.id.as_str());
+                                            let is_preview = tab.preview;
                                             let title = tab.title.clone();
                                             let kind_focus = tab.kind.clone();
                                             let file_dirty = center_tab_file_path(&tab.kind)
                                                 .is_some_and(|p| fs_dirty().contains(p));
+                                            let tab_class = match (is_active, is_preview) {
+                                                (true, true) => "ac-center-tab is-active is-preview",
+                                                (true, false) => "ac-center-tab is-active",
+                                                (false, true) => "ac-center-tab is-preview",
+                                                (false, false) => "ac-center-tab",
+                                            };
                                             rsx! {
                                                 div {
                                                     key: "{tab_id}",
-                                                    class: if is_active {
-                                                        "ac-center-tab is-active"
-                                                    } else {
-                                                        "ac-center-tab"
-                                                    },
+                                                    class: "{tab_class}",
                                                     role: "tab",
                                                     aria_selected: is_active,
                                                     title: "{title}",
+                                                    oncontextmenu: move |evt| {
+                                                        evt.prevent_default();
+                                                        evt.stop_propagation();
+                                                        let coords = evt.data.client_coordinates();
+                                                        center_tabs_ctx_menu.set(Some(CenterTabsCtxMenu {
+                                                            x: coords.x,
+                                                            y: coords.y,
+                                                            tab_id: Some(tab_id_ctx.clone()),
+                                                        }));
+                                                    },
                                                     onmousedown: move |e| {
                                                         if e.trigger_button() != Some(MouseButton::Auxiliary) {
                                                             return;
@@ -5692,9 +6286,27 @@ pub fn Console(
                                     path,
                                 }
                             },
+                            Some(CenterTabKind::FileImagePreview { path }) => rsx! {
+                                super::files::FileImagePreviewPane {
+                                    key: "image-preview:{path}",
+                                    path,
+                                }
+                            },
+                            Some(CenterTabKind::FileAudioPreview { path }) => rsx! {
+                                super::files::FileAudioPreviewPane {
+                                    key: "audio-preview:{path}",
+                                    path,
+                                }
+                            },
                             Some(CenterTabKind::FileStlPreview { path }) => rsx! {
                                 super::files::FileStlPreviewPane {
                                     key: "stl-preview:{path}",
+                                    path,
+                                }
+                            },
+                            Some(CenterTabKind::FileOfficePreview { path }) => rsx! {
+                                super::files::FileOfficePreviewPane {
+                                    key: "office-preview:{path}",
                                     path,
                                 }
                             },
@@ -5755,7 +6367,7 @@ pub fn Console(
                                                     center_open_or_focus(
                                                         tabs,
                                                         active,
-                                                        CenterTab::file(resolved),
+                                                        CenterTab::file_or_preview(resolved),
                                                     );
                                                 });
                                             });
@@ -6106,15 +6718,26 @@ pub fn Console(
                                             terminal_height.set(restore);
                                             terminal_pre_maximize_height.set(None);
                                         },
-                                        on_add_to_pusa: move |text: String| {
-                                            let trimmed = text.trim_end().to_string();
+                                        on_add_to_pusa: move |sel: crate::desktop::terminal::TerminalSelectionPayload| {
+                                            let trimmed = sel.text.trim_end().to_string();
                                             if trimmed.is_empty() {
                                                 return;
                                             }
                                             show_chat.set(true);
-                                            let payload = format!("```terminal\n{trimmed}\n```\n");
-                                            ce_insert_text(COMPOSER_ROOT_MAIN, &payload);
-                                            chat_can_send.set(true);
+                                            let id = chat_attachment_seq();
+                                            chat_attachment_seq.set(id + 1);
+                                            let att = attachment_from_terminal_selection(
+                                                id,
+                                                trimmed,
+                                                sel.start_line,
+                                                sel.end_line,
+                                            );
+                                            push_composer_attachment(
+                                                COMPOSER_ROOT_MAIN,
+                                                chat_pending,
+                                                chat_can_send,
+                                                att,
+                                            );
                                             ce_focus_end(COMPOSER_ROOT_MAIN);
                                         },
                                     }
@@ -6360,15 +6983,29 @@ pub fn Console(
                                                                         }
                                                                     }
                                                                 } else {
-                                                                    let title = att
-                                                                        .source_path
-                                                                        .clone()
-                                                                        .unwrap_or_else(|| att.name.clone());
-                                                                    let mut chip_class = if att.is_dir {
-                                                                        "ac-chat-attach-chip is-dir".to_string()
+                                                                    let is_snippet = att.is_snippet();
+                                                                    let title = if is_snippet {
+                                                                        att.snippet_body
+                                                                            .as_deref()
+                                                                            .unwrap_or("")
+                                                                            .lines()
+                                                                            .take(6)
+                                                                            .collect::<Vec<_>>()
+                                                                            .join("\n")
                                                                     } else {
-                                                                        "ac-chat-attach-chip is-file".to_string()
+                                                                        att.source_path
+                                                                            .clone()
+                                                                            .unwrap_or_else(|| att.name.clone())
                                                                     };
+                                                                    let chip_dir = att.chip_is_dir();
+                                                                    let chip_kind = if is_snippet {
+                                                                        "snippet"
+                                                                    } else if chip_dir {
+                                                                        "dir"
+                                                                    } else {
+                                                                        "file"
+                                                                    };
+                                                                    let mut chip_class = format!("ac-chat-attach-chip is-{chip_kind}");
                                                                     if att.source_path.is_some() {
                                                                         chip_class.push_str(" is-activatable");
                                                                     }
@@ -6378,6 +7015,7 @@ pub fn Console(
                                                                         span {
                                                                             key: "a-{att.id}-{seg_i}",
                                                                             class: "{chip_class}",
+                                                                            "data-ac-attach-kind": "{chip_kind}",
                                                                             title: "{title}",
                                                                             onclick: move |evt: MouseEvent| {
                                                                                 evt.stop_propagation();
@@ -6405,7 +7043,14 @@ pub fn Console(
                                                                             },
                                                                             span { class: "ac-chat-attach-chip-icon",
                                                                                 span { class: "ac-chat-attach-chip-type-icon",
-                                                                                    if is_dir {
+                                                                                    if is_snippet {
+                                                                                        Icon {
+                                                                                            icon: LdScrollText,
+                                                                                            width: 14,
+                                                                                            height: 14,
+                                                                                            fill: "currentColor",
+                                                                                        }
+                                                                                    } else if chip_dir {
                                                                                         Icon {
                                                                                             icon: LdFolder,
                                                                                             width: 14,
@@ -6550,7 +7195,7 @@ pub fn Console(
                                                                         center_open_or_focus(
                                                                             tabs,
                                                                             active,
-                                                                            CenterTab::file(resolved),
+                                                                            CenterTab::file_or_preview(resolved),
                                                                         );
                                                                     });
                                                                 });
@@ -6597,7 +7242,7 @@ pub fn Console(
                                                                             center_open_or_focus(
                                                                                 tabs,
                                                                                 active,
-                                                                                CenterTab::file(path),
+                                                                                CenterTab::file_or_preview(path),
                                                                             );
                                                                         });
                                                                     });
@@ -6950,9 +7595,6 @@ pub fn Console(
                                                                 }
                                                             }
                                                             span { class: "ac-chat-agent-mode-opt-label", "{label}" }
-                                                            if let Some(shortcut) = mode.shortcut() {
-                                                                span { class: "ac-chat-agent-mode-opt-shortcut", "{shortcut}" }
-                                                            }
                                                             if is_active {
                                                                 Icon {
                                                                     icon: LdCheck,
@@ -7035,171 +7677,297 @@ pub fn Console(
                                                     "{hint}"
                                                 }
                                             }
-                                            for m in chat_models.read().clone() {
-                                                {
-                                                    let id = m.id.clone();
-                                                    let id_for_click = id.clone();
-                                                    let id_for_class = id.clone();
-                                                    let id_for_delete = id.clone();
-                                                    let id_for_edit = id.clone();
-                                                    let id_for_save = id.clone();
-                                                    let is_custom = m.custom;
-                                                    let is_editing = is_custom
-                                                        && editing_custom_id().as_deref() == Some(id.as_str());
-                                                    let custom_name = m.display_name.clone().unwrap_or_default();
-                                                    let title = if is_custom && !custom_name.trim().is_empty() {
-                                                        custom_name.clone()
-                                                    } else {
-                                                        id.to_uppercase()
-                                                    };
-                                                    let sub = if is_custom {
-                                                        if custom_name.trim().is_empty() {
-                                                            String::new()
-                                                        } else {
-                                                            id.clone()
-                                                        }
-                                                    } else {
-                                                        m.display_name.clone().unwrap_or_default()
-                                                    };
-                                                    let bound_cred = m
-                                                        .source_credential_id
-                                                        .clone()
-                                                        .unwrap_or_default();
-                                                    let name_for_edit = custom_name.clone();
-                                                    let cred_for_edit = bound_cred.clone();
-                                                    let keys_for_row = saved_llm_keys();
-                                                    rsx! {
-                                                        div {
-                                                            key: "{id}",
-                                                            class: if chat_model() == id_for_class {
-                                                                if is_custom {
-                                                                    "ac-chat-mode-sheet__opt-row is-active is-custom"
-                                                                } else {
-                                                                    "ac-chat-mode-sheet__opt-row is-active"
-                                                                }
-                                                            } else if is_custom {
-                                                                "ac-chat-mode-sheet__opt-row is-custom"
-                                                            } else {
-                                                                "ac-chat-mode-sheet__opt-row"
-                                                            },
-                                                            div { class: "ac-chat-mode-sheet__opt-main",
-                                                                button {
-                                                                    r#type: "button",
-                                                                    role: "menuitem",
-                                                                    class: if chat_model() == id_for_class {
-                                                                        "ac-chat-mode-sheet__opt is-active"
-                                                                    } else {
-                                                                        "ac-chat-mode-sheet__opt"
-                                                                    },
-                                                                    onclick: move |_| {
-                                                                        persist_chat_model(&id_for_click);
-                                                                        chat_model.set(id_for_click.clone());
-                                                                        chat_model_sheet_open.set(false);
-                                                                    },
-                                                                    span { class: "ac-chat-mode-sheet__title", "{title}" }
-                                                                    if !sub.is_empty() {
-                                                                        span { class: "ac-chat-mode-sheet__sub", "{sub}" }
-                                                                    }
-                                                                }
-                                                                if is_custom {
-                                                                    button {
-                                                                        r#type: "button",
-                                                                        class: "ac-chat-mode-sheet__edit",
-                                                                        title: "编辑自定义模型",
-                                                                        aria_label: "编辑自定义模型",
-                                                                        onclick: move |e| {
-                                                                            e.stop_propagation();
-                                                                            edit_custom_name.set(name_for_edit.clone());
-                                                                            edit_custom_cred.set(cred_for_edit.clone());
-                                                                            editing_custom_id.set(Some(id_for_edit.clone()));
-                                                                        },
-                                                                        Icon {
-                                                                            icon: LdPencil,
-                                                                            width: 14,
-                                                                            height: 14,
-                                                                            fill: "currentColor",
-                                                                        }
-                                                                    }
-                                                                    button {
-                                                                        r#type: "button",
-                                                                        class: "ac-chat-mode-sheet__delete",
-                                                                        title: "删除自定义模型",
-                                                                        aria_label: "删除自定义模型",
-                                                                        onclick: move |e| {
-                                                                            e.stop_propagation();
-                                                                            let remove_id = id_for_delete.clone();
-                                                                            if editing_custom_id().as_deref() == Some(remove_id.as_str()) {
-                                                                                editing_custom_id.set(None);
-                                                                            }
-                                                                            chat_models.with_mut(|list| {
-                                                                                list.retain(|m| m.id != remove_id);
-                                                                            });
-                                                                            persist_custom_from_models(&chat_models());
-                                                                            if chat_model() == remove_id {
-                                                                                let next = chat_models()
-                                                                                    .first()
-                                                                                    .map(|m| m.id.clone())
-                                                                                    .unwrap_or_default();
-                                                                                persist_chat_model(&next);
-                                                                                chat_model.set(next);
-                                                                            }
-                                                                        },
-                                                                        Icon {
-                                                                            icon: LdTrash2,
-                                                                            width: 14,
-                                                                            height: 14,
-                                                                            fill: "currentColor",
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-                                                            if is_editing {
+                                            {
+                                                let model_groups = build_chat_model_groups(
+                                                    &chat_models(),
+                                                    &saved_llm_keys(),
+                                                );
+                                                rsx! {
+                                                    for group in model_groups {
+                                                        {
+                                                            let group_key = group.key.clone();
+                                                            let group_key_toggle = group.key.clone();
+                                                            let group_title = group.title.clone();
+                                                            let group_count = group.models.len();
+                                                            let is_open = chat_model_group_open()
+                                                                .as_deref()
+                                                                == Some(group_key.as_str());
+                                                            let models_in_group = group.models.clone();
+                                                            rsx! {
                                                                 div {
-                                                                    class: "ac-chat-mode-sheet__edit-panel",
-                                                                    onclick: move |e| e.stop_propagation(),
-                                                                    input {
-                                                                        r#type: "text",
-                                                                        class: "ac-chat-mode-sheet__custom-input",
-                                                                        placeholder: "显示名称（可选）",
-                                                                        value: "{edit_custom_name()}",
-                                                                        aria_label: "自定义模型名称",
-                                                                        oninput: move |e| edit_custom_name.set(e.value()),
-                                                                    }
-                                                                    select {
-                                                                        class: "ac-chat-mode-sheet__custom-key",
-                                                                        value: "{edit_custom_cred()}",
-                                                                        title: "绑定密钥",
-                                                                        aria_label: "绑定密钥",
-                                                                        onchange: move |e| edit_custom_cred.set(e.value()),
-                                                                        option { value: "", "不绑定密钥" }
-                                                                        for k in keys_for_row {
-                                                                            option {
-                                                                                value: "{k.id}",
-                                                                                "{saved_key_option_label(&k)}"
+                                                                    key: "{group_key}",
+                                                                    class: if is_open {
+                                                                        "ac-chat-mode-sheet__group is-open"
+                                                                    } else {
+                                                                        "ac-chat-mode-sheet__group"
+                                                                    },
+                                                                    button {
+                                                                        r#type: "button",
+                                                                        class: "ac-chat-mode-sheet__group-head",
+                                                                        aria_expanded: is_open,
+                                                                        onclick: move |e| {
+                                                                            e.stop_propagation();
+                                                                            let next = group_key_toggle.clone();
+                                                                            chat_model_group_remembered.set(true);
+                                                                            if chat_model_group_open().as_deref()
+                                                                                == Some(next.as_str())
+                                                                            {
+                                                                                chat_model_group_open.set(None);
+                                                                            } else {
+                                                                                // 手风琴：只保留当前分组展开。
+                                                                                chat_model_group_open.set(Some(next));
+                                                                            }
+                                                                        },
+                                                                        span { class: "ac-chat-mode-sheet__group-chevron",
+                                                                            if is_open {
+                                                                                Icon {
+                                                                                    icon: LdChevronDown,
+                                                                                    width: 14,
+                                                                                    height: 14,
+                                                                                    fill: "currentColor",
+                                                                                }
+                                                                            } else {
+                                                                                Icon {
+                                                                                    icon: LdChevronRight,
+                                                                                    width: 14,
+                                                                                    height: 14,
+                                                                                    fill: "currentColor",
+                                                                                }
                                                                             }
                                                                         }
+                                                                        span { class: "ac-chat-mode-sheet__group-title", "{group_title}" }
+                                                                        span { class: "ac-chat-mode-sheet__group-count", "{group_count}" }
                                                                     }
-                                                                    div { class: "ac-chat-mode-sheet__edit-actions",
-                                                                        button {
-                                                                            r#type: "button",
-                                                                            class: "ac-chat-mode-sheet__edit-cancel",
-                                                                            onclick: move |_| editing_custom_id.set(None),
-                                                                            "取消"
-                                                                        }
-                                                                        button {
-                                                                            r#type: "button",
-                                                                            class: "ac-chat-mode-sheet__edit-save",
-                                                                            onclick: move |_| {
-                                                                                apply_custom_chat_model_edit(
-                                                                                    &id_for_save,
-                                                                                    &edit_custom_name(),
-                                                                                    &edit_custom_cred(),
-                                                                                    &saved_llm_keys(),
-                                                                                    chat_models,
-                                                                                    editing_custom_id,
-                                                                                );
-                                                                            },
-                                                                            "保存"
+                                                                    if is_open {
+                                                                        div { class: "ac-chat-mode-sheet__group-body",
+                                                                            for m in models_in_group {
+                                                                                {
+                                                                                    let id = m.id.clone();
+                                                                                    let id_for_click = id.clone();
+                                                                                    let id_for_class = id.clone();
+                                                                                    let id_for_delete = id.clone();
+                                                                                    let id_for_edit = id.clone();
+                                                                                    let id_for_save = id.clone();
+                                                                                    let id_for_net = id.clone();
+                                                                                    let is_custom = m.custom;
+                                                                                    let is_editing = is_custom
+                                                                                        && editing_custom_id().as_deref()
+                                                                                            == Some(id.as_str());
+                                                                                    let custom_name =
+                                                                                        m.display_name.clone().unwrap_or_default();
+                                                                                    let title = if is_custom
+                                                                                        && !custom_name.trim().is_empty()
+                                                                                    {
+                                                                                        custom_name.clone()
+                                                                                    } else {
+                                                                                        id.to_uppercase()
+                                                                                    };
+                                                                                    let sub = if is_custom {
+                                                                                        if custom_name.trim().is_empty() {
+                                                                                            String::new()
+                                                                                        } else {
+                                                                                            id.clone()
+                                                                                        }
+                                                                                    } else {
+                                                                                        m.display_name
+                                                                                            .clone()
+                                                                                            .unwrap_or_default()
+                                                                                    };
+                                                                                    let bound_cred = m
+                                                                                        .source_credential_id
+                                                                                        .clone()
+                                                                                        .unwrap_or_default();
+                                                                                    let cred_for_edit = bound_cred.clone();
+                                                                                    let keys_for_row = saved_llm_keys();
+                                                                                    let net_ok = chat_model_net().get(&id_for_net).copied();
+                                                                                    rsx! {
+                                                                                        div {
+                                                                                            key: "{id}",
+                                                                                            class: if chat_model() == id_for_class {
+                                                                                                if is_custom {
+                                                                                                    "ac-chat-mode-sheet__opt-row is-active is-custom"
+                                                                                                } else {
+                                                                                                    "ac-chat-mode-sheet__opt-row is-active"
+                                                                                                }
+                                                                                            } else if is_custom {
+                                                                                                "ac-chat-mode-sheet__opt-row is-custom"
+                                                                                            } else {
+                                                                                                "ac-chat-mode-sheet__opt-row"
+                                                                                            },
+                                                                                            div { class: "ac-chat-mode-sheet__opt-main",
+                                                                                                button {
+                                                                                                    r#type: "button",
+                                                                                                    role: "menuitem",
+                                                                                                    class: if chat_model() == id_for_class {
+                                                                                                        "ac-chat-mode-sheet__opt is-active"
+                                                                                                    } else {
+                                                                                                        "ac-chat-mode-sheet__opt"
+                                                                                                    },
+                                                                                                    onclick: move |_| {
+                                                                                                        persist_chat_model(&id_for_click);
+                                                                                                        chat_model.set(id_for_click.clone());
+                                                                                                        chat_model_sheet_open.set(false);
+                                                                                                    },
+                                                                                                    span { class: "ac-chat-mode-sheet__title-row",
+                                                                                                        span { class: "ac-chat-mode-sheet__title", "{title}" }
+                                                                                                        if let Some(ok) = net_ok {
+                                                                                                            span {
+                                                                                                                class: if ok {
+                                                                                                                    "ac-chat-mode-sheet__net-dot is-ok"
+                                                                                                                } else {
+                                                                                                                    "ac-chat-mode-sheet__net-dot is-bad"
+                                                                                                                },
+                                                                                                                title: if ok { "网络正常" } else { "网络异常" },
+                                                                                                                aria_label: if ok { "网络正常" } else { "网络异常" },
+                                                                                                            }
+                                                                                                        }
+                                                                                                    }
+                                                                                                    if !sub.is_empty() {
+                                                                                                        span { class: "ac-chat-mode-sheet__sub", "{sub}" }
+                                                                                                    }
+                                                                                                    if chat_model() == id_for_class {
+                                                                                                        Icon {
+                                                                                                            icon: LdCheck,
+                                                                                                            width: 16,
+                                                                                                            height: 16,
+                                                                                                            fill: "currentColor",
+                                                                                                            class: "ac-chat-mode-sheet__check",
+                                                                                                        }
+                                                                                                    }
+                                                                                                }
+                                                                                                if is_custom && !is_editing {
+                                                                                                    button {
+                                                                                                        r#type: "button",
+                                                                                                        class: "ac-chat-mode-sheet__edit",
+                                                                                                        title: "编辑自定义模型",
+                                                                                                        aria_label: "编辑自定义模型",
+                                                                                                        onclick: move |e| {
+                                                                                                            e.stop_propagation();
+                                                                                                            adding_custom.set(false);
+                                                                                                            edit_custom_name.set(String::new());
+                                                                                                            edit_custom_cred.set(cred_for_edit.clone());
+                                                                                                            editing_custom_id.set(Some(id_for_edit.clone()));
+                                                                                                        },
+                                                                                                        Icon {
+                                                                                                            icon: LdPencil,
+                                                                                                            width: 14,
+                                                                                                            height: 14,
+                                                                                                            fill: "currentColor",
+                                                                                                        }
+                                                                                                    }
+                                                                                                }
+                                                                                                if is_custom && is_editing {
+                                                                                                    button {
+                                                                                                        r#type: "button",
+                                                                                                        class: "ac-chat-mode-sheet__delete",
+                                                                                                        title: "删除自定义模型",
+                                                                                                        aria_label: "删除自定义模型",
+                                                                                                        onclick: move |e| {
+                                                                                                            e.stop_propagation();
+                                                                                                            let remove_id = id_for_delete.clone();
+                                                                                                            if editing_custom_id().as_deref()
+                                                                                                                == Some(remove_id.as_str())
+                                                                                                            {
+                                                                                                                editing_custom_id.set(None);
+                                                                                                            }
+                                                                                                            chat_models.with_mut(|list| {
+                                                                                                                list.retain(|m| m.id != remove_id);
+                                                                                                            });
+                                                                                                            persist_custom_from_models(&chat_models());
+                                                                                                            if chat_model() == remove_id {
+                                                                                                                let next = chat_models()
+                                                                                                                    .first()
+                                                                                                                    .map(|m| m.id.clone())
+                                                                                                                    .unwrap_or_default();
+                                                                                                                persist_chat_model(&next);
+                                                                                                                chat_model.set(next);
+                                                                                                            }
+                                                                                                        },
+                                                                                                        Icon {
+                                                                                                            icon: LdTrash2,
+                                                                                                            width: 14,
+                                                                                                            height: 14,
+                                                                                                            fill: "currentColor",
+                                                                                                        }
+                                                                                                    }
+                                                                                                }
+                                                                                            }
+                                                                                            if is_editing {
+                                                                                                div {
+                                                                                                    class: "ac-chat-mode-sheet__edit-panel",
+                                                                                                    onclick: move |e| e.stop_propagation(),
+                                                                                                    input {
+                                                                                                        r#type: "text",
+                                                                                                        class: "ac-chat-mode-sheet__custom-input",
+                                                                                                        placeholder: "修改模型（可选）",
+                                                                                                        value: "{edit_custom_name()}",
+                                                                                                        aria_label: "修改模型（可选）",
+                                                                                                        oninput: move |e| edit_custom_name.set(e.value()),
+                                                                                                    }
+                                                                                                    select {
+                                                                                                        class: "ac-chat-mode-sheet__custom-key",
+                                                                                                        title: "绑定密钥",
+                                                                                                        aria_label: "绑定密钥",
+                                                                                                        onchange: move |e| edit_custom_cred.set(e.value()),
+                                                                                                        {
+                                                                                                            let cred_now = edit_custom_cred();
+                                                                                                            let known = keys_for_row
+                                                                                                                .iter()
+                                                                                                                .any(|k| k.id == cred_now);
+                                                                                                            let cred_fallback = cred_now.clone();
+                                                                                                            rsx! {
+                                                                                                                option {
+                                                                                                                    value: "",
+                                                                                                                    selected: if cred_now.is_empty() { true },
+                                                                                                                    "不绑定密钥"
+                                                                                                                }
+                                                                                                                if !cred_fallback.is_empty() && !known {
+                                                                                                                    option {
+                                                                                                                        value: "{cred_fallback}",
+                                                                                                                        selected: true,
+                                                                                                                        "已绑定密钥（列表尚未加载）"
+                                                                                                                    }
+                                                                                                                }
+                                                                                                                for k in keys_for_row {
+                                                                                                                    option {
+                                                                                                                        value: "{k.id}",
+                                                                                                                        selected: if cred_now == k.id { true },
+                                                                                                                        "{saved_key_option_label(&k)}"
+                                                                                                                    }
+                                                                                                                }
+                                                                                                            }
+                                                                                                        }
+                                                                                                    }
+                                                                                                    div { class: "ac-chat-mode-sheet__edit-actions",
+                                                                                                        button {
+                                                                                                            r#type: "button",
+                                                                                                            class: "ac-chat-mode-sheet__edit-cancel",
+                                                                                                            onclick: move |_| editing_custom_id.set(None),
+                                                                                                            "取消"
+                                                                                                        }
+                                                                                                        button {
+                                                                                                            r#type: "button",
+                                                                                                            class: "ac-chat-mode-sheet__edit-save",
+                                                                                                            onclick: move |_| {
+                                                                                                                apply_custom_chat_model_edit(
+                                                                                                                    &id_for_save,
+                                                                                                                    &edit_custom_name(),
+                                                                                                                    &edit_custom_cred(),
+                                                                                                                    &saved_llm_keys(),
+                                                                                                                    chat_models,
+                                                                                                                    chat_model,
+                                                                                                                    editing_custom_id,
+                                                                                                                );
+                                                                                                            },
+                                                                                                            "保存"
+                                                                                                        }
+                                                                                                    }
+                                                                                                }
+                                                                                            }
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                            }
                                                                         }
                                                                     }
                                                                 }
@@ -7211,44 +7979,170 @@ pub fn Console(
                                             div {
                                                 class: "ac-chat-mode-sheet__custom",
                                                 onclick: move |e| e.stop_propagation(),
-                                                input {
-                                                    r#type: "text",
-                                                    class: "ac-chat-mode-sheet__custom-input",
-                                                    placeholder: "自定义模型 ID",
-                                                    value: "{custom_model_draft}",
-                                                    oninput: move |e| custom_model_draft.set(e.value()),
-                                                    onkeydown: move |e| {
-                                                        if e.key() != Key::Enter {
-                                                            return;
+                                                if adding_custom() {
+                                                    div {
+                                                        class: "ac-chat-mode-sheet__edit-panel",
+                                                        input {
+                                                            r#type: "text",
+                                                            class: "ac-chat-mode-sheet__custom-input",
+                                                            placeholder: "模型名称",
+                                                            value: "{custom_model_draft}",
+                                                            aria_label: "模型名称",
+                                                            oninput: move |e| custom_model_draft.set(e.value()),
+                                                            onkeydown: move |e| {
+                                                                if e.key() != Key::Enter {
+                                                                    return;
+                                                                }
+                                                                try_add_custom_chat_model(
+                                                                    &custom_model_draft(),
+                                                                    &add_custom_cred(),
+                                                                    &saved_llm_keys(),
+                                                                    chat_models,
+                                                                    chat_model,
+                                                                    custom_model_draft,
+                                                                    add_custom_cred,
+                                                                    adding_custom,
+                                                                    chat_model_sheet_open,
+                                                                );
+                                                            },
                                                         }
-                                                        try_add_custom_chat_model(
-                                                            &custom_model_draft(),
-                                                            chat_models,
-                                                            chat_model,
-                                                            custom_model_draft,
-                                                            chat_model_sheet_open,
-                                                        );
-                                                    },
-                                                }
-                                                button {
-                                                    r#type: "button",
-                                                    class: "ac-chat-mode-sheet__custom-add",
-                                                    title: "添加自定义模型",
-                                                    aria_label: "添加自定义模型",
-                                                    onclick: move |_| {
-                                                        try_add_custom_chat_model(
-                                                            &custom_model_draft(),
-                                                            chat_models,
-                                                            chat_model,
-                                                            custom_model_draft,
-                                                            chat_model_sheet_open,
-                                                        );
-                                                    },
-                                                    Icon {
-                                                        icon: LdPlus,
-                                                        width: 14,
-                                                        height: 14,
-                                                        fill: "currentColor",
+                                                        select {
+                                                            class: "ac-chat-mode-sheet__custom-key",
+                                                            title: "绑定密钥",
+                                                            aria_label: "绑定密钥",
+                                                            onchange: move |e| add_custom_cred.set(e.value()),
+                                                            {
+                                                                let cred_now = add_custom_cred();
+                                                                let keys_for_add = saved_llm_keys();
+                                                                let known = keys_for_add.iter().any(|k| k.id == cred_now);
+                                                                let cred_fallback = cred_now.clone();
+                                                                rsx! {
+                                                                    option {
+                                                                        value: "",
+                                                                        selected: if cred_now.is_empty() { true },
+                                                                        "不绑定密钥"
+                                                                    }
+                                                                    if !cred_fallback.is_empty() && !known {
+                                                                        option {
+                                                                            value: "{cred_fallback}",
+                                                                            selected: true,
+                                                                            "已绑定密钥（列表尚未加载）"
+                                                                        }
+                                                                    }
+                                                                    for k in keys_for_add {
+                                                                        option {
+                                                                            value: "{k.id}",
+                                                                            selected: if cred_now == k.id { true },
+                                                                            "{saved_key_option_label(&k)}"
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                        div { class: "ac-chat-mode-sheet__edit-actions",
+                                                            button {
+                                                                r#type: "button",
+                                                                class: "ac-chat-mode-sheet__edit-cancel",
+                                                                onclick: move |_| {
+                                                                    custom_model_draft.set(String::new());
+                                                                    add_custom_cred.set(String::new());
+                                                                    adding_custom.set(false);
+                                                                },
+                                                                "取消"
+                                                            }
+                                                            button {
+                                                                r#type: "button",
+                                                                class: "ac-chat-mode-sheet__edit-save",
+                                                                onclick: move |_| {
+                                                                    try_add_custom_chat_model(
+                                                                        &custom_model_draft(),
+                                                                        &add_custom_cred(),
+                                                                        &saved_llm_keys(),
+                                                                        chat_models,
+                                                                        chat_model,
+                                                                        custom_model_draft,
+                                                                        add_custom_cred,
+                                                                        adding_custom,
+                                                                        chat_model_sheet_open,
+                                                                    );
+                                                                },
+                                                                "保存"
+                                                            }
+                                                        }
+                                                    }
+                                                } else {
+                                                    div { class: "ac-chat-mode-sheet__custom-actions",
+                                                        button {
+                                                            r#type: "button",
+                                                            class: "ac-chat-mode-sheet__custom-icon-btn",
+                                                            title: "添加模型",
+                                                            aria_label: "添加模型",
+                                                            onclick: move |_| {
+                                                                editing_custom_id.set(None);
+                                                                custom_model_draft.set(String::new());
+                                                                add_custom_cred.set(String::new());
+                                                                adding_custom.set(true);
+                                                            },
+                                                            Icon {
+                                                                icon: LdPlus,
+                                                                width: 15,
+                                                                height: 15,
+                                                                fill: "currentColor",
+                                                            }
+                                                        }
+                                                        {
+                                                            let probing = chat_model_net_checking();
+                                                            let probe_title = if probing {
+                                                                "正在检测网络…"
+                                                            } else {
+                                                                "检测网络"
+                                                            };
+                                                            rsx! {
+                                                                button {
+                                                                    r#type: "button",
+                                                                    class: if probing {
+                                                                        "ac-chat-mode-sheet__custom-icon-btn is-busy"
+                                                                    } else {
+                                                                        "ac-chat-mode-sheet__custom-icon-btn"
+                                                                    },
+                                                                    title: "{probe_title}",
+                                                                    aria_label: "检测网络",
+                                                                    disabled: probing,
+                                                                    onclick: move |_| {
+                                                                        if chat_model_net_checking() {
+                                                                            return;
+                                                                        }
+                                                                        chat_model_net_checking.set(true);
+                                                                        chat_model_net.set(HashMap::new());
+                                                                        let models = chat_models();
+                                                                        spawn(async move {
+                                                                            let status = probe_chat_models_network(
+                                                                                &models,
+                                                                            )
+                                                                            .await;
+                                                                            chat_model_net.set(status);
+                                                                            chat_model_net_checking.set(false);
+                                                                        });
+                                                                    },
+                                                                    if probing {
+                                                                        Icon {
+                                                                            icon: LdRefreshCw,
+                                                                            width: 15,
+                                                                            height: 15,
+                                                                            fill: "currentColor",
+                                                                            class: "ac-chat-mode-sheet__spin",
+                                                                        }
+                                                                    } else {
+                                                                        Icon {
+                                                                            icon: LdWifi,
+                                                                            width: 15,
+                                                                            height: 15,
+                                                                            fill: "currentColor",
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
@@ -7948,9 +8842,30 @@ pub fn Console(
                 }
             }
 
-            if let Some((ctx_x, ctx_y)) = center_tabs_ctx_menu() {
+            if let Some(ctx) = center_tabs_ctx_menu() {
                 {
-                    let menu_style = format!("left: {ctx_x:.0}px; top: {ctx_y:.0}px;");
+                    let menu_style = format!("left: {:.0}px; top: {:.0}px;", ctx.x, ctx.y);
+                    let target_id = ctx.tab_id.clone();
+                    let target_tab = target_id.as_ref().and_then(|id| {
+                        center_tabs().into_iter().find(|t| t.id == *id)
+                    });
+                    let target_path = target_tab
+                        .as_ref()
+                        .and_then(|t| center_tab_display_path(&t.kind).map(str::to_string));
+                    let can_close_right = target_id.as_ref().is_some_and(|id| {
+                        center_tabs()
+                            .iter()
+                            .position(|t| t.id == *id)
+                            .is_some_and(|i| i + 1 < center_tabs().len())
+                    });
+                    let has_others = target_id
+                        .as_ref()
+                        .is_some_and(|id| center_tabs().iter().any(|t| t.id != *id));
+                    let has_saved = center_tabs()
+                        .iter()
+                        .any(|t| !center_tab_is_dirty(t, &fs_dirty()));
+                    let reveal_label = super::files::fs_reveal_label();
+                    let root_now = fs_root_path();
                     rsx! {
                         div {
                             class: "ac-chat-history-ctx-backdrop",
@@ -7961,10 +8876,281 @@ pub fn Console(
                             },
                         }
                         div {
-                            class: "ac-chat-history-ctx-menu",
+                            class: "ac-chat-history-ctx-menu ac-center-tabs-ctx-menu",
                             role: "menu",
                             style: "{menu_style}",
                             onclick: move |evt| evt.stop_propagation(),
+
+                            if let Some(tid) = target_id.clone() {
+                                button {
+                                    r#type: "button",
+                                    class: "ac-chat-history-ctx-menu__item",
+                                    role: "menuitem",
+                                    onclick: {
+                                        let tid = tid.clone();
+                                        move |_| {
+                                            center_tabs_ctx_menu.set(None);
+                                            let removed = center_tabs.with_mut(|tabs| {
+                                                active_center_id.with_mut(|active| {
+                                                    center_close_tab(tabs, active, &tid)
+                                                        .into_iter()
+                                                        .collect::<Vec<_>>()
+                                                })
+                                            });
+                                            center_apply_closed_tabs_side_effects(
+                                                &removed,
+                                                selected_skill_key,
+                                                selected_plugin_key,
+                                                fs_drafts,
+                                                fs_baselines,
+                                                fs_dirty,
+                                                fs_load_errors,
+                                                fs_save_notice,
+                                            );
+                                        }
+                                    },
+                                    span { class: "ac-center-tab-ctx-label", "关闭" }
+                                    span { class: "ac-center-tab-ctx-kbd", "⌘W" }
+                                }
+                                button {
+                                    r#type: "button",
+                                    class: "ac-chat-history-ctx-menu__item",
+                                    role: "menuitem",
+                                    disabled: !has_others,
+                                    onclick: {
+                                        let tid = tid.clone();
+                                        move |_| {
+                                            center_tabs_ctx_menu.set(None);
+                                            let removed = center_tabs.with_mut(|tabs| {
+                                                active_center_id.with_mut(|active| {
+                                                    center_close_others(tabs, active, &tid)
+                                                })
+                                            });
+                                            center_apply_closed_tabs_side_effects(
+                                                &removed,
+                                                selected_skill_key,
+                                                selected_plugin_key,
+                                                fs_drafts,
+                                                fs_baselines,
+                                                fs_dirty,
+                                                fs_load_errors,
+                                                fs_save_notice,
+                                            );
+                                        }
+                                    },
+                                    span { class: "ac-center-tab-ctx-label", "关闭其他" }
+                                    span { class: "ac-center-tab-ctx-kbd", "⌥⌘T" }
+                                }
+                                button {
+                                    r#type: "button",
+                                    class: "ac-chat-history-ctx-menu__item",
+                                    role: "menuitem",
+                                    disabled: !can_close_right,
+                                    onclick: {
+                                        let tid = tid.clone();
+                                        move |_| {
+                                            center_tabs_ctx_menu.set(None);
+                                            let removed = center_tabs.with_mut(|tabs| {
+                                                active_center_id.with_mut(|active| {
+                                                    center_close_to_the_right(tabs, active, &tid)
+                                                })
+                                            });
+                                            center_apply_closed_tabs_side_effects(
+                                                &removed,
+                                                selected_skill_key,
+                                                selected_plugin_key,
+                                                fs_drafts,
+                                                fs_baselines,
+                                                fs_dirty,
+                                                fs_load_errors,
+                                                fs_save_notice,
+                                            );
+                                        }
+                                    },
+                                    span { class: "ac-center-tab-ctx-label", "关闭右侧标签页" }
+                                }
+                                button {
+                                    r#type: "button",
+                                    class: "ac-chat-history-ctx-menu__item",
+                                    role: "menuitem",
+                                    disabled: !has_saved,
+                                    onclick: move |_| {
+                                        center_tabs_ctx_menu.set(None);
+                                        let dirty_now = fs_dirty();
+                                        let removed = center_tabs.with_mut(|tabs| {
+                                            active_center_id.with_mut(|active| {
+                                                center_close_saved(tabs, active, &dirty_now)
+                                            })
+                                        });
+                                        center_apply_closed_tabs_side_effects(
+                                            &removed,
+                                            selected_skill_key,
+                                            selected_plugin_key,
+                                            fs_drafts,
+                                            fs_baselines,
+                                            fs_dirty,
+                                            fs_load_errors,
+                                            fs_save_notice,
+                                        );
+                                    },
+                                    span { class: "ac-center-tab-ctx-label", "关闭已保存" }
+                                }
+                                button {
+                                    r#type: "button",
+                                    class: "ac-chat-history-ctx-menu__item",
+                                    role: "menuitem",
+                                    onclick: move |_| {
+                                        center_tabs_ctx_menu.set(None);
+                                        let removed = center_tabs.with_mut(|tabs| {
+                                            active_center_id.with_mut(|active| {
+                                                center_close_all(tabs, active)
+                                            })
+                                        });
+                                        center_apply_closed_tabs_side_effects(
+                                            &removed,
+                                            selected_skill_key,
+                                            selected_plugin_key,
+                                            fs_drafts,
+                                            fs_baselines,
+                                            fs_dirty,
+                                            fs_load_errors,
+                                            fs_save_notice,
+                                        );
+                                    },
+                                    span { class: "ac-center-tab-ctx-label", "全部关闭" }
+                                }
+
+                                if let Some(path) = target_path.clone() {
+                                    div { class: "ac-fs-ctx-sep", role: "separator" }
+                                    button {
+                                        r#type: "button",
+                                        class: "ac-chat-history-ctx-menu__item",
+                                        role: "menuitem",
+                                        onclick: {
+                                            let path = path.clone();
+                                            move |_| {
+                                                center_tabs_ctx_menu.set(None);
+                                                match super::files::fs_clipboard_set_text(&path) {
+                                                    Ok(()) => toast.success("已复制路径"),
+                                                    Err(e) => toast.error(e),
+                                                }
+                                            }
+                                        },
+                                        span { class: "ac-center-tab-ctx-label", "复制路径" }
+                                        span { class: "ac-center-tab-ctx-kbd", "⌥⌘C" }
+                                    }
+                                    button {
+                                        r#type: "button",
+                                        class: "ac-chat-history-ctx-menu__item",
+                                        role: "menuitem",
+                                        onclick: {
+                                            let path = path.clone();
+                                            let root = root_now.clone();
+                                            move |_| {
+                                                center_tabs_ctx_menu.set(None);
+                                                let rel = super::files::fs_relative_to_root(&root, &path);
+                                                match super::files::fs_clipboard_set_text(&rel) {
+                                                    Ok(()) => toast.success("已复制相对路径"),
+                                                    Err(e) => toast.error(e),
+                                                }
+                                            }
+                                        },
+                                        span { class: "ac-center-tab-ctx-label", "复制相对路径" }
+                                        span { class: "ac-center-tab-ctx-kbd", "⌥⇧⌘C" }
+                                    }
+
+                                    div { class: "ac-fs-ctx-sep", role: "separator" }
+                                    button {
+                                        r#type: "button",
+                                        class: "ac-chat-history-ctx-menu__item",
+                                        role: "menuitem",
+                                        onclick: {
+                                            let path = path.clone();
+                                            move |_| {
+                                                center_tabs_ctx_menu.set(None);
+                                                match super::files::fs_open_in_default_app(&path) {
+                                                    Ok(()) => {}
+                                                    Err(e) => toast.error(e),
+                                                }
+                                            }
+                                        },
+                                        "用系统默认应用打开"
+                                    }
+                                    button {
+                                        r#type: "button",
+                                        class: "ac-chat-history-ctx-menu__item",
+                                        role: "menuitem",
+                                        onclick: {
+                                            let path = path.clone();
+                                            move |_| {
+                                                center_tabs_ctx_menu.set(None);
+                                                if pending_has_path(&chat_pending(), &path) {
+                                                    show_chat.set(true);
+                                                    return;
+                                                }
+                                                let id = chat_attachment_seq();
+                                                chat_attachment_seq.set(id + 1);
+                                                let att = attachment_from_path(id, path.clone());
+                                                push_composer_attachment(
+                                                    COMPOSER_ROOT_MAIN,
+                                                    chat_pending,
+                                                    chat_can_send,
+                                                    att,
+                                                );
+                                                show_chat.set(true);
+                                            }
+                                        },
+                                        "添加到聊天"
+                                    }
+
+                                    div { class: "ac-fs-ctx-sep", role: "separator" }
+                                    button {
+                                        r#type: "button",
+                                        class: "ac-chat-history-ctx-menu__item",
+                                        role: "menuitem",
+                                        onclick: {
+                                            let path = path.clone();
+                                            move |_| {
+                                                center_tabs_ctx_menu.set(None);
+                                                match super::files::fs_reveal_in_os(&path) {
+                                                    Ok(()) => {}
+                                                    Err(e) => toast.error(e),
+                                                }
+                                            }
+                                        },
+                                        "{reveal_label}"
+                                    }
+                                    button {
+                                        r#type: "button",
+                                        class: "ac-chat-history-ctx-menu__item",
+                                        role: "menuitem",
+                                        onclick: {
+                                            let path = path.clone();
+                                            move |_| {
+                                                center_tabs_ctx_menu.set(None);
+                                                let _ = reveal_and_select_workspace_file(
+                                                    &path,
+                                                    show_sidebar,
+                                                    sidebar_shutting_down,
+                                                    show_center,
+                                                    center_shutting_down,
+                                                    active_tab,
+                                                    fs_section_open,
+                                                    fs_root_path,
+                                                    fs_expanded,
+                                                    fs_children_cache,
+                                                    fs_selected_path,
+                                                    fs_save_notice,
+                                                );
+                                            }
+                                        },
+                                        "在资源管理器视图中显示"
+                                    }
+                                }
+
+                                div { class: "ac-fs-ctx-sep", role: "separator" }
+                            }
+
                             button {
                                 r#type: "button",
                                 class: "ac-chat-history-ctx-menu__item",

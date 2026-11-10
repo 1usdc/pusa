@@ -69,8 +69,8 @@ impl RuntimeContext {
         args: serde_json::Value,
     ) -> Result<T> {
         let h = Arc::clone(&self.handle);
-        tokio::task::spawn_blocking(move || ffi::call_json(&h, method, args))
-            .await?
+        // Use block_in_place to avoid thread pool overhead for CPU-bound operations
+        tokio::task::block_in_place(|| ffi::call_json(&h, method, args))
     }
 
     async fn call_json_opt_async<T: for<'de> Deserialize<'de> + Send + 'static>(
@@ -79,14 +79,14 @@ impl RuntimeContext {
         args: serde_json::Value,
     ) -> Result<Option<T>> {
         let h = Arc::clone(&self.handle);
-        tokio::task::spawn_blocking(move || ffi::call_json_opt(&h, method, args))
-            .await?
+        // Use block_in_place to avoid thread pool overhead for CPU-bound operations
+        tokio::task::block_in_place(|| ffi::call_json_opt(&h, method, args))
     }
 
     async fn call_unit_async(&self, method: &'static str, args: serde_json::Value) -> Result<()> {
         let h = Arc::clone(&self.handle);
-        tokio::task::spawn_blocking(move || ffi::call_unit(&h, method, args))
-            .await?
+        // Use block_in_place to avoid thread pool overhead for CPU-bound operations
+        tokio::task::block_in_place(|| ffi::call_unit(&h, method, args))
     }
 
     pub async fn server_public_ip(&self) -> Result<String> {
@@ -162,7 +162,8 @@ impl RuntimeContext {
         tx: mpsc::UnboundedSender<protocol::SseEvent>,
     ) -> Result<()> {
         let h = Arc::clone(&self.handle);
-        tokio::task::spawn_blocking(move || {
+        // Use block_in_place to avoid thread pool overhead for CPU-bound operations
+        tokio::task::block_in_place(|| {
             ffi::call_stream(
                 &h,
                 "strategy_semantic_parse_stream",
@@ -174,7 +175,6 @@ impl RuntimeContext {
                 },
             )
         })
-        .await?
     }
 
     pub async fn roles_list(&self) -> Result<Vec<protocol::RoleDto>> {
@@ -505,6 +505,12 @@ impl RuntimeContext {
         .await
     }
 
+    /// 触发当前工作区的本机语义代码索引（后台）。
+    pub async fn kick_code_index(&self) -> Result<()> {
+        self.call_unit_async("kick_code_index", ffi::args_empty())
+            .await
+    }
+
     pub async fn run_chat_turn(
         &self,
         req: protocol::ChatTurnRequest,
@@ -522,7 +528,10 @@ impl RuntimeContext {
         client_openai_v1_base: Option<String>,
     ) -> Result<()> {
         let h = Arc::clone(&self.handle);
-        tokio::task::spawn_blocking(move || {
+        // Use block_in_place to avoid thread pool overhead.
+        // Note: if pusa-core has long-blocking IO, this may block the runtime.
+        // Consider reverting to spawn_blocking if performance degrades for long-running chat turns.
+        tokio::task::block_in_place(|| {
             ffi::call_stream(
                 &h,
                 "run_chat_turn_with_client_headers",
@@ -538,7 +547,6 @@ impl RuntimeContext {
                 },
             )
         })
-        .await?
     }
 
     pub async fn infer_strategy_frequency_seconds_with_ai(&self, prompt: &str, model: &str) -> i64 {

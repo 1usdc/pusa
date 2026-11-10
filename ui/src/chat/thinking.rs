@@ -228,6 +228,41 @@ fn format_tool_row(tool: &UiThinkingTool) -> TimelineKind {
                 open,
             }
         }
+        "grep" => {
+            let pattern = json_str_field(&tool.args, &["pattern"]).unwrap_or_default();
+            let path = json_str_field(&tool.args, &["path"]).unwrap_or_default();
+            TimelineKind::Tool {
+                verb: "搜索".into(),
+                primary: truncate_chars(&pattern, 48),
+                secondary: if path.is_empty() {
+                    String::new()
+                } else {
+                    path_file_name(&path)
+                },
+                running,
+                open: None,
+            }
+        }
+        "find_files" => {
+            let glob = json_str_field(&tool.args, &["glob"]).unwrap_or_default();
+            TimelineKind::Tool {
+                verb: "找文件".into(),
+                primary: truncate_chars(&glob, 48),
+                secondary: String::new(),
+                running,
+                open: None,
+            }
+        }
+        "semantic_search" => {
+            let query = json_str_field(&tool.args, &["query"]).unwrap_or_default();
+            TimelineKind::Tool {
+                verb: "语义搜索".into(),
+                primary: truncate_chars(&query, 48),
+                secondary: String::new(),
+                running,
+                open: None,
+            }
+        }
         "exec_bash" => {
             let cmd = json_str_field(&tool.args, &["command"]).unwrap_or_default();
             TimelineKind::Tool {
@@ -415,7 +450,8 @@ fn activity_summary(steps: &[UiThinkingStep]) -> Option<String> {
                 "read_file" => reads += 1,
                 "write_file" => writes += 1,
                 "edit" => edits += 1,
-                "search_skills" | "search_market_skills" => searches += 1,
+                "search_skills" | "search_market_skills" | "grep" | "find_files"
+                | "semantic_search" => searches += 1,
                 "exec_bash" => execs += 1,
                 "spawn_subagent" => subagents += 1,
                 _ => other += 1,

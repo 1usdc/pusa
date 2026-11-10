@@ -7,8 +7,6 @@
 #   BUMP=0 just desktop-mac                  # 不改版号，按当前 version 打包
 #   NOTARIZE=0 just desktop-mac              # 只签名，跳过 Apple 公证
 #   VELOPACK=0 just desktop-mac              # 旧流程：codesign + DMG（无应用内更新）
-#   ANOTHERME_BASE_URL=... just desktop-mac
-#
 # 凭证：.env.signing（MACOS_SIGNING_IDENTITY / APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID）
 set -euo pipefail
 
@@ -24,8 +22,6 @@ if ! command -v dx >/dev/null 2>&1; then
 	echo "❌ 未找到 dx，请先安装 dioxus-cli（与 CI 对齐：dx --version）" >&2
 	exit 1
 fi
-
-export ANOTHERME_BASE_URL="${ANOTHERME_BASE_URL:-https://api.anotherme.co}"
 
 bump="${BUMP:-1}"
 if [[ "${bump}" == "1" ]]; then

@@ -6,6 +6,7 @@ pub mod auth;
 pub mod chrome;
 pub mod files;
 pub mod html_preview;
+pub mod office_convert;
 pub mod plugins;
 pub mod terminal;
 pub mod updater;

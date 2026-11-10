@@ -13,11 +13,31 @@ use keyboard_types::Key;
 
 use crate::icons::AiOutlineVerticalAlignBottom;
 
-const SEARCH_DEBOUNCE_MS: u64 = 260;
+const SEARCH_DEBOUNCE_MS: u64 = 220;
+const SEARCH_TIMEOUT_SECS: u64 = 25;
 const MAX_MATCHES: usize = 2000;
 const MAX_FILES: usize = 200;
+const MAX_FILES_SCANNED: usize = 8_000;
 const MAX_LINE_CHARS: usize = 240;
-const SKIP_DIR_NAMES: &[&str] = &[".git", "node_modules", "target"];
+const SKIP_DIR_NAMES: &[&str] = &[
+    ".git",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    ".next",
+    ".nuxt",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".tox",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".idea",
+    ".vscode",
+    "Pods",
+    "vendor",
+];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct SearchHit {
@@ -102,7 +122,7 @@ pub fn SidebarSearchPanel(
     } else if let Some(err) = current.error.as_ref() {
         err.clone()
     } else if !has_query {
-        "输入关键词后按 Enter 搜索文件内容".to_string()
+        "输入关键词即可实时搜索文件内容".to_string()
     } else if match_count == 0 {
         "未找到结果".to_string()
     } else if current.truncated {
@@ -595,10 +615,19 @@ pub fn SidebarSearchPanel(
             div { class: "ac-sidebar-search-summary", "{summary}" }
 
             div { class: "ac-sidebar-search-results", role: "tree",
-                if !loading() && current.files.is_empty() && has_query && current.error.is_none() {
+                if loading() && current.files.is_empty() {
                     div { class: "ac-sidebar-files-empty",
                         Icon { icon: LdSearch, width: 16, height: 16, fill: "currentColor" }
-                        "未找到匹配"
+                        "正在搜索工作区…"
+                    }
+                } else if !loading() && current.files.is_empty() && has_query {
+                    div { class: "ac-sidebar-files-empty",
+                        Icon { icon: LdSearch, width: 16, height: 16, fill: "currentColor" }
+                        if let Some(err) = current.error.as_ref() {
+                            "{err}"
+                        } else {
+                            "未找到匹配"
+                        }
                     }
                 }
                 for group in current.files.iter() {
@@ -735,12 +764,14 @@ fn kick_search(
             if epoch() != this_epoch {
                 return;
             }
-            let found = tokio::task::spawn_blocking(move || run_search(&req))
-                .await
-                .unwrap_or_else(|e| SearchOutcome {
-                    error: Some(format!("搜索任务失败：{e}")),
+            let found = match run_search_async(req).await {
+                Ok(out) => out,
+                Err(e) => SearchOutcome {
+                    error: Some(e),
                     ..SearchOutcome::default()
-                });
+                },
+            };
+            // 已被更新的查询取代：不要清 loading（新一轮会负责）。
             if epoch() != this_epoch {
                 return;
             }
@@ -756,6 +787,25 @@ fn kick_search(
     #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
     {
         let _ = (delay_ms, req, this_epoch, loading, outcome, expanded, epoch);
+    }
+}
+
+/// 在独立线程跑搜索，并加总超时，避免卡在「正在搜索…」。
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+async fn run_search_async(req: SearchRequest) -> Result<SearchOutcome, String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    std::thread::Builder::new()
+        .name("pusa-sidebar-search".into())
+        .spawn(move || {
+            let _ = tx.send(run_search(&req));
+        })
+        .map_err(|e| format!("无法启动搜索线程：{e}"))?;
+    match tokio::time::timeout(std::time::Duration::from_secs(SEARCH_TIMEOUT_SECS), rx).await {
+        Ok(Ok(out)) => Ok(out),
+        Ok(Err(_)) => Err("搜索任务已中断。".into()),
+        Err(_) => Err(format!(
+            "搜索超时（>{SEARCH_TIMEOUT_SECS}s）。可缩小范围，或填写「包含文件」如 *.rs。"
+        )),
     }
 }
 
@@ -967,10 +1017,47 @@ fn run_search(req: &SearchRequest) -> SearchOutcome {
 }
 
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+fn resolve_rg_bin() -> Option<std::path::PathBuf> {
+    use std::path::PathBuf;
+    if let Ok(path) = which_rg_on_path() {
+        return Some(path);
+    }
+    // Dock / Finder 启动时 PATH 往往很短，补常见安装位置。
+    const CANDIDATES: &[&str] = &[
+        "/opt/homebrew/bin/rg",
+        "/usr/local/bin/rg",
+        "/usr/bin/rg",
+        "/opt/local/bin/rg",
+    ];
+    for c in CANDIDATES {
+        let p = PathBuf::from(c);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    None
+}
+
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+fn which_rg_on_path() -> Result<std::path::PathBuf, ()> {
+    use std::path::PathBuf;
+    let mut cmd = crate::desktop::files::hidden_command("rg");
+    cmd.arg("--version");
+    match cmd.output() {
+        Ok(out) if out.status.success() => Ok(PathBuf::from("rg")),
+        _ => Err(()),
+    }
+}
+
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 fn try_rg_search(req: &SearchRequest) -> Result<Option<SearchOutcome>, String> {
     use std::process::Stdio;
 
-    let mut cmd = crate::desktop::files::hidden_command("rg");
+    let Some(rg) = resolve_rg_bin() else {
+        return Ok(None);
+    };
+
+    let mut cmd = crate::desktop::files::hidden_command(&rg);
     cmd.arg("--json")
         .arg("--max-filesize")
         .arg("2M")
@@ -983,6 +1070,9 @@ fn try_rg_search(req: &SearchRequest) -> Result<Option<SearchOutcome>, String> {
     cmd.arg("--glob").arg("!**/.git/**");
     cmd.arg("--glob").arg("!**/node_modules/**");
     cmd.arg("--glob").arg("!**/target/**");
+    cmd.arg("--glob").arg("!**/dist/**");
+    cmd.arg("--glob").arg("!**/.venv/**");
+    cmd.arg("--glob").arg("!**/venv/**");
     for g in split_globs(&req.include) {
         cmd.arg("--glob").arg(g);
     }
@@ -1125,6 +1215,7 @@ fn walk_search(req: &SearchRequest) -> SearchOutcome {
     let mut files: Vec<SearchFileHits> = Vec::new();
     let mut match_count = 0usize;
     let mut truncated = false;
+    let mut scanned = 0usize;
     let mut stack = vec![root.to_path_buf()];
 
     while let Some(dir) = stack.pop() {
@@ -1161,6 +1252,11 @@ fn walk_search(req: &SearchRequest) -> SearchOutcome {
             }
             if !ft.is_file() {
                 continue;
+            }
+            scanned += 1;
+            if scanned > MAX_FILES_SCANNED {
+                truncated = true;
+                break;
             }
             let rel = rel_path(root, &path);
             if !include.is_empty() && !include.iter().any(|g| glob_match(g, &rel)) {

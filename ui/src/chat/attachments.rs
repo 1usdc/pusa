@@ -20,11 +20,15 @@ pub struct ChatPendingAttachment {
     pub source_path: Option<String>,
     /// 路径引用是否为目录（chip 配色 / 点击展开侧栏）；二进制附件为 `false`。
     pub is_dir: bool,
+    /// 终端/代码选区正文：有值时输入框只显示引用 chip，发送时展开为代码块。
+    pub snippet_body: Option<String>,
+    /// 代码块语言标记（如 `terminal`）；仅 `snippet_body` 使用。
+    pub snippet_lang: Option<String>,
 }
 
 impl PartialEq for ChatPendingAttachment {
     fn eq(&self, other: &Self) -> bool {
-        // 不比较 preview / image data URL 正文：base64 可达数 MB，组件 props diff 会卡顿。
+        // 不比较 preview / image / snippet 正文：可达数 KB～MB，组件 props diff 会卡顿。
         self.id == other.id
             && self.name == other.name
             && self.mime == other.mime
@@ -32,6 +36,10 @@ impl PartialEq for ChatPendingAttachment {
             && self.is_dir == other.is_dir
             && self.preview_url.is_some() == other.preview_url.is_some()
             && self.image_data_url.is_some() == other.image_data_url.is_some()
+            && self.snippet_body.is_some() == other.snippet_body.is_some()
+            && self.snippet_lang == other.snippet_lang
+            && self.snippet_body.as_ref().map(|s| s.len())
+                == other.snippet_body.as_ref().map(|s| s.len())
     }
 }
 
@@ -42,6 +50,28 @@ impl ChatPendingAttachment {
             .as_deref()
             .filter(|p| !p.trim().is_empty())
             .unwrap_or(self.name.as_str())
+    }
+
+    /// 是否为内联代码/终端选区引用（非路径、非图片）。
+    pub fn is_snippet(&self) -> bool {
+        self.snippet_body
+            .as_deref()
+            .is_some_and(|s| !s.trim().is_empty())
+    }
+
+    /// chip 是否按目录配色（显式标记或 mime）。
+    pub fn chip_is_dir(&self) -> bool {
+        !self.is_snippet() && (self.is_dir || self.mime == "inode/directory")
+    }
+
+    /// 发送时展开为 Markdown 代码块。
+    pub fn snippet_fence(&self) -> Option<String> {
+        let body = self.snippet_body.as_deref()?.trim_end();
+        if body.is_empty() {
+            return None;
+        }
+        let lang = self.snippet_lang.as_deref().unwrap_or("");
+        Some(format!("```{lang}\n{body}\n```"))
     }
 }
 
@@ -155,7 +185,7 @@ pub fn attachments_from_suffix_labels(labels: &[String], start_id: u64) -> Vec<C
 }
 
 fn path_is_directory(path: &str) -> bool {
-    let trimmed = path.trim();
+    let trimmed = path.trim().trim_end_matches(['/', '\\']);
     if trimmed.is_empty() {
         return false;
     }
@@ -210,6 +240,8 @@ pub fn attachment_from_bytes(id: u64, name: String, mime: String, bytes: Vec<u8>
         image_data_url: data_url,
         source_path: None,
         is_dir: false,
+        snippet_body: None,
+        snippet_lang: None,
     }
 }
 
@@ -235,6 +267,52 @@ pub fn attachment_from_path(id: u64, path: impl Into<String>) -> ChatPendingAtta
         image_data_url: None,
         source_path: Some(path),
         is_dir,
+        snippet_body: None,
+        snippet_lang: None,
+    }
+}
+
+/// 终端选区引用标签名：`终端选区(16)` / `终端选区(16-18)`。
+fn terminal_selection_chip_name(start_line: Option<u32>, end_line: Option<u32>, text: &str) -> String {
+    match (start_line, end_line) {
+        (Some(s), Some(e)) if s > 0 && e > 0 => {
+            let (a, b) = if s <= e { (s, e) } else { (e, s) };
+            if a == b {
+                format!("终端选区({a})")
+            } else {
+                format!("终端选区({a}-{b})")
+            }
+        }
+        _ => {
+            let n = text.lines().count().max(1) as u32;
+            if n <= 1 {
+                "终端选区(1)".into()
+            } else {
+                format!("终端选区(1-{n})")
+            }
+        }
+    }
+}
+
+/// 终端「Add to Pusa」：选区以引用 chip 显示，发送时再展开全文。
+pub fn attachment_from_terminal_selection(
+    id: u64,
+    text: impl Into<String>,
+    start_line: Option<u32>,
+    end_line: Option<u32>,
+) -> ChatPendingAttachment {
+    let text = text.into();
+    let name = terminal_selection_chip_name(start_line, end_line, &text);
+    ChatPendingAttachment {
+        id,
+        name,
+        mime: "text/x-terminal-selection".into(),
+        preview_url: None,
+        image_data_url: None,
+        source_path: None,
+        is_dir: false,
+        snippet_body: Some(text),
+        snippet_lang: Some("terminal".into()),
     }
 }
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 本地 Web：nginx 代理 /llm /relay /v1 → 上游，其余 → dx serve（same-origin，避 CORS）
+# 本地 Web：nginx 代理 /v1 → server，其余 → dx serve（same-origin，避 CORS）
 # 浏览器 :${WEB_PORT:-8080}；dx :${DX_PORT:-8081}
 set -euo pipefail
 
@@ -10,20 +10,6 @@ web_port="${WEB_PORT:-8080}"
 dx_port="${DX_PORT:-8081}"
 proxy_container="${WEB_PROXY_CONTAINER:-anotherclaw-web-dev-proxy}"
 host_gateway_ipv4="${HOST_DOCKER_INTERNAL_IPV4:-192.168.65.254}"
-anotherme_base="${ANOTHERME_BASE_URL:-https://api.anotherme.co}"
-anotherme_base="${anotherme_base%/}"
-anotherme_proxy_base="${anotherme_base//host.docker.internal/${host_gateway_ipv4}}"
-anotherme_authority="${anotherme_base#http://}"
-anotherme_authority="${anotherme_authority#https://}"
-anotherme_authority="${anotherme_authority%%/*}"
-anotherme_host="${anotherme_authority%%:*}"
-relay_base="${ANOTHERME_RELAY_BASE_URL:-https://relay.anotherme.co}"
-relay_base="${relay_base%/}"
-relay_proxy_base="${relay_base//host.docker.internal/${host_gateway_ipv4}}"
-relay_authority="${relay_base#http://}"
-relay_authority="${relay_authority#https://}"
-relay_authority="${relay_authority%%/*}"
-relay_host="${relay_authority%%:*}"
 server_base="${CLAW_SERVER_URL:-http://host.docker.internal:8787}"
 server_base="${server_base%/}"
 server_proxy_base="${server_base//host.docker.internal/${host_gateway_ipv4}}"
@@ -51,38 +37,6 @@ trap cleanup EXIT INT TERM
 	printf '%s\n' "        proxy_pass ${server_proxy_base};"
 	printf '%s\n' '        proxy_http_version 1.1;'
 	printf '%s\n' "        proxy_set_header Host ${server_authority};"
-	printf '%s\n' '        proxy_set_header X-Real-IP $remote_addr;'
-	printf '%s\n' '        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;'
-	printf '%s\n' '        proxy_set_header X-Forwarded-Proto $scheme;'
-	printf '%s\n' '        proxy_buffering off;'
-	printf '%s\n' '        proxy_cache off;'
-	printf '%s\n' '        proxy_connect_timeout 5s;'
-	printf '%s\n' '        proxy_send_timeout 10s;'
-	printf '%s\n' '        proxy_read_timeout 86400s;'
-	printf '%s\n' '    }'
-	printf '%s\n' ''
-	printf '%s\n' '    location /llm/ {'
-	printf '%s\n' "        proxy_pass ${anotherme_proxy_base}/;"
-	printf '%s\n' '        proxy_http_version 1.1;'
-	printf '%s\n' "        proxy_set_header Host ${anotherme_authority};"
-	printf '%s\n' '        proxy_ssl_server_name on;'
-	printf '%s\n' "        proxy_ssl_name ${anotherme_host};"
-	printf '%s\n' '        proxy_set_header X-Real-IP $remote_addr;'
-	printf '%s\n' '        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;'
-	printf '%s\n' '        proxy_set_header X-Forwarded-Proto $scheme;'
-	printf '%s\n' '        proxy_buffering off;'
-	printf '%s\n' '        proxy_cache off;'
-	printf '%s\n' '        proxy_connect_timeout 5s;'
-	printf '%s\n' '        proxy_send_timeout 5s;'
-	printf '%s\n' '        proxy_read_timeout 5s;'
-	printf '%s\n' '    }'
-	printf '%s\n' ''
-	printf '%s\n' '    location /relay/ {'
-	printf '%s\n' "        proxy_pass ${relay_proxy_base}/;"
-	printf '%s\n' '        proxy_http_version 1.1;'
-	printf '%s\n' "        proxy_set_header Host ${relay_authority};"
-	printf '%s\n' '        proxy_ssl_server_name on;'
-	printf '%s\n' "        proxy_ssl_name ${relay_host};"
 	printf '%s\n' '        proxy_set_header X-Real-IP $remote_addr;'
 	printf '%s\n' '        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;'
 	printf '%s\n' '        proxy_set_header X-Forwarded-Proto $scheme;'
@@ -125,8 +79,7 @@ fi
 echo "== dx serve: http://127.0.0.1:${dx_port}（same-origin-api） =="
 (
 	cd web
-	env -u ANOTHERME_BASE_URL -u ANOTHERME_RELAY_BASE_URL \
-		dx serve --port "${dx_port}" --addr "0.0.0.0" --features same-origin-api
+	dx serve --port "${dx_port}" --addr "0.0.0.0" --features same-origin-api
 ) >"${dx_log}" 2>&1 &
 dx_pid="$!"
 
@@ -154,7 +107,7 @@ if ! curl -fsS "http://127.0.0.1:${dx_port}/" >/dev/null 2>&1; then
 	exit 1
 fi
 
-echo "== local nginx proxy: http://127.0.0.1:${web_port}  /v1 → ${server_base}  /llm → ${anotherme_base}  /relay → ${relay_base} =="
+echo "== local nginx proxy: http://127.0.0.1:${web_port}  /v1 → ${server_base} =="
 docker run --rm --name "${proxy_container}" \
 	-p "${web_port}:80" \
 	-v "${nginx_conf}:/etc/nginx/conf.d/default.conf:ro" \

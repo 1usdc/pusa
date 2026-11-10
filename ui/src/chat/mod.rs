@@ -10,14 +10,14 @@ pub(crate) mod transport_wasm;
 mod ui;
 
 pub use attachments::{
-    attachment_from_file_data, attachment_from_path, parse_user_message_segments, ChatPendingAttachment,
-    ChatUserSeg,
+    attachment_from_file_data, attachment_from_path, attachment_from_terminal_selection,
+    parse_user_message_segments, ChatPendingAttachment, ChatUserSeg,
 };
 pub use composer_ce::{
-    ce_clear, ce_focus_end, ce_insert_chip, ce_insert_text, ce_serialize, ce_set_html, chip_html,
-    compose_user_payload, composer_seed_html, composer_seed_html_from_segs, pending_has_path,
-    pending_remove_ids, ComposerBridgeEvent, COMPOSER_ROOT_EDIT, COMPOSER_ROOT_MAIN,
-    INSTALL_BRIDGE_JS,
+    ce_clear, ce_clear_now, ce_focus_end, ce_insert_chip, ce_insert_text, ce_serialize, ce_set_html,
+    chip_html, compose_user_payload, composer_seed_html, composer_seed_html_from_segs,
+    pending_has_path, pending_remove_ids, ComposerBridgeEvent, COMPOSER_ROOT_EDIT,
+    COMPOSER_ROOT_MAIN, INSTALL_BRIDGE_JS,
 };
 #[cfg(target_arch = "wasm32")]
 pub use attachments::attachment_from_bytes;
@@ -30,10 +30,10 @@ pub use error_text::friendly_chat_error_message;
 pub use facade::api_base_url;
 pub use facade::{
     activate_role, create_conversation, create_role, delete_conversation, delete_role,
-    install_skill, list_chat_models, list_chat_models_from_credentials, list_conversations,
-    load_agent_run_detail, load_conversation_messages, load_equipped_skills, load_installed_skills,
-    load_roles, load_skill_market, run_chat_turn, toggle_skill_equip, uninstall_installed_skill,
-    update_conversation_title, update_role,
+    install_skill, list_chat_models_from_credentials, list_conversations, load_agent_run_detail,
+    load_conversation_messages, load_equipped_skills, load_installed_skills, load_roles,
+    load_skill_market, probe_v1_models_endpoint, run_chat_turn, toggle_skill_equip,
+    uninstall_installed_skill, update_conversation_title, update_role,
 };
 pub use markdown::ChatMarkdownBody;
 pub use thinking::{ChatThinkingHydrator, ChatThinkingPanel, TraceFileOpen};

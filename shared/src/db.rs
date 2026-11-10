@@ -9,9 +9,12 @@ pub struct AuthAccount {
     pub chain_id: Option<i64>,
     pub aliyun_instance_id: Option<String>,
     pub aliyun_public_ip: Option<String>,
-    pub anotherme_access_token: Option<String>,
-    pub anotherme_refresh_token: Option<String>,
-    pub anotherme_token_expires_at: Option<i64>,
+    #[serde(alias = "anotherme_access_token")]
+    pub access_token: Option<String>,
+    #[serde(alias = "anotherme_refresh_token")]
+    pub refresh_token: Option<String>,
+    #[serde(alias = "anotherme_token_expires_at")]
+    pub token_expires_at: Option<i64>,
     pub login_source: Option<String>,
     pub last_login_at: Option<i64>,
     pub created_at: i64,

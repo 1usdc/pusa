@@ -1,6 +1,6 @@
 FROM nginx:1.27-alpine
 # nginx 官方镜像 entrypoint 会用 envsubst 把 /etc/nginx/templates/*.template 渲染到
-# /etc/nginx/conf.d/，运行时通过 ANOTHERME_BASE_URL 决定 /llm/ 反代到哪台 Another-Me-LLM。
+# /etc/nginx/conf.d/。当前模板仅反代 /v1 → server，无额外环境变量。
 COPY docker/nginx-web.conf.template /etc/nginx/templates/default.conf.template
 COPY target/dx/web/release/web/public/ /usr/share/nginx/html/
 

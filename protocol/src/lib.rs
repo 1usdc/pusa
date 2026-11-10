@@ -321,45 +321,6 @@ pub struct RoleUpdateRequest {
     pub system_prompt: Option<String>,
 }
 
-/// GET `/v1/auth/status`：reown 模式下恒返回 `true`，仅作探活；具体登录走客户端直连
-/// Another-Me-LLM 的 `wallet/challenge` → `wallet/verify` 流程。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuthStatusBody {
-    pub registered: bool,
-}
-
-/// GET `/v1/auth/me`：透传 Another-Me-LLM 后端的 `/api/cloud/auth/me` 响应，描述当前
-/// access token 所属账户与登录场景。`login_source == "ecs"` 时附带 `instance_id` /
-/// `access_ip`；`"desktop"` 表示桌面端登录（来源 IP 不命中任何已纳管 ECS）。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuthMeDto {
-    /// 上游 `accountId`，形如 `wallet:0x…`。
-    #[serde(rename = "accountId")]
-    pub account_id: String,
-    /// 上游 session 主键。
-    #[serde(rename = "sessionId", default, skip_serializing_if = "Option::is_none")]
-    pub session_id: Option<String>,
-    /// 登录场景：`"ecs"` 或 `"desktop"`。
-    #[serde(rename = "loginSource", default, skip_serializing_if = "Option::is_none")]
-    pub login_source: Option<String>,
-    /// 阿里云 ECS instance id（仅 `login_source == "ecs"` 时存在）。
-    #[serde(rename = "instanceId", default, skip_serializing_if = "Option::is_none")]
-    pub instance_id: Option<String>,
-    /// 阿里云 ECS 公网入口 IP（仅 `login_source == "ecs"` 时存在）。
-    #[serde(rename = "accessIp", default, skip_serializing_if = "Option::is_none")]
-    pub access_ip: Option<String>,
-    #[serde(default)]
-    pub roles: Vec<String>,
-    #[serde(default)]
-    pub perms: Vec<String>,
-    /// access token 过期 ISO-8601 时间。
-    #[serde(rename = "expiresAt", default, skip_serializing_if = "Option::is_none")]
-    pub expires_at: Option<String>,
-    /// 上游 `cloud_users` 文档（含 walletAddress 等字段），作为透明 JSON 直接转发。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub user: Option<serde_json::Value>,
-}
-
 /// GET `/v1/about`：本机/部署信息（版本默认取自 `desktop/Cargo.toml`，可用 `VERSION_FILE` 覆盖）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AboutInfoDto {
@@ -384,10 +345,8 @@ pub struct LlmStatusBody {
 
 /// 聊天模型选择器的一项。
 ///
-/// 数据来自 Another-Me-Relay 的 OpenAI 兼容接口 `GET /v1/models`
+/// 数据来自 OpenAI 兼容接口 `GET {base}/models`
 ///（形如 `{ "data": [ { "id": "gpt-5.4", ... } ] }`）。
-/// 鉴权版 `GET /v1/me/models` 还会带 `display_name`（admin 在
-/// `/admin/model_prices` 录入的描述）；公开列表通常没有该字段。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatModelDto {
     pub id: String,

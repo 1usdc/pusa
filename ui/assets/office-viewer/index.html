@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Office 预览</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f8fafc;
+    --fg: #334155;
+    --muted: #64748b;
+    --panel: rgba(255, 255, 255, 0.92);
+    --border: rgba(15, 23, 42, 0.08);
+    --error: #dc2626;
+    --accent: #2563eb;
+    --sheet-bg: #fff;
+    --th-bg: #f1f5f9;
+    --slide-bg: #fff;
+    --slide-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+    --toolbar-h: 40px;
+  }
+  /* 跟随应用 `html[data-theme]`，不跟系统 prefers-color-scheme（避免与设置不一致）。 */
+  html[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #1c1c20;
+    --fg: #e2e8f0;
+    --muted: #94a3b8;
+    --panel: rgba(28, 28, 32, 0.92);
+    --border: rgba(255, 255, 255, 0.1);
+    --error: #f87171;
+    --accent: #60a5fa;
+    --sheet-bg: #25252b;
+    --th-bg: #2e2e36;
+    --slide-bg: #25252b;
+    --slide-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  }
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--fg);
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  #msg {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    text-align: center;
+    color: var(--muted);
+    pointer-events: none;
+    word-break: break-all;
+  }
+  #msg.is-error { color: var(--error); }
+  #msg:empty { display: none; }
+  #toolbar {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    height: var(--toolbar-h);
+    padding: 0 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    box-sizing: border-box;
+  }
+  #toolbar.is-visible { display: flex; }
+  #toolbar b {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  #toolbar span { color: var(--muted); flex: 0 0 auto; }
+  #toolbar button {
+    flex: 0 0 auto;
+    appearance: none;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--fg);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font: inherit;
+    cursor: pointer;
+  }
+  #toolbar button:hover { border-color: var(--accent); color: var(--accent); }
+  #toolbar button:disabled { opacity: 0.4; cursor: default; }
+  #view {
+    display: none;
+    position: absolute;
+    inset: 0;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  #view.has-toolbar { top: var(--toolbar-h); }
+  #view.is-visible { display: block; }
+  /* docx (mammoth) */
+  #docx {
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 28px 32px 48px;
+    background: var(--sheet-bg);
+    min-height: 100%;
+    box-sizing: border-box;
+    color: var(--fg);
+  }
+  #docx img { max-width: 100%; height: auto; }
+  #docx table { border-collapse: collapse; width: 100%; margin: 0.75em 0; }
+  #docx td, #docx th {
+    border: 1px solid var(--border);
+    padding: 4px 8px;
+    vertical-align: top;
+  }
+  #docx p { margin: 0.55em 0; }
+  #docx h1, #docx h2, #docx h3 { margin: 1em 0 0.4em; line-height: 1.25; }
+  /* xlsx */
+  #xlsx {
+    padding: 12px;
+    box-sizing: border-box;
+  }
+  #xlsx .sheet-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: 4px 0 8px;
+    background: var(--bg);
+  }
+  #xlsx .sheet-tabs button {
+    appearance: none;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--fg);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font: inherit;
+    cursor: pointer;
+  }
+  #xlsx .sheet-tabs button.is-active {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  #xlsx .sheet-table-wrap {
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--sheet-bg);
+  }
+  #xlsx table {
+    border-collapse: collapse;
+    font-size: 12px;
+    min-width: 100%;
+  }
+  #xlsx th, #xlsx td {
+    border: 1px solid var(--border);
+    padding: 4px 8px;
+    white-space: nowrap;
+    max-width: 280px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #xlsx th {
+    background: var(--th-bg);
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  /* pptx */
+  #pptx {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 20px 16px 40px;
+    box-sizing: border-box;
+  }
+  #pptx .slide {
+    width: min(960px, 100%);
+    aspect-ratio: 16 / 9;
+    background: var(--slide-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: var(--slide-shadow);
+    padding: 28px 32px;
+    box-sizing: border-box;
+    overflow: auto;
+    display: none;
+  }
+  #pptx .slide.is-active { display: block; }
+  #pptx .slide-num {
+    color: var(--muted);
+    font-size: 11px;
+    margin-bottom: 10px;
+  }
+  #pptx .slide-line {
+    margin: 0.35em 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  #pptx .slide-empty {
+    color: var(--muted);
+    font-style: italic;
+  }
+  #pptx .note {
+    width: min(960px, 100%);
+    color: var(--muted);
+    font-size: 12px;
+    text-align: center;
+  }
+  /* 旧版 OLE 文本兜底 */
+  #legacy {
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 28px 32px 48px;
+    background: var(--sheet-bg);
+    min-height: 100%;
+    box-sizing: border-box;
+    color: var(--fg);
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    line-height: 1.55;
+  }
+  #legacy .legacy-banner {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: var(--muted);
+    font-size: 12px;
+    margin-bottom: 16px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel);
+    white-space: normal;
+  }
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <b id="name"></b>
+  <span id="meta"></span>
+  <button type="button" id="prev" hidden>上一页</button>
+  <button type="button" id="next" hidden>下一页</button>
+</div>
+<div id="msg">正在加载…</div>
+<div id="view">
+  <div id="docx" hidden></div>
+  <div id="xlsx" hidden></div>
+  <div id="pptx" hidden></div>
+  <div id="legacy" hidden></div>
+</div>
+<script>
+(function () {
+  'use strict';
+
+  var cfg = window.__PUSA_OFFICE__ || (function () {
+    var q = new URLSearchParams(location.search);
+    return {
+      src: q.get('src') || '',
+      name: q.get('name') || '',
+      kind: q.get('kind') || '',
+      theme: q.get('theme') || ''
+    };
+  })();
+  if (!cfg.name) {
+    var tail = (cfg.src || '').split('#')[0].split('?')[0].split('/').pop() || 'document';
+    try { cfg.name = decodeURIComponent(tail); } catch (_) { cfg.name = tail; }
+  }
+  if (!cfg.kind) {
+    cfg.kind = extOf(cfg.name);
+  } else {
+    cfg.kind = String(cfg.kind).toLowerCase();
+  }
+
+  function normalizeTheme(raw) {
+    return String(raw || '').toLowerCase() === 'dark' ? 'dark' : 'light';
+  }
+  function applyTheme(theme) {
+    var t = normalizeTheme(theme);
+    document.documentElement.setAttribute('data-theme', t);
+    document.documentElement.style.colorScheme = t;
+  }
+  function resolveTheme() {
+    if (cfg.theme === 'dark' || cfg.theme === 'light') return cfg.theme;
+    try {
+      var q = new URLSearchParams(location.search).get('theme');
+      if (q === 'dark' || q === 'light') return q;
+    } catch (_) {}
+    try {
+      var parentTheme = window.parent
+        && window.parent.document
+        && window.parent.document.documentElement
+        && window.parent.document.documentElement.getAttribute('data-theme');
+      if (parentTheme === 'dark' || parentTheme === 'light') return parentTheme;
+    } catch (_) {}
+    return 'light';
+  }
+  applyTheme(resolveTheme());
+  window.addEventListener('message', function (ev) {
+    var data = ev && ev.data;
+    if (!data || data.type !== 'pusa-theme') return;
+    if (data.theme === 'dark' || data.theme === 'light') applyTheme(data.theme);
+  });
+  // 向父页请求权威主题（转换耗时后 URL 里的 theme 可能已过期；也覆盖 postMessage 竞态）。
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'pusa-theme-request' }, '*');
+    }
+  } catch (_) {}
+
+  var msgEl = document.getElementById('msg');
+  var viewEl = document.getElementById('view');
+  var toolbar = document.getElementById('toolbar');
+  var nameEl = document.getElementById('name');
+  var metaEl = document.getElementById('meta');
+  var prevBtn = document.getElementById('prev');
+  var nextBtn = document.getElementById('next');
+  var docxEl = document.getElementById('docx');
+  var xlsxEl = document.getElementById('xlsx');
+  var pptxEl = document.getElementById('pptx');
+  var legacyEl = document.getElementById('legacy');
+
+  function extOf(name) {
+    var i = name.lastIndexOf('.');
+    return i >= 0 ? name.slice(i + 1).toLowerCase() : '';
+  }
+
+  function fail(text) {
+    msgEl.textContent = text;
+    msgEl.classList.add('is-error');
+    viewEl.classList.remove('is-visible');
+    toolbar.classList.remove('is-visible');
+  }
+
+  function ready(kindLabel) {
+    msgEl.textContent = '';
+    msgEl.classList.remove('is-error');
+    nameEl.textContent = cfg.name;
+    metaEl.textContent = kindLabel;
+    toolbar.classList.add('is-visible');
+    viewEl.classList.add('is-visible');
+    viewEl.classList.add('has-toolbar');
+  }
+
+  function loadScript(src) {
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = src;
+      s.async = true;
+      s.onload = function () { resolve(); };
+      s.onerror = function () { reject(new Error('无法加载脚本：' + src)); };
+      document.head.appendChild(s);
+    });
+  }
+
+  function asset(name) {
+    // 与查看器同目录的虚拟资源（pusapreview 协议内嵌）。
+    return name;
+  }
+
+  async function renderDocx(buf) {
+    await loadScript(asset('__pusa_office_mammoth.min.js'));
+    if (!window.mammoth) throw new Error('mammoth 未能初始化。');
+    var result = await window.mammoth.convertToHtml({ arrayBuffer: buf });
+    docxEl.hidden = false;
+    docxEl.innerHTML = result.value || '<p class="slide-empty">（文档无可见内容）</p>';
+    if (result.messages && result.messages.length) {
+      console.warn('mammoth messages', result.messages);
+    }
+    ready('');
+  }
+
+  function sheetToTableHtml(sheet) {
+    var ref = sheet['!ref'];
+    if (!ref) return '<p class="slide-empty">（空工作表）</p>';
+    var range = XLSX.utils.decode_range(ref);
+    // 限制预览规模，避免超大表卡死 WebView。
+    var maxR = Math.min(range.e.r, range.s.r + 499);
+    var maxC = Math.min(range.e.c, range.s.c + 99);
+    var html = ['<div class="sheet-table-wrap"><table><tbody>'];
+    for (var r = range.s.r; r <= maxR; r++) {
+      html.push('<tr>');
+      for (var c = range.s.c; c <= maxC; c++) {
+        var addr = XLSX.utils.encode_cell({ r: r, c: c });
+        var cell = sheet[addr];
+        var text = '';
+        if (cell != null) {
+          if (cell.w != null) text = String(cell.w);
+          else if (cell.v != null) text = String(cell.v);
+        }
+        var tag = r === range.s.r ? 'th' : 'td';
+        html.push('<' + tag + '>' + escapeHtml(text) + '</' + tag + '>');
+      }
+      html.push('</tr>');
+    }
+    html.push('</tbody></table></div>');
+    var truncated = range.e.r > maxR || range.e.c > maxC;
+    if (truncated) {
+      html.push('<p class="note" style="margin-top:8px">已截断显示（最多 500 行 × 100 列）。</p>');
+    }
+    return html.join('');
+  }
+
+  function escapeHtml(s) {
+    return s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  async function renderXlsx(buf, legacyXls) {
+    await loadScript(asset('__pusa_office_xlsx.full.min.js'));
+    if (!window.XLSX) throw new Error('SheetJS 未能初始化。');
+    var wb = XLSX.read(buf, { type: 'array', cellStyles: false });
+    if (!wb.SheetNames || !wb.SheetNames.length) throw new Error('工作簿中没有工作表。');
+    xlsxEl.hidden = false;
+    var tabs = document.createElement('div');
+    tabs.className = 'sheet-tabs';
+    var body = document.createElement('div');
+    body.className = 'sheet-body';
+    xlsxEl.innerHTML = '';
+    xlsxEl.appendChild(tabs);
+    xlsxEl.appendChild(body);
+
+    function show(name) {
+      Array.prototype.forEach.call(tabs.querySelectorAll('button'), function (b) {
+        b.classList.toggle('is-active', b.dataset.name === name);
+      });
+      var sheet = wb.Sheets[name];
+      body.innerHTML = sheetToTableHtml(sheet || {});
+    }
+
+    wb.SheetNames.forEach(function (name, i) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = name;
+      btn.dataset.name = name;
+      btn.addEventListener('click', function () { show(name); });
+      tabs.appendChild(btn);
+      if (i === 0) show(name);
+    });
+    ready((legacyXls ? 'Excel 97–2003 · ' : 'Excel · ') + wb.SheetNames.length + ' 个工作表');
+  }
+
+  function pushUtf16Runs(u8, out) {
+    var n = u8.length - (u8.length % 2);
+    var run = [];
+    function flush() {
+      if (run.length >= 4) {
+        try {
+          out.push(String.fromCharCode.apply(null, run));
+        } catch (_) {
+          var s = '';
+          for (var i = 0; i < run.length; i++) s += String.fromCharCode(run[i]);
+          out.push(s);
+        }
+      }
+      run = [];
+    }
+    for (var i = 0; i < n; i += 2) {
+      var code = u8[i] | (u8[i + 1] << 8);
+      // 可打印 BMP（含常见中日韩），跳过控制符与代理区乱码。
+      if (code >= 0x20 && code !== 0x7f && code < 0xd800) {
+        run.push(code);
+      } else if (code >= 0xe000 && code <= 0xfffd) {
+        run.push(code);
+      } else {
+        flush();
+      }
+    }
+    flush();
+  }
+
+  function pushAsciiRuns(u8, out) {
+    var run = [];
+    function flush() {
+      if (run.length >= 6) {
+        out.push(String.fromCharCode.apply(null, run));
+      }
+      run = [];
+    }
+    for (var i = 0; i < u8.length; i++) {
+      var b = u8[i];
+      if (b >= 0x20 && b < 0x7f) run.push(b);
+      else flush();
+    }
+    flush();
+  }
+
+  function dedupeLines(chunks) {
+    var seen = {};
+    var lines = [];
+    chunks.forEach(function (chunk) {
+      String(chunk).split(/\r\n|\n|\r|\u0000+/).forEach(function (line) {
+        var t = line.replace(/\s+/g, ' ').trim();
+        if (t.length < 2) return;
+        // 过滤大量 OLE 内部标识符噪音。
+        if (/^(Root Entry|CompObj|SummaryInformation|DocumentSummaryInformation|PowerPoint Document|WordDocument|1Table|0Table|Data|Current User)$/i.test(t)) return;
+        if (/^[A-F0-9-]{20,}$/i.test(t)) return;
+        if (seen[t]) return;
+        seen[t] = 1;
+        lines.push(t);
+      });
+    });
+    return lines;
+  }
+
+  async function renderLegacyOle(buf, kindLabel, tip) {
+    await loadScript(asset('__pusa_office_xlsx.full.min.js'));
+    if (!window.XLSX || !XLSX.CFB) throw new Error('无法解析旧版 OLE 容器。');
+    var cfb;
+    try {
+      cfb = XLSX.CFB.read(buf, { type: 'array' });
+    } catch (e) {
+      throw new Error('不是有效的旧版 Office（OLE）文件：' + (e && e.message ? e.message : e));
+    }
+    var chunks = [];
+    var paths = cfb.FullPaths || [];
+    for (var i = 0; i < paths.length; i++) {
+      var file = cfb.FileIndex && cfb.FileIndex[i];
+      if (!file || !file.content) continue;
+      var u8 = file.content;
+      if (typeof u8 === 'string') {
+        var enc = [];
+        for (var j = 0; j < u8.length; j++) enc.push(u8.charCodeAt(j) & 0xff);
+        u8 = enc;
+      } else if (!(u8 instanceof Uint8Array)) {
+        u8 = new Uint8Array(u8);
+      }
+      pushUtf16Runs(u8, chunks);
+      pushAsciiRuns(u8, chunks);
+    }
+    var lines = dedupeLines(chunks);
+    if (!lines.length) {
+      throw new Error(
+        '未能从旧版文件提取文本。安装 LibreOffice（soffice）后可获得更好的 .doc / .ppt 预览。'
+      );
+    }
+    legacyEl.hidden = false;
+    legacyEl.innerHTML = '';
+    var banner = document.createElement('div');
+    banner.className = 'legacy-banner';
+    banner.textContent = tip;
+    legacyEl.appendChild(banner);
+    var pre = document.createElement('div');
+    pre.textContent = lines.join('\n');
+    legacyEl.appendChild(pre);
+    ready(kindLabel + ' · 文本提取');
+  }
+
+  function extractSlideTexts(xml) {
+    var texts = [];
+    var re = /<a:t[^>]*>([^<]*)<\/a:t>/g;
+    var m;
+    while ((m = re.exec(xml))) {
+      var t = m[1]
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'");
+      if (t.trim()) texts.push(t);
+    }
+    return texts;
+  }
+
+  async function renderPptx(buf) {
+    await loadScript(asset('__pusa_office_jszip.min.js'));
+    if (!window.JSZip) throw new Error('JSZip 未能初始化。');
+    var zip = await JSZip.loadAsync(buf);
+    var names = Object.keys(zip.files)
+      .filter(function (n) { return /^ppt\/slides\/slide\d+\.xml$/i.test(n); })
+      .sort(function (a, b) {
+        var na = parseInt((a.match(/slide(\d+)/i) || [])[1] || '0', 10);
+        var nb = parseInt((b.match(/slide(\d+)/i) || [])[1] || '0', 10);
+        return na - nb;
+      });
+    if (!names.length) throw new Error('未找到幻灯片内容。');
+
+    pptxEl.hidden = false;
+    pptxEl.innerHTML = '';
+    var slides = [];
+    for (var i = 0; i < names.length; i++) {
+      var xml = await zip.files[names[i]].async('text');
+      var texts = extractSlideTexts(xml);
+      var slide = document.createElement('div');
+      slide.className = 'slide';
+      var num = document.createElement('div');
+      num.className = 'slide-num';
+      num.textContent = '第 ' + (i + 1) + ' / ' + names.length + ' 页';
+      slide.appendChild(num);
+      if (!texts.length) {
+        var empty = document.createElement('div');
+        empty.className = 'slide-empty';
+        empty.textContent = '（本页无可提取文本；复杂图形/嵌入对象未渲染）';
+        slide.appendChild(empty);
+      } else {
+        texts.forEach(function (t) {
+          var line = document.createElement('div');
+          line.className = 'slide-line';
+          line.textContent = t;
+          slide.appendChild(line);
+        });
+      }
+      pptxEl.appendChild(slide);
+      slides.push(slide);
+    }
+    var note = document.createElement('div');
+    note.className = 'note';
+    note.textContent = 'PPTX 预览为文本提取模式，不保证版式与动画一致。';
+    pptxEl.appendChild(note);
+
+    var idx = 0;
+    function paint() {
+      slides.forEach(function (s, i) { s.classList.toggle('is-active', i === idx); });
+      prevBtn.disabled = idx <= 0;
+      nextBtn.disabled = idx >= slides.length - 1;
+      metaEl.textContent = 'PowerPoint · ' + (idx + 1) + ' / ' + slides.length;
+    }
+    prevBtn.hidden = false;
+    nextBtn.hidden = false;
+    prevBtn.onclick = function () { if (idx > 0) { idx--; paint(); } };
+    nextBtn.onclick = function () { if (idx < slides.length - 1) { idx++; paint(); } };
+    ready('PowerPoint · ' + slides.length + ' 页');
+    paint();
+  }
+
+  async function main() {
+    if (!cfg.src) {
+      fail('缺少预览文件地址。');
+      return;
+    }
+    var kind = cfg.kind || extOf(cfg.name);
+    var supported = {
+      docx: 1, xlsx: 1, pptx: 1,
+      doc: 1, xls: 1, ppt: 1
+    };
+    if (!supported[kind]) {
+      fail('暂不支持此 Office 格式（支持 .doc / .docx / .xls / .xlsx / .ppt / .pptx）。');
+      return;
+    }
+    msgEl.textContent = '正在加载…';
+    var res;
+    try {
+      res = await fetch(cfg.src);
+    } catch (e) {
+      fail('无法读取文件：' + (e && e.message ? e.message : e));
+      return;
+    }
+    if (!res.ok) {
+      fail('读取文件失败（HTTP ' + res.status + '）。');
+      return;
+    }
+    var buf = await res.arrayBuffer();
+    try {
+      if (kind === 'docx') await renderDocx(buf);
+      else if (kind === 'xlsx' || kind === 'xls') await renderXlsx(buf, kind === 'xls');
+      else if (kind === 'pptx') await renderPptx(buf);
+      else if (kind === 'doc') {
+        await renderLegacyOle(
+          buf,
+          'Word 97–2003',
+          '旧版 .doc 未能转为 .docx，当前为 OLE 文本提取预览（版式不保证）。macOS 通常可用系统 textutil；其它平台请安装 LibreOffice（soffice）。'
+        );
+      } else if (kind === 'ppt') {
+        await renderLegacyOle(
+          buf,
+          'PowerPoint 97–2003',
+          '旧版 .ppt 未能转为 .pptx，当前为 OLE 文本提取预览（版式/图片不保证）。请安装 LibreOffice（soffice）以获得更好预览。'
+        );
+      }
+    } catch (e) {
+      fail('解析失败：' + (e && e.message ? e.message : e));
+    }
+  }
+
+  main();
+})();
+</script>
+</body>
+</html>

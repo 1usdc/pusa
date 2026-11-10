@@ -10,6 +10,7 @@ use libloading::Library;
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use simd_json::to_string as simd_to_string;
 
 type FnOpen = unsafe extern "C" fn(*const c_char, *const c_char) -> *mut c_void;
 type FnFree = unsafe extern "C" fn(*mut c_void);
@@ -195,9 +196,13 @@ pub fn call_json<T: for<'de> Deserialize<'de>>(
 ) -> Result<T> {
     let a = api()?;
     let m = CString::new(method)?;
-    let args_s = CString::new(args.to_string())?;
+    // Use simd-json for faster serialization (SIMD-accelerated)
+    let args_s = CString::new(simd_to_string(&args).map_err(|e| {
+        anyhow!("simd-json serialization failed for {method}: {e}")
+    })?)?;
     let raw = unsafe { (a.call)(handle.ptr, m.as_ptr(), args_s.as_ptr()) };
     let s = take_c_string(raw)?;
+    // Keep serde_json for deserialization (simpler API, less overhead)
     let wire: Wire =
         serde_json::from_str(&s).with_context(|| format!("decode {method}: {s}"))?;
     if !wire.ok {
@@ -216,9 +221,13 @@ pub fn call_json_opt<T: for<'de> Deserialize<'de>>(
 ) -> Result<Option<T>> {
     let a = api()?;
     let m = CString::new(method)?;
-    let args_s = CString::new(args.to_string())?;
+    // Use simd-json for faster serialization (SIMD-accelerated)
+    let args_s = CString::new(simd_to_string(&args).map_err(|e| {
+        anyhow!("simd-json serialization failed for {method}: {e}")
+    })?)?;
     let raw = unsafe { (a.call)(handle.ptr, m.as_ptr(), args_s.as_ptr()) };
     let s = take_c_string(raw)?;
+    // Keep serde_json for deserialization (simpler API, less overhead)
     let wire: Wire =
         serde_json::from_str(&s).with_context(|| format!("decode {method}: {s}"))?;
     if !wire.ok {
@@ -234,9 +243,13 @@ pub fn call_json_opt<T: for<'de> Deserialize<'de>>(
 pub fn call_unit(handle: &Handle, method: &str, args: Value) -> Result<()> {
     let a = api()?;
     let m = CString::new(method)?;
-    let args_s = CString::new(args.to_string())?;
+    // Use simd-json for faster serialization (SIMD-accelerated)
+    let args_s = CString::new(simd_to_string(&args).map_err(|e| {
+        anyhow!("simd-json serialization failed for {method}: {e}")
+    })?)?;
     let raw = unsafe { (a.call)(handle.ptr, m.as_ptr(), args_s.as_ptr()) };
     let s = take_c_string(raw)?;
+    // Keep serde_json for deserialization (simpler API, less overhead)
     let wire: Wire = serde_json::from_str(&s)?;
     if !wire.ok {
         return Err(anyhow!(wire.error.unwrap_or(s)));
@@ -252,7 +265,10 @@ pub fn call_stream(
 ) -> Result<()> {
     let a = api()?;
     let m = CString::new(method)?;
-    let args_s = CString::new(args.to_string())?;
+    // Use simd-json for faster serialization (SIMD-accelerated)
+    let args_s = CString::new(simd_to_string(&args).map_err(|e| {
+        anyhow!("simd-json serialization failed for {method}: {e}")
+    })?)?;
 
     struct CbState {
         f: Box<dyn FnMut(&str) + Send>,
@@ -283,6 +299,7 @@ pub fn call_stream(
     unsafe {
         drop(Box::from_raw(state));
     }
+    // Keep serde_json for deserialization (simpler API, less overhead)
     let wire: Wire = serde_json::from_str(&s)?;
     if !wire.ok {
         return Err(anyhow!(wire.error.unwrap_or(s)));

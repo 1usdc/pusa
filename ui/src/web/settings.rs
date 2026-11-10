@@ -73,6 +73,29 @@ pub fn WebSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
                 credentials: credentials(),
                 enabled_ids: enabled_ids(),
                 hint: load_hint(),
+                on_update: move |body: LlmCredentialUpsertBody| {
+                    spawn(async move {
+                        let prev_ids: Vec<String> =
+                            credentials().iter().map(|c| c.id.clone()).collect();
+                        let prev_enabled = enabled_ids();
+                        match llm_config::upsert_llm_credential(&body).await {
+                            Some(cfg) => {
+                                let new_ids: Vec<String> =
+                                    cfg.credentials.iter().map(|c| c.id.clone()).collect();
+                                apply_cfg(cfg, credentials, active_id, enabled_ids);
+                                enabled_ids.set(enabled_after_upsert(
+                                    &prev_enabled,
+                                    &prev_ids,
+                                    &new_ids,
+                                    refresh,
+                                ));
+                                load_hint.set(None);
+                                toast.success("已更新密钥");
+                            }
+                            None => load_hint.set(Some("更新失败，请稍后重试".into())),
+                        }
+                    });
+                },
                 on_add: move |body: LlmCredentialUpsertBody| {
                     spawn(async move {
                         let prev_ids: Vec<String> =
@@ -93,28 +116,6 @@ pub fn WebSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
                                 toast.success("已添加密钥");
                             }
                             None => load_hint.set(Some("添加失败，请稍后重试".into())),
-                        }
-                    });
-                },
-                on_rename: move |(id, label): (String, String)| {
-                    spawn(async move {
-                        let Some(cred) = credentials().into_iter().find(|c| c.id == id) else {
-                            return;
-                        };
-                        let body = LlmCredentialUpsertBody {
-                            id: Some(cred.id),
-                            provider: cred.provider,
-                            api_key: cred.api_key,
-                            openai_v1_base: cred.openai_v1_base,
-                            label,
-                        };
-                        match llm_config::upsert_llm_credential(&body).await {
-                            Some(cfg) => {
-                                apply_cfg(cfg, credentials, active_id, enabled_ids);
-                                load_hint.set(None);
-                                toast.success("已更新名称");
-                            }
-                            None => load_hint.set(Some("更新名称失败，请稍后重试".into())),
                         }
                     });
                 },

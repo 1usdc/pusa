@@ -9,14 +9,7 @@ services:
     environment:
       BIND_ADDR: "0.0.0.0:8787"
       DATABASE_PATH: "/work/data/server.db"
-      # reown 模式：所有 token 由 Another-Me-LLM 后端颁发，server 仅做远程校验。
-      ANOTHERME_BASE_URL: "${ANOTHERME_BASE_URL:-http://host.docker.internal:8881}"
-      ANOTHERME_TIMEOUT_MS: "${ANOTHERME_TIMEOUT_MS:-5000}"
-      ANOTHERME_AUTH_CACHE_TTL_SECONDS: "${ANOTHERME_AUTH_CACHE_TTL_SECONDS:-60}"
       RUST_LOG: "${RUST_LOG:-info}"
-    extra_hosts:
-      # 让容器里的 ANOTHERME_BASE_URL=http://host.docker.internal:... 在 linux 上也能解析到宿主机。
-      - "host.docker.internal:host-gateway"
     volumes:
       - ../data:/work/data
       - ../skills:/work/skills
@@ -48,17 +41,6 @@ services:
         condition: service_healthy
     ports:
       - "8080:80"
-    environment:
-      # nginx 模板渲染时把 ${ANOTHERME_BASE_URL} / ${ANOTHERME_RELAY_BASE_URL} 替换成实际地址
-      # （前者与 server 共用一个变量；后者指向 Another-Me-Relay）。
-      # 仅过滤这两个变量，避免 $host / $remote_addr 等 nginx 内置变量被 envsubst 吃掉。
-      ANOTHERME_BASE_URL: "${ANOTHERME_BASE_URL:-http://host.docker.internal:8881}"
-      ANOTHERME_RELAY_BASE_URL: "${ANOTHERME_RELAY_BASE_URL:-https://relay.anotherme.co}"
-      NGINX_ENVSUBST_FILTER_VARS: "ANOTHERME_BASE_URL ANOTHERME_RELAY_BASE_URL"
-    extra_hosts:
-      # dev 时 ANOTHERME_BASE_URL=http://host.docker.internal:8881，靠这条解析到宿主机；
-      # prod 改成公网/内网 IP 后这条无害（不会被用到），保留以兼容本地复现。
-      - "host.docker.internal:host-gateway"
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     restart: unless-stopped

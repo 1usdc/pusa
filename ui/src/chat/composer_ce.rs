@@ -37,8 +37,11 @@ pub const INSTALL_BRIDGE_JS: &str = r#"(async () => {
 
   const syncEmptyClass = (el) => {
     if (!el) return;
-    const empty = !isSendable(el) && !(el.innerText || '').replace(/\u200b/g, '').trim();
-    el.classList.toggle('is-empty', empty || el.childNodes.length === 0);
+    // 只看可见文案 / chip；勿用 childNodes.length===0（空 Text 节点会误判）。
+    const empty =
+      !isSendable(el) &&
+      !(el.innerText || '').replace(/\u200b/g, '').replace(/\u00a0/g, ' ').trim();
+    el.classList.toggle('is-empty', empty);
   };
 
   const emit = (msg) => {
@@ -169,13 +172,70 @@ pub const INSTALL_BRIDGE_JS: &str = r#"(async () => {
       prev = document.createTextNode('\u200b');
       if (node.parentNode) node.parentNode.insertBefore(prev, node);
     }
-    // 落到锚点文本开头，光标在芯片左侧，再按左键可继续在正文里移动
-    placeCaretInText(prev, 0);
+    // 落到锚点末尾（紧贴 chip 左侧）；再按 ← 由方向键逻辑跳入正文
+    placeCaretInText(prev, (prev.nodeValue || '').length);
+  };
+
+  /** 去掉 chip 前多余换行 / 空块，避免删光左侧文字后标签掉到下一行。 */
+  const normalizeAroundChips = (el) => {
+    if (!el) return;
+    withSuppress(() => {
+      const chips = [];
+      for (let i = 0; i < el.childNodes.length; i++) {
+        const n = el.childNodes[i];
+        if (n.nodeType === 1 && n.hasAttribute && n.hasAttribute('data-ac-attach-id')) chips.push(n);
+      }
+      for (let c = 0; c < chips.length; c++) {
+        const chip = chips[c];
+        let prev = chip.previousSibling;
+        while (prev && prev.nodeType === 1 && prev.tagName === 'BR') {
+          const p = prev.previousSibling;
+          prev.remove();
+          prev = p;
+        }
+        while (
+          prev &&
+          prev.nodeType === 1 &&
+          (prev.tagName === 'DIV' || prev.tagName === 'P')
+        ) {
+          const onlyEmpty =
+            prev.childNodes.length === 0 ||
+            (prev.childNodes.length === 1 &&
+              (prev.firstChild.tagName === 'BR' || isZwsOnlyText(prev.firstChild)));
+          if (!onlyEmpty) break;
+          const p = prev.previousSibling;
+          prev.remove();
+          prev = p;
+        }
+        if (prev && prev.nodeType === 3) {
+          const raw = prev.nodeValue || '';
+          const visible = raw.replace(/\u200b/g, '').replace(/\u00a0/g, ' ');
+          // 仅空白/换行：收成单个 ZWS，防止 pre-wrap 把 chip 顶到下一行
+          if (!visible.replace(/[\n\r\t ]/g, '')) {
+            if (raw !== '\u200b') prev.nodeValue = '\u200b';
+          } else if (/[\n\r]$/.test(visible) && !visible.replace(/[\n\r\t ]/g, '')) {
+            prev.nodeValue = '\u200b';
+          }
+        }
+      }
+      // 根下直接挂着的空 DIV/P（浏览器删字时常见）拆掉
+      for (let i = el.childNodes.length - 1; i >= 0; i--) {
+        const n = el.childNodes[i];
+        if (n.nodeType !== 1 || (n.tagName !== 'DIV' && n.tagName !== 'P')) continue;
+        if (n.querySelector && n.querySelector('[data-ac-attach-id]')) continue;
+        const empty =
+          n.childNodes.length === 0 ||
+          (n.childNodes.length === 1 &&
+            (n.firstChild.tagName === 'BR' || isZwsOnlyText(n.firstChild)));
+        if (empty) n.remove();
+      }
+    });
   };
 
   /** 保证 chip 两侧与相邻 chip 之间都有可落点的零宽文本节点。 */
   const ensureChipAnchors = (el) => {
     if (!el) return;
+    normalizeAroundChips(el);
     const direct = [];
     for (let i = 0; i < el.childNodes.length; i++) {
       const n = el.childNodes[i];
@@ -187,6 +247,10 @@ pub const INSTALL_BRIDGE_JS: &str = r#"(async () => {
     }
     if (!direct[0].previousSibling || direct[0].previousSibling.nodeType !== 3) {
       el.insertBefore(document.createTextNode('\u200b'), direct[0]);
+    } else if (isZwsOnlyText(direct[0].previousSibling)) {
+      // 合并前导纯 ZWS/空白为单个锚点
+      const prev = direct[0].previousSibling;
+      if ((prev.nodeValue || '') !== '\u200b') prev.nodeValue = '\u200b';
     }
     for (let i = 0; i < direct.length; i++) {
       const chip = direct[i];
@@ -350,11 +414,14 @@ pub const INSTALL_BRIDGE_JS: &str = r#"(async () => {
 
   const clear = (id) => {
     const el = rootEl(id);
-    if (!el) return;
+    if (!el) return false;
     delete lastCaret[id];
-    withSuppress(() => {
-      el.innerHTML = '';
-      syncEmptyClass(el);
+    return withSuppress(() => {
+      // 逐个移除，避免部分 WebView 上 innerHTML='' 后仍绘出旧层。
+      while (el.firstChild) el.removeChild(el.firstChild);
+      el.textContent = '';
+      el.classList.add('is-empty');
+      return true;
     });
   };
 
@@ -597,8 +664,8 @@ pub const INSTALL_BRIDGE_JS: &str = r#"(async () => {
     document.querySelectorAll('[data-ac-composer]').forEach(observeRoot);
   };
 
-  if (window.__acComposerDocBound !== 8) {
-    window.__acComposerDocBound = 8;
+  if (window.__acComposerDocBound !== 9) {
+    window.__acComposerDocBound = 9;
 
     // 粘贴统一转纯文本：网页/Word/IDE 复制来的 HTML、颜色、字体、链接、<div>/<br> 结构
     // 一律只保留文字。含文件（截图/图片）的粘贴不拦截，交给 attachments.rs 的 capture 钩子。
@@ -668,6 +735,9 @@ pub const INSTALL_BRIDGE_JS: &str = r#"(async () => {
       const t = e.target;
       const el = t && t.closest ? t.closest('[data-ac-composer]') : null;
       if (!el) return;
+      // 删光 chip 左侧字符后浏览器常留下 \n/<br>，把标签顶到下一行
+      normalizeAroundChips(el);
+      ensureChipAnchors(el);
       syncEmptyClass(el);
       emit({
         kind: 'input',
@@ -963,13 +1033,25 @@ pub fn compose_user_payload(
     if snap.parts.is_empty() {
         let pending = pending_resolve(registry, &snap.attach_ids);
         let mut send_text = snap.text.trim().to_string();
-        let non_image: Vec<String> = pending
-            .iter()
-            .filter(|a| a.image_data_url.is_none())
-            .map(|a| a.send_label().to_string())
-            .collect();
-        if !non_image.is_empty() {
-            let names = non_image.join(", ");
+        let mut path_labels = Vec::new();
+        for att in &pending {
+            if let Some(fence) = att.snippet_fence() {
+                if !send_text.is_empty() && !send_text.ends_with('\n') {
+                    send_text.push('\n');
+                }
+                if !send_text.is_empty() {
+                    send_text.push('\n');
+                }
+                send_text.push_str(&fence);
+                continue;
+            }
+            if att.image_data_url.is_some() {
+                continue;
+            }
+            path_labels.push(att.send_label().to_string());
+        }
+        if !path_labels.is_empty() {
+            let names = path_labels.join(", ");
             if send_text.is_empty() {
                 send_text = format!("[附件: {names}]");
             } else {
@@ -977,6 +1059,8 @@ pub fn compose_user_payload(
             }
         }
         let segs = super::attachments::parse_user_message_segments(&send_text, &pending);
+        // 选区引用：气泡用 chip 展示，覆盖纯文本 fence 解析结果。
+        let segs = prefer_snippet_chip_segs(segs, &pending);
         return (send_text, pending, segs);
     }
 
@@ -990,7 +1074,12 @@ pub fn compose_user_payload(
             };
             pending.push(att.clone());
             segs.push(ChatUserSeg::Attachment(att.clone()));
-            if att.image_data_url.is_none() {
+            if let Some(fence) = att.snippet_fence() {
+                if !send_text.is_empty() && !send_text.ends_with('\n') {
+                    send_text.push('\n');
+                }
+                send_text.push_str(&fence);
+            } else if att.image_data_url.is_none() {
                 send_text.push_str("[附件: ");
                 send_text.push_str(att.send_label());
                 send_text.push(']');
@@ -1007,6 +1096,40 @@ pub fn compose_user_payload(
     (send_text.trim().to_string(), pending, segs)
 }
 
+/// 无 DOM parts 回退路径下，把已展开的 snippet fence 正文换成 chip 段，避免气泡刷全文。
+fn prefer_snippet_chip_segs(
+    segs: Vec<super::attachments::ChatUserSeg>,
+    pending: &[ChatPendingAttachment],
+) -> Vec<super::attachments::ChatUserSeg> {
+    use super::attachments::ChatUserSeg;
+    let snippets: Vec<_> = pending.iter().filter(|a| a.is_snippet()).cloned().collect();
+    if snippets.is_empty() {
+        return segs;
+    }
+    // 简化：有 snippet 时，气泡只保留非 fence 文本 + 全部附件 chip（含 snippet）。
+    let mut out = Vec::new();
+    for seg in segs {
+        match seg {
+            ChatUserSeg::Text(t) => {
+                let trimmed = t.trim();
+                if trimmed.starts_with("```") {
+                    continue;
+                }
+                if !t.is_empty() {
+                    out.push(ChatUserSeg::Text(t));
+                }
+            }
+            ChatUserSeg::Attachment(att) => out.push(ChatUserSeg::Attachment(att)),
+        }
+    }
+    for snip in snippets {
+        if !out.iter().any(|s| matches!(s, ChatUserSeg::Attachment(a) if a.id == snip.id)) {
+            out.push(ChatUserSeg::Attachment(snip));
+        }
+    }
+    out
+}
+
 fn js_str(s: &str) -> String {
     serde_json::to_string(s).unwrap_or_else(|_| "\"\"".into())
 }
@@ -1015,12 +1138,24 @@ fn js_str(s: &str) -> String {
 pub fn chip_html(att: &ChatPendingAttachment) -> String {
     let id = att.id;
     let name = html_escape(&att.name);
-    let title = html_escape(
-        att.source_path
+    let title = if att.is_snippet() {
+        let preview = att
+            .snippet_body
             .as_deref()
-            .filter(|p| !p.trim().is_empty())
-            .unwrap_or(att.name.as_str()),
-    );
+            .unwrap_or("")
+            .lines()
+            .take(6)
+            .collect::<Vec<_>>()
+            .join("\n");
+        html_escape(&preview)
+    } else {
+        html_escape(
+            att.source_path
+                .as_deref()
+                .filter(|p| !p.trim().is_empty())
+                .unwrap_or(att.name.as_str()),
+        )
+    };
     if let Some(url) = att.preview_url.as_deref() {
         let url = html_escape(url);
         return format!(
@@ -1039,18 +1174,27 @@ pub fn chip_html(att: &ChatPendingAttachment) -> String {
             name = name,
         );
     }
-    let is_dir = att.is_dir;
+    let is_snippet = att.is_snippet();
+    let is_dir = att.chip_is_dir();
     let activatable = att.source_path.is_some();
-    let mut class = if is_dir {
-        "ac-chat-attach-chip is-dir".to_string()
+    let kind = if is_snippet {
+        "snippet"
+    } else if is_dir {
+        "dir"
     } else {
-        "ac-chat-attach-chip is-file".to_string()
+        "file"
     };
+    let mut class = format!("ac-chat-attach-chip is-{kind}");
     if activatable {
         class.push_str(" is-activatable");
     }
     let activate = if activatable { "1" } else { "0" };
-    let icon = if is_dir {
+    let icon = if is_snippet {
+        // terminal square
+        concat!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/></svg>"#
+        )
+    } else if is_dir {
         concat!(
             r#"<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>"#
         )
@@ -1062,7 +1206,7 @@ pub fn chip_html(att: &ChatPendingAttachment) -> String {
     format!(
         concat!(
             r#"<span class="{class}" contenteditable="false" data-ac-attach-id="{id}" "#,
-            r#"data-ac-activate="{activate}" title="{title}">"#,
+            r#"data-ac-attach-kind="{kind}" data-ac-activate="{activate}" title="{title}">"#,
             r#"<span class="ac-chat-attach-chip-icon">"#,
             r#"<span class="ac-chat-attach-chip-type-icon">{icon}</span>"#,
             r#"<button type="button" tabindex="-1" class="ac-chat-attach-chip-remove" "#,
@@ -1072,6 +1216,7 @@ pub fn chip_html(att: &ChatPendingAttachment) -> String {
             r#"</span>"#
         ),
         class = class,
+        kind = kind,
         id = id,
         activate = activate,
         title = title,
@@ -1166,7 +1311,18 @@ pub fn ce_insert_text(root: &str, text: &str) {
     let _ = document::eval(&script);
 }
 
-pub fn ce_clear(root: &str) {
+/// 清空 composer；`await` 以确保发送路径在 bump epoch 前 DOM 已干净。
+pub async fn ce_clear(root: &str) {
+    let script = format!(
+        r#"return !!(window.__acComposer && window.__acComposer.clear({}));"#,
+        js_str(root)
+    );
+    let mut eval = document::eval(&script);
+    let _ = eval.join::<bool>().await;
+}
+
+/// 火即忘清空（挂载 / 切会话等不需严格时序的路径）。
+pub fn ce_clear_now(root: &str) {
     let script = format!(
         "window.__acComposer && window.__acComposer.clear({});",
         js_str(root)

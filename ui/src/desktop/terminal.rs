@@ -14,7 +14,7 @@ use serde::Deserialize;
 
 const MAX_SCROLLBACK_CHARS: usize = 400_000;
 ///  bump 后强制重装 xterm 桥（选区 / Add to Pusa / 主题等）。
-const XTERM_BRIDGE_VERSION: u32 = 9;
+const XTERM_BRIDGE_VERSION: u32 = 10;
 
 const XTERM_CSS: Asset = asset!("/assets/terminal/xterm.css");
 const XTERM_JS: Asset = asset!("/assets/terminal/xterm.js");
@@ -40,6 +40,20 @@ struct TermBridgeEvent {
     cols: u16,
     #[serde(default)]
     rows: u16,
+    /// 选区起始行（1-based，buffer 绝对行号）；仅 `selection` 事件。
+    #[serde(default)]
+    start_line: Option<u32>,
+    /// 选区结束行（1-based，含）。
+    #[serde(default)]
+    end_line: Option<u32>,
+}
+
+/// 终端选区交给 Chat：正文 + 起止行号（用于引用标签）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TerminalSelectionPayload {
+    pub text: String,
+    pub start_line: Option<u32>,
+    pub end_line: Option<u32>,
 }
 
 /// 向 PTY 写入的句柄（可在 UI 线程克隆）；持有 master 以便 resize。
@@ -545,7 +559,6 @@ fn install_xterm_bridge_js(css_href: &str, js_src: &str, fit_src: &str) -> Strin
       const s = document.createElement('script');
       s.src = src;
       s.async = false;
-      s.setAttribute(marker.replace(/[\[\]]/g, '').replace('data-', 'data-'), '1');
       s.setAttribute(marker, '1');
       s.onload = () => resolve();
       s.onerror = () => reject(new Error('load failed: ' + src));
@@ -577,7 +590,7 @@ fn install_xterm_bridge_js(css_href: &str, js_src: &str, fit_src: &str) -> Strin
   }} catch (_) {{}}
   window.__acXterm = null;
 
-  const BRIDGE_MARK = 9;
+  const BRIDGE_MARK = 13;
 
   function ensure() {{
     const host = document.getElementById('ac-xterm-host');
@@ -609,6 +622,8 @@ fn install_xterm_bridge_js(css_href: &str, js_src: &str, fit_src: &str) -> Strin
       }}
     }}
     function themeFor(dark) {{
+      // ANSI yellow / brightYellow：WARNING 等用黄的输出改为截图同款暖橙（非刺眼黄）
+      const warnOrange = '#C9974E';
       if (dark) {{
         return {{
           background: '#0e0e10',
@@ -617,6 +632,8 @@ fn install_xterm_bridge_js(css_href: &str, js_src: &str, fit_src: &str) -> Strin
           cursorAccent: '#0e0e10',
           selectionBackground: '#264f78',
           selectionForeground: '#ffffff',
+          yellow: warnOrange,
+          brightYellow: warnOrange,
         }};
       }}
       // Light: --text-primary / --secondary-color-1 (#2a2f37), not near-black #1f2328.
@@ -627,6 +644,8 @@ fn install_xterm_bridge_js(css_href: &str, js_src: &str, fit_src: &str) -> Strin
         cursorAccent: '#ffffff',
         selectionBackground: '#b3d4fc',
         selectionForeground: '#2a2f37',
+        yellow: warnOrange,
+        brightYellow: warnOrange,
       }};
     }}
     const isDark = readIsDark();
@@ -644,6 +663,24 @@ fn install_xterm_bridge_js(css_href: &str, js_src: &str, fit_src: &str) -> Strin
     const fitAddon = new FitCtor();
     term.loadAddon(fitAddon);
     term.open(host);
+    // macOS 拼音 + Caps Lock：xterm.js 已补 keyCode 20；再按 key/code 兜底，
+    // 避免 WKWebView 上报非 20 时仍 _finalizeComposition(false) 叠字。
+    try {{
+      const isCapsEv = (ev) =>
+        !!(ev && (ev.keyCode === 20 || ev.key === 'CapsLock' || ev.code === 'CapsLock'));
+      const core = term._core;
+      const helper = core && (core._compositionHelper || core.compositionHelper);
+      if (helper && !helper.__acCapsImePatched) {{
+        helper.__acCapsImePatched = true;
+        const origKeydown = helper.keydown.bind(helper);
+        helper.keydown = function (ev) {{
+          if ((this._isComposing || this._isSendingComposition) && isCapsEv(ev)) {{
+            return false;
+          }}
+          return origKeydown(ev);
+        }};
+      }}
+    }} catch (_) {{}}
     try {{ fitAddon.fit(); }} catch (_) {{}}
 
     let dataDisp = null;
@@ -732,7 +769,23 @@ fn install_xterm_bridge_js(css_href: &str, js_src: &str, fit_src: &str) -> Strin
 
     function notifySelection() {{
       const text = (term.getSelection && term.getSelection()) || '';
-      try {{ dioxus.send({{ kind: 'selection', data: String(text) }}); }} catch (_) {{}}
+      let startLine = null;
+      let endLine = null;
+      try {{
+        const pos = term.getSelectionPosition && term.getSelectionPosition();
+        if (pos && pos.start && pos.end && text) {{
+          startLine = Math.min(pos.start.y, pos.end.y) + 1;
+          endLine = Math.max(pos.start.y, pos.end.y) + 1;
+        }}
+      }} catch (_) {{}}
+      try {{
+        dioxus.send({{
+          kind: 'selection',
+          data: String(text),
+          start_line: startLine,
+          end_line: endLine,
+        }});
+      }} catch (_) {{}}
     }}
 
     function bufferYFromEvent(e) {{
@@ -921,13 +974,14 @@ pub fn DesktopTerminal(
     on_maximize: EventHandler<()>,
     on_minimize: EventHandler<()>,
     /// 将终端选区加入 Pusa Chat。
-    on_add_to_pusa: EventHandler<String>,
+    on_add_to_pusa: EventHandler<TerminalSelectionPayload>,
 ) -> Element {
     let mut sessions = use_signal(Vec::<TerminalSession>::new);
     let mut active_id = use_signal(|| None::<u64>);
     let next_id = use_signal(|| 1u64);
     let mut bridge_version = use_signal(|| 0u32);
     let mut selection_text = use_signal(String::new);
+    let mut selection_lines = use_signal(|| None::<(u32, u32)>);
     let mut xterm_size = use_signal(|| None::<(u16, u16)>);
 
     // 安装 xterm 桥：键盘 → PTY，resize → PTY，选区 → Add to Pusa。
@@ -983,6 +1037,12 @@ pub fn DesktopTerminal(
                     }
                     "selection" => {
                         selection_text.set(ev.data);
+                        selection_lines.set(match (ev.start_line, ev.end_line) {
+                            (Some(s), Some(e)) if s > 0 && e > 0 => {
+                                Some((s.min(e), s.max(e)))
+                            }
+                            _ => None,
+                        });
                     }
                     "error" => {
                         eprintln!("[ac-terminal] {}", ev.data);
@@ -1127,8 +1187,17 @@ pub fn DesktopTerminal(
                                 if text.trim().is_empty() {
                                     return;
                                 }
-                                on_add_to_pusa.call(text);
+                                let (start_line, end_line) = match selection_lines() {
+                                    Some((s, e)) => (Some(s), Some(e)),
+                                    None => (None, None),
+                                };
+                                on_add_to_pusa.call(TerminalSelectionPayload {
+                                    text,
+                                    start_line,
+                                    end_line,
+                                });
                                 selection_text.set(String::new());
+                                selection_lines.set(None);
                                 xterm_clear_selection();
                             },
                             "Add to Pusa"

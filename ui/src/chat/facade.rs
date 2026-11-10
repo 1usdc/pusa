@@ -6,100 +6,6 @@ use protocol::{
     SkillMarketResponse, SseEvent, StoredChatMessageDto,
 };
 
-/// Another-Me-Relay API 根（无尾斜杠）。用于公开的 `GET /v1/models` 等。
-///
-/// 优先级（与历史 `ui/src/web/relay.rs` 对齐）：
-/// 1. Web：`localStorage.anotherclaw_relay_base_url`
-/// 2. Web + `same-origin-api`：`{mount_prefix}/relay`（由 nginx 反代，绕开 CORS）
-/// 3. 编译期 `ANOTHERME_RELAY_BASE_URL`
-/// 4. 默认 `https://relay.anotherme.co`
-#[cfg_attr(
-    not(any(target_arch = "wasm32", feature = "native")),
-    allow(dead_code)
-)]
-pub fn relay_base_url() -> String {
-    #[cfg(all(target_arch = "wasm32", feature = "web"))]
-    if let Some(u) = relay_base_from_local_storage() {
-        return u;
-    }
-    #[cfg(all(target_arch = "wasm32", feature = "web", feature = "same-origin-api"))]
-    {
-        let prefix = crate::web::origin::mount_prefix();
-        return format!("{prefix}/relay");
-    }
-    #[cfg(not(all(target_arch = "wasm32", feature = "web", feature = "same-origin-api")))]
-    {
-        if let Some(url) = option_env!("ANOTHERME_RELAY_BASE_URL") {
-            let t = url.trim();
-            if !t.is_empty() {
-                return t.trim_end_matches('/').to_string();
-            }
-        }
-        "https://relay.anotherme.co".to_string()
-    }
-}
-
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
-fn relay_base_from_local_storage() -> Option<String> {
-    const LS_KEY: &str = "anotherclaw_relay_base_url";
-    let w = web_sys::window()?;
-    let storage = w.local_storage().ok()??;
-    let url = storage.get_item(LS_KEY).ok()??;
-    let t = url.trim();
-    if t.is_empty() {
-        return None;
-    }
-    Some(t.trim_end_matches('/').to_string())
-}
-
-/// 拉取可用聊天模型列表（Relay `GET /v1/models`，无需 JWT）。
-///
-/// 空列表视为失败，由调用方保留本地兜底。结果按 `id` 字母序稳定排序。
-#[cfg(target_arch = "wasm32")]
-pub async fn list_chat_models() -> anyhow::Result<Vec<ChatModelDto>> {
-    use protocol::ChatModelsResponse;
-    let base = relay_base_url();
-    let url = format!("{}/v1/models", base.trim_end_matches('/'));
-    let resp = gloo_net::http::Request::get(&url)
-        .send()
-        .await
-        .map_err(|e| anyhow::anyhow!("models network: {e}"))?;
-    if !resp.ok() {
-        anyhow::bail!("models http {}", resp.status());
-    }
-    let body: ChatModelsResponse = resp
-        .json()
-        .await
-        .map_err(|e| anyhow::anyhow!("models decode: {e}"))?;
-    Ok(normalize_chat_models(body.data))
-}
-
-/// 拉取可用聊天模型列表（Relay `GET /v1/models`，无需 JWT）。
-#[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
-pub async fn list_chat_models() -> anyhow::Result<Vec<ChatModelDto>> {
-    use protocol::ChatModelsResponse;
-    let base = relay_base_url();
-    let url = format!("{}/v1/models", base.trim_end_matches('/'));
-    let resp = reqwest::Client::new()
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| anyhow::anyhow!("models network: {e}"))?;
-    if !resp.status().is_success() {
-        anyhow::bail!("models http {}", resp.status());
-    }
-    let body: ChatModelsResponse = resp
-        .json()
-        .await
-        .map_err(|e| anyhow::anyhow!("models decode: {e}"))?;
-    Ok(normalize_chat_models(body.data))
-}
-
-#[cfg(all(not(target_arch = "wasm32"), not(feature = "native")))]
-pub async fn list_chat_models() -> anyhow::Result<Vec<ChatModelDto>> {
-    anyhow::bail!("当前构建未启用 `native` feature，无法拉取模型列表")
-}
-
 #[cfg(any(target_arch = "wasm32", feature = "native"))]
 fn normalize_chat_models(mut models: Vec<ChatModelDto>) -> Vec<ChatModelDto> {
     models.retain(|m| !m.id.trim().is_empty());
@@ -209,6 +115,53 @@ pub async fn list_chat_models_from_credentials(
         }
     }
     out
+}
+
+/// 探测 OpenAI 兼容 `{base}/models` 是否可达（网络 + HTTP 成功即算正常）。
+#[cfg(target_arch = "wasm32")]
+pub async fn probe_v1_models_endpoint(base: &str, api_key: &str) -> bool {
+    let url = models_url(base);
+    let mut req = gloo_net::http::Request::get(&url);
+    let key = api_key.trim();
+    if !key.is_empty() {
+        req = req.header("Authorization", &format!("Bearer {key}"));
+        if key.starts_with("sk-ant-") {
+            req = req.header("x-api-key", key).header("anthropic-version", "2023-06-01");
+        }
+    }
+    match req.send().await {
+        Ok(resp) => resp.ok(),
+        Err(_) => false,
+    }
+}
+
+/// 探测 OpenAI 兼容 `{base}/models` 是否可达（网络 + HTTP 成功即算正常）。
+#[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
+pub async fn probe_v1_models_endpoint(base: &str, api_key: &str) -> bool {
+    let url = models_url(base);
+    let mut builder = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new())
+        .get(&url);
+    let key = api_key.trim();
+    if !key.is_empty() {
+        builder = builder.header("Authorization", format!("Bearer {key}"));
+        if key.starts_with("sk-ant-") {
+            builder = builder
+                .header("x-api-key", key)
+                .header("anthropic-version", "2023-06-01");
+        }
+    }
+    match builder.send().await {
+        Ok(resp) => resp.status().is_success(),
+        Err(_) => false,
+    }
+}
+
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "native")))]
+pub async fn probe_v1_models_endpoint(_base: &str, _api_key: &str) -> bool {
+    false
 }
 
 /// Web WASM 下 API 根地址。

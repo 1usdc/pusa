@@ -340,6 +340,14 @@ pub fn set_workspace_root(path: &Path) -> Result<PathBuf, String> {
         .map_err(|e| format!("无法解析目录：{e}"))?;
     std::env::set_var("ANOTHERCLAW_TOOLS_ROOT", &abs);
     record_recent_project_dir(&abs);
+    // 后台重建/增量语义索引（需已配置 API Key）。
+    if let Ok(ctx) = crate::desktop::agent::runtime_ctx() {
+        tokio::spawn(async move {
+            if let Err(e) = ctx.kick_code_index().await {
+                eprintln!("pusa code_index kick: {e:#}");
+            }
+        });
+    }
     Ok(abs)
 }
 
@@ -677,6 +685,34 @@ pub fn reveal_in_os(path: &Path) -> Result<(), String> {
     }
 }
 
+/// 用系统默认应用打开文件或目录。
+pub fn open_in_default_app(path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| format!("无法打开：{e}"))?;
+        return Ok(());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &path.to_string_lossy()])
+            .spawn()
+            .map_err(|e| format!("无法打开：{e}"))?;
+        return Ok(());
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| format!("无法打开：{e}"))?;
+        Ok(())
+    }
+}
+
 /// 写入系统剪贴板文本。
 pub fn clipboard_set_text(text: &str) -> Result<(), String> {
     #[cfg(target_os = "macos")]
@@ -776,6 +812,24 @@ pub fn confirm_delete(path: &Path) -> bool {
     } else {
         format!("确定删除「{name}」？此操作不可撤销。")
     };
+    let result = rfd::MessageDialog::new()
+        .set_title("删除")
+        .set_description(desc)
+        .set_buttons(rfd::MessageButtons::OkCancel)
+        .set_level(rfd::MessageLevel::Warning)
+        .show();
+    matches!(result, rfd::MessageDialogResult::Ok)
+}
+
+/// 多选删除确认。
+pub fn confirm_delete_many(count: usize) -> bool {
+    if count == 0 {
+        return false;
+    }
+    if count == 1 {
+        return true;
+    }
+    let desc = format!("确定删除选中的 {count} 项？此操作不可撤销。");
     let result = rfd::MessageDialog::new()
         .set_title("删除")
         .set_description(desc)

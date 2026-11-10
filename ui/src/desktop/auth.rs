@@ -65,6 +65,31 @@ fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
                 credentials: credentials(),
                 enabled_ids: enabled_ids(),
                 hint: load_hint(),
+                on_update: move |body: LlmCredentialUpsertBody| {
+                    spawn(async move {
+                        let prev_ids: Vec<String> =
+                            credentials().iter().map(|c| c.id.clone()).collect();
+                        let prev_enabled = enabled_ids();
+                        match async { agent::runtime_ctx()?.llm_credential_upsert(body).await }.await {
+                            Ok(cfg) => {
+                                let new_ids: Vec<String> =
+                                    cfg.credentials.iter().map(|c| c.id.clone()).collect();
+                                apply_cfg(cfg, credentials, active_id, enabled_ids);
+                                enabled_ids.set(enabled_after_upsert(
+                                    &prev_enabled,
+                                    &prev_ids,
+                                    &new_ids,
+                                    refresh,
+                                ));
+                                load_hint.set(None);
+                                toast.success("已更新密钥");
+                            }
+                            Err(err) => {
+                                load_hint.set(Some(format_llm_settings_error(&err.to_string())))
+                            }
+                        }
+                    });
+                },
                 on_add: move |body: LlmCredentialUpsertBody| {
                     spawn(async move {
                         let prev_ids: Vec<String> =
@@ -83,30 +108,6 @@ fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
                                 ));
                                 load_hint.set(None);
                                 toast.success("已添加密钥");
-                            }
-                            Err(err) => {
-                                load_hint.set(Some(format_llm_settings_error(&err.to_string())))
-                            }
-                        }
-                    });
-                },
-                on_rename: move |(id, label): (String, String)| {
-                    spawn(async move {
-                        let Some(cred) = credentials().into_iter().find(|c| c.id == id) else {
-                            return;
-                        };
-                        let body = LlmCredentialUpsertBody {
-                            id: Some(cred.id),
-                            provider: cred.provider,
-                            api_key: cred.api_key,
-                            openai_v1_base: cred.openai_v1_base,
-                            label,
-                        };
-                        match async { agent::runtime_ctx()?.llm_credential_upsert(body).await }.await {
-                            Ok(cfg) => {
-                                apply_cfg(cfg, credentials, active_id, enabled_ids);
-                                load_hint.set(None);
-                                toast.success("已更新名称");
                             }
                             Err(err) => {
                                 load_hint.set(Some(format_llm_settings_error(&err.to_string())))

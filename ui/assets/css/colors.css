@@ -108,13 +108,13 @@
     --ac-chat-toolbar-pill-border: #d1d9e6;
     --ac-chat-toolbar-pill-shadow: 0 2px 6px #0f172a0f;
 
-    /* 聊天附件 chip：文件柔和灰蓝 / 目录浅橙+橙字（实心底） */
+    /* 聊天附件 chip：文件柔和灰蓝 / 目录浅蓝底+深蓝字（实心底） */
     --ac-chat-attach-file-bg: #EEF2F7;
     --ac-chat-attach-file-border: #C5CEDC;
     --ac-chat-attach-file-fg: #6B7C94;
-    --ac-chat-attach-dir-bg: #FFF3E6;
-    --ac-chat-attach-dir-border: #F5C89A;
-    --ac-chat-attach-dir-fg: #E06712;
+    --ac-chat-attach-dir-bg: #E8F1FF;
+    --ac-chat-attach-dir-border: #B8D0F0;
+    --ac-chat-attach-dir-fg: #1D4ED8;
 
     /* 执行看板 · Agent 策略流水（成功 / 失败：表面、描边、时间线圆点） */
     --ac-agent-run-success-surface: #f2faf6;
@@ -245,9 +245,10 @@ html[data-theme="dark"] {
     --ac-chat-attach-file-bg: #1c1c20;
     --ac-chat-attach-file-border: #3a3a40;
     --ac-chat-attach-file-fg: #a0a0a8;
-    --ac-chat-attach-dir-bg: #1c1a16;
-    --ac-chat-attach-dir-border: #4a3e30;
-    --ac-chat-attach-dir-fg: #c4a882;
+    /* 暗色目录：深蓝底 + 浅蓝字 */
+    --ac-chat-attach-dir-bg: #152033;
+    --ac-chat-attach-dir-border: #2A3F66;
+    --ac-chat-attach-dir-fg: #93C5FD;
 
     --ac-agent-run-success-surface: #141a16;
     --ac-agent-run-success-edge: #243028;

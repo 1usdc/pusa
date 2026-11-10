@@ -26,8 +26,8 @@ db-clear:
 # 打包闭源核心 → vendor/pusa-core/<host-triple>/libpusa_core.*
 [unix]
 pusa-core:
-    if [[ ! -d pusa-core ]]; then echo "error: 缺少 pusa-core/ 源码目录，无法打包" >&2; exit 1; fi
-    just --justfile pusa-core/justfile --working-directory pusa-core pack
+    @if [[ ! -d pusa-core ]]; then echo "error: 缺少 pusa-core/ 源码目录，无法打包" >&2; exit 1; fi
+    @just --justfile pusa-core/justfile --working-directory pusa-core pack
 
 [windows]
 pusa-core:
@@ -42,7 +42,7 @@ ensure-pusa-core:
 ensure-pusa-core:
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\ensure-pusa-core.ps1
 
-# 本机桌面（dx serve 热重载）；联调：ANOTHERME_BASE_URL=http://127.0.0.1:8881 just desktop
+# 本机桌面（dx serve 热重载）
 # Windows 不能直接跑 bash 脚本：用 [unix]/[windows] 分支。
 [unix]
 desktop: ensure-pusa-core
