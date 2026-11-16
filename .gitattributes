@@ -1,0 +1,4 @@
+# —— GitHub 语言统计：生成/第三方产物不计入 ——
+ui/assets/css/styles.css linguist-generated=true
+patches/blitz-dom-0.2.4/assets/default.css linguist-vendored=true
+ui/assets/terminal/xterm.css linguist-vendored=true

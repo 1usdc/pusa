@@ -53,3 +53,6 @@ skills/**/.strategy_state/
 
 # —— rustfmt 备份 ——
 **/*.rs.bk
+
+# —— Node（Tailwind 工具链）——
+node_modules/
