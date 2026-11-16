@@ -30,12 +30,16 @@ desktop/bundle-resources/
 /extensions/*
 !/extensions/README.md
 
-# —— 编辑器 / 系统杂项 ——
+# —��� 编辑器 / 系统杂项 ——
 .DS_Store
 **/.DS_Store
 .idea/
 .vscode/
 .cursor/
+
+# —— 本地 Agent 工具缓存（插件指针，不入库）——
+.v2c/
+.video_agent/
 *.swp
 *~
 
