@@ -9,8 +9,8 @@
 use std::sync::mpsc;
 
 use velopack::sources::GithubSource;
-pub use velopack::{UpdateInfo, UpdateManager, VelopackAsset};
 use velopack::UpdateCheck;
+pub use velopack::{UpdateInfo, UpdateManager, VelopackAsset};
 
 /// 发布仓库；`vpk upload github --repoUrl` 与之一致，`releases.{channel}.json` 挂在 Release 资产里。
 pub const GITHUB_REPO_URL: &str = "https://github.com/1usdc/pusa";
@@ -49,14 +49,17 @@ pub fn download(
         }
     });
     // `download_updates` 返回时 `tx` 被丢弃，forwarder 的 `for` 循环随之结束。
-    let result = um.download_updates(info, Some(tx)).map_err(|e| e.to_string());
+    let result = um
+        .download_updates(info, Some(tx))
+        .map_err(|e| e.to_string());
     let _ = forwarder.join();
     result
 }
 
 /// 退出当前进程、应用更新并重启。成功时不会返回。
 pub fn apply_and_restart(um: &UpdateManager, asset: &VelopackAsset) -> Result<(), String> {
-    um.apply_updates_and_restart(asset).map_err(|e| e.to_string())
+    um.apply_updates_and_restart(asset)
+        .map_err(|e| e.to_string())
 }
 
 /// 已下载、尚未应用的更新包（上次下载完成后用户没点重启）。

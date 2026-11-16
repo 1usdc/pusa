@@ -119,9 +119,10 @@ impl UiAgentThinking {
             })
             .collect();
         let summed: i64 = steps.iter().filter_map(|s| s.duration_ms).sum();
-        let total_duration_ms = detail
-            .total_duration_ms
-            .or(if summed > 0 { Some(summed) } else { None });
+        let total_duration_ms =
+            detail
+                .total_duration_ms
+                .or(if summed > 0 { Some(summed) } else { None });
         Self {
             status: if detail.status == "completed" {
                 ThinkingStatus::Done
@@ -177,10 +178,7 @@ impl UiAgentThinking {
 }
 
 fn normalize_chat_cmp(s: &str) -> String {
-    s.trim()
-        .chars()
-        .filter(|c| *c != '\r')
-        .collect::<String>()
+    s.trim().chars().filter(|c| *c != '\r').collect::<String>()
 }
 
 /// 单条气泡展示。

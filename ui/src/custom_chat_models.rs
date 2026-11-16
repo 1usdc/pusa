@@ -96,9 +96,8 @@ mod tests {
 
     #[test]
     fn parses_object_array_without_name() {
-        let got = parse_custom_chat_models_json(
-            r#"[{"id":"local-qwen","credential_id":"cred-1"}]"#,
-        );
+        let got =
+            parse_custom_chat_models_json(r#"[{"id":"local-qwen","credential_id":"cred-1"}]"#);
         assert_eq!(got[0].id, "local-qwen");
         assert_eq!(got[0].name, "");
         assert_eq!(got[0].credential_id, "cred-1");

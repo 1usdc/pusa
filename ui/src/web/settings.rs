@@ -7,13 +7,13 @@ use dioxus_free_icons::icons::ld_icons::LdX;
 use dioxus_free_icons::Icon;
 use protocol::{LlmConfigDto, LlmCredentialDto, LlmCredentialUpsertBody};
 
-use crate::web::llm_config;
-use crate::shell::LlmCredentialsPanel;
 use crate::shell::toast::use_toast;
+use crate::shell::LlmCredentialsPanel;
 use crate::shell::{
     activate_id_after_toggle, enabled_after_delete, enabled_after_toggle, enabled_after_upsert,
     overlay_enabled_credential_ids,
 };
+use crate::web::llm_config;
 
 fn apply_cfg(
     cfg: LlmConfigDto,
@@ -35,7 +35,6 @@ pub fn WebSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
     let credentials = use_signal(Vec::<LlmCredentialDto>::new);
     let active_id = use_signal(String::new);
     let mut enabled_ids = use_signal(Vec::<String>::new);
-    let mut load_hint = use_signal(|| None::<String>);
     let refresh = use_context::<crate::shell::LlmModelsRefresh>().0;
 
     use_effect(move || {
@@ -43,9 +42,8 @@ pub fn WebSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
             match llm_config::fetch_llm_config().await {
                 Some(cfg) => {
                     apply_cfg(cfg, credentials, active_id, enabled_ids);
-                    load_hint.set(None);
                 }
-                None => load_hint.set(Some("无法从服务端加载配置（请确认网络正常）".into())),
+                None => toast.error("无法从服务端加载配置（请确认网络正常）"),
             }
         });
     });
@@ -72,7 +70,6 @@ pub fn WebSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
             LlmCredentialsPanel {
                 credentials: credentials(),
                 enabled_ids: enabled_ids(),
-                hint: load_hint(),
                 on_update: move |body: LlmCredentialUpsertBody| {
                     spawn(async move {
                         let prev_ids: Vec<String> =
@@ -89,10 +86,10 @@ pub fn WebSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
                                     &new_ids,
                                     refresh,
                                 ));
-                                load_hint.set(None);
+
                                 toast.success("已更新密钥");
                             }
-                            None => load_hint.set(Some("更新失败，请稍后重试".into())),
+                            None => toast.error("更新失败，请稍后重试"),
                         }
                     });
                 },
@@ -112,10 +109,10 @@ pub fn WebSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
                                     &new_ids,
                                     refresh,
                                 ));
-                                load_hint.set(None);
+
                                 toast.success("已添加密钥");
                             }
-                            None => load_hint.set(Some("添加失败，请稍后重试".into())),
+                            None => toast.error("添加失败，请稍后重试"),
                         }
                     });
                 },
@@ -130,9 +127,9 @@ pub fn WebSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
                                 Some(cfg) => {
                                     apply_cfg(cfg, credentials, active_id, enabled_ids);
                                     enabled_ids.set(next);
-                                    load_hint.set(None);
+
                                 }
-                                None => load_hint.set(Some("切换失败，请稍后重试".into())),
+                                None => toast.error("切换失败，请稍后重试"),
                             }
                         }
                     });
@@ -146,10 +143,10 @@ pub fn WebSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
                                     cfg.credentials.iter().map(|c| c.id.clone()).collect();
                                 apply_cfg(cfg, credentials, active_id, enabled_ids);
                                 enabled_ids.set(enabled_after_delete(&prev_enabled, &known, refresh));
-                                load_hint.set(None);
+
                                 toast.success("已删除密钥");
                             }
-                            None => load_hint.set(Some("删除失败，请稍后重试".into())),
+                            None => toast.error("删除失败，请稍后重试"),
                         }
                     });
                 },

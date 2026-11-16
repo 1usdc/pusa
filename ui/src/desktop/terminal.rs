@@ -7,18 +7,22 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::ld_icons::{LdChevronDown, LdChevronUp, LdPlus, LdSquareTerminal, LdX};
+use dioxus_free_icons::icons::ld_icons::{
+    LdChevronDown, LdChevronUp, LdPlus, LdSquareTerminal, LdX,
+};
 use dioxus_free_icons::Icon;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use serde::Deserialize;
 
-const MAX_SCROLLBACK_CHARS: usize = 400_000;
+const MAX_SCROLLBACK_BYTES: usize = 400_000;
 ///  bump 后强制重装 xterm 桥（选区 / Add to Pusa / 主题等）。
-const XTERM_BRIDGE_VERSION: u32 = 10;
+const XTERM_BRIDGE_VERSION: u32 = 13;
 
 const XTERM_CSS: Asset = asset!("/assets/terminal/xterm.css");
 const XTERM_JS: Asset = asset!("/assets/terminal/xterm.js");
 const XTERM_FIT_JS: Asset = asset!("/assets/terminal/addon-fit.js");
+const XTERM_WEBGL_JS: Asset = asset!("/assets/terminal/addon-webgl.js");
+const XTERM_UNICODE11_JS: Asset = asset!("/assets/terminal/addon-unicode11.js");
 
 /// 智能 UI / 外部请求：在指定命名会话中执行命令。
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -102,8 +106,8 @@ struct TerminalSession {
     id: u64,
     /// 空字符串表示普通会话；非空为命名会话（如 `pusa`）。
     name: Signal<String>,
-    /// 原始 PTY 输出（含 ANSI），切会话时回放给 xterm。
-    scrollback: Signal<String>,
+    /// 原始 PTY 输出字节（含 ANSI），切会话时回放给 xterm。
+    scrollback: Signal<Vec<u8>>,
     err_msg: Signal<Option<String>>,
     pty: Signal<Option<TerminalWriter>>,
 }
@@ -113,7 +117,7 @@ impl TerminalSession {
         Self {
             id,
             name: Signal::new(name),
-            scrollback: Signal::new(String::new()),
+            scrollback: Signal::new(Vec::new()),
             err_msg: Signal::new(None::<String>),
             pty: Signal::new(None::<TerminalWriter>),
         }
@@ -220,150 +224,20 @@ fn shell_initial_cwd() -> Option<std::path::PathBuf> {
     std::env::current_dir().ok()
 }
 
-/// 清屏序列之后保留正文；不清空颜色等 CSI。
-fn append_pty_scrollback(buf: &mut String, chunk: &str) {
-    let clear_at = chunk
-        .rmatch_indices("\u{1b}[3J")
-        .map(|(i, _)| i)
-        .chain(chunk.rmatch_indices("\u{1b}[2J").map(|(i, _)| i))
-        .chain(chunk.rmatch_indices("\u{1b}c").map(|(i, _)| i))
-        .max();
-    if let Some(i) = clear_at {
-        buf.clear();
-        buf.push_str(&chunk[i..]);
-    } else {
-        buf.push_str(chunk);
+/// 追加原始 PTY 字节；只按字节上限做有界裁剪（对齐行首）。
+/// 清屏等控制序列原样保留，交给 xterm 自己解释——与 VSCode 一致。
+fn append_pty_scrollback(buf: &mut Vec<u8>, chunk: &[u8]) {
+    buf.extend_from_slice(chunk);
+    if buf.len() <= MAX_SCROLLBACK_BYTES {
+        return;
     }
-    if buf.len() > MAX_SCROLLBACK_CHARS {
-        let drop_to = buf.len() - MAX_SCROLLBACK_CHARS;
-        let cut = buf[drop_to..]
-            .find('\n')
-            .map(|rel| drop_to + rel + 1)
-            .unwrap_or(drop_to);
-        let _ = buf.drain(..cut);
-    }
-}
-
-/// 去掉 CSI/OSC，便于比较提示符是否重复。
-fn strip_ansi_for_compare(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut chars = s.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c != '\u{1b}' {
-            if c != '\r' {
-                out.push(c);
-            }
-            continue;
-        }
-        match chars.peek().copied() {
-            Some('[') => {
-                chars.next();
-                while let Some(x) = chars.next() {
-                    if ('@'..='~').contains(&x) {
-                        break;
-                    }
-                }
-            }
-            Some(']') => {
-                chars.next();
-                while let Some(x) = chars.next() {
-                    if x == '\u{7}' {
-                        break;
-                    }
-                    if x == '\u{1b}' && chars.peek() == Some(&'\\') {
-                        chars.next();
-                        break;
-                    }
-                }
-            }
-            Some(_) => {
-                chars.next();
-            }
-            None => {}
-        }
-    }
-    out
-}
-
-fn is_shell_prompt_line(plain: &str) -> bool {
-    let t = plain.trim_end();
-    if t.is_empty() {
-        return false;
-    }
-    t.ends_with(" %")
-        || t.ends_with(" #")
-        || t.ends_with(" $")
-        || t.ends_with('❯')
-        || matches!(t, "%" | "#" | "$")
-}
-
-fn last_significant_line(buf: &str) -> &str {
-    buf.lines()
-        .rev()
-        .map(|l| l.trim_end_matches('\r'))
-        .find(|l| !l.trim().is_empty())
-        .unwrap_or("")
-}
-
-/// fit/WINCH 后 shell 常重打同一提示符；丢弃「整段只是重复提示符」的 chunk。
-fn filter_duplicate_prompt_chunk(existing: &str, chunk: &str) -> String {
-    if chunk.is_empty() || existing.is_empty() {
-        return chunk.to_string();
-    }
-    let last_plain = strip_ansi_for_compare(last_significant_line(existing));
-    if !is_shell_prompt_line(&last_plain) {
-        return chunk.to_string();
-    }
-    let last = last_plain.trim_end();
-    let chunk_plain = strip_ansi_for_compare(chunk);
-    let content_lines: Vec<&str> = chunk_plain
-        .lines()
-        .map(|l| l.trim_end())
-        .filter(|l| !l.is_empty())
-        .collect();
-    if !content_lines.is_empty() && content_lines.iter().all(|l| *l == last) {
-        return String::new();
-    }
-    chunk.to_string()
-}
-
-/// 滚动缓冲末尾若连续两行相同提示符，去掉重复的一行。
-fn collapse_trailing_dup_prompts(buf: &mut String) {
-    loop {
-        let lines: Vec<&str> = buf.lines().collect();
-        let mut nonempty_idx: Vec<usize> = Vec::new();
-        for (i, line) in lines.iter().enumerate().rev() {
-            if !line.trim().is_empty() {
-                nonempty_idx.push(i);
-                if nonempty_idx.len() == 2 {
-                    break;
-                }
-            }
-        }
-        if nonempty_idx.len() < 2 {
-            break;
-        }
-        let later = nonempty_idx[0];
-        let earlier = nonempty_idx[1];
-        let a = strip_ansi_for_compare(lines[earlier]);
-        let b = strip_ansi_for_compare(lines[later]);
-        if !(is_shell_prompt_line(&a) && a.trim_end() == b.trim_end()) {
-            break;
-        }
-        let ended_nl = buf.ends_with('\n');
-        let mut new_buf = String::with_capacity(buf.len());
-        for (i, line) in lines.iter().enumerate() {
-            if i == later {
-                continue;
-            }
-            new_buf.push_str(line);
-            new_buf.push('\n');
-        }
-        if !ended_nl && new_buf.ends_with('\n') {
-            new_buf.pop();
-        }
-        *buf = new_buf;
-    }
+    let drop_to = buf.len() - MAX_SCROLLBACK_BYTES;
+    let cut = buf[drop_to..]
+        .iter()
+        .position(|b| *b == b'\n')
+        .map(|rel| drop_to + rel + 1)
+        .unwrap_or(drop_to);
+    buf.drain(..cut);
 }
 
 fn xterm_js_call(expr: &str) {
@@ -372,20 +246,28 @@ fn xterm_js_call(expr: &str) {
     ));
 }
 
-fn xterm_write(data: &str) {
+/// 原始字节直送 xterm：由 JS 侧转成 Uint8Array，xterm 内部按 UTF-8 解码，
+/// 避免跨 chunk 切断多字节字符产生 U+FFFD。
+fn xterm_write_bytes(data: &[u8]) {
     if data.is_empty() {
         return;
     }
-    let payload = serde_json::to_string(data).unwrap_or_else(|_| "\"\"".into());
+    let mut nums = String::with_capacity(data.len() * 4);
+    for (i, b) in data.iter().enumerate() {
+        if i > 0 {
+            nums.push(',');
+        }
+        let _ = std::fmt::Write::write_fmt(&mut nums, format_args!("{b}"));
+    }
     xterm_js_call(&format!(
-        "window.__acXterm && window.__acXterm.write({payload})"
+        "window.__acXterm && window.__acXterm.writeBytes([{nums}])"
     ));
 }
 
-fn xterm_reset(scrollback: &str) {
-    let mut cleaned = scrollback.to_string();
-    collapse_trailing_dup_prompts(&mut cleaned);
-    let payload = serde_json::to_string(&cleaned).unwrap_or_else(|_| "\"\"".into());
+/// 切换会话时回放原始历史；整段一次性解码，不会在字符中间断开。
+fn xterm_reset(scrollback: &[u8]) {
+    let text = String::from_utf8_lossy(scrollback);
+    let payload = serde_json::to_string(text.as_ref()).unwrap_or_else(|_| "\"\"".into());
     xterm_js_call(&format!(
         "window.__acXterm && window.__acXterm.reset({payload})"
     ));
@@ -409,11 +291,11 @@ fn xterm_clear_selection() {
     );
 }
 
-/// 启动交互式登录 shell；原始输出写入 scrollback，若为当前会话则推给 xterm。
+/// 启动交互式登录 shell；原始输出写入字节缓冲，若为当前会话则直送 xterm。
 pub fn spawn_interactive_shell(
     session_id: u64,
     active_id: Signal<Option<u64>>,
-    mut scrollback: Signal<String>,
+    mut scrollback: Signal<Vec<u8>>,
     rows: u16,
     cols: u16,
 ) -> Result<TerminalWriter, String> {
@@ -503,24 +385,15 @@ pub fn spawn_interactive_shell(
 
     spawn(async move {
         while let Some(bytes) = out_rx.recv().await {
-            let text = String::from_utf8_lossy(&bytes).into_owned();
-            let existing = scrollback.peek().clone();
-            let filtered = filter_duplicate_prompt_chunk(&existing, &text);
-            if filtered.is_empty() {
-                continue;
-            }
-            scrollback.with_mut(|buf| {
-                append_pty_scrollback(buf, &filtered);
-                collapse_trailing_dup_prompts(buf);
-            });
+            scrollback.with_mut(|buf| append_pty_scrollback(buf, &bytes));
             if active_id() == Some(session_id) {
-                xterm_write(&filtered);
+                xterm_write_bytes(&bytes);
             }
         }
-        let bye = "\r\n[shell 已退出]\r\n";
-        scrollback.with_mut(|buf| buf.push_str(bye));
+        let bye = b"\r\n[shell \xe5\xb7\xb2\xe9\x80\x80\xe5\x87\xba]\r\n";
+        scrollback.with_mut(|buf| buf.extend_from_slice(bye));
         if active_id() == Some(session_id) {
-            xterm_write(bye);
+            xterm_write_bytes(bye);
         }
     });
 
@@ -534,12 +407,20 @@ pub fn spawn_interactive_shell(
     })
 }
 
-fn install_xterm_bridge_js(css_href: &str, js_src: &str, fit_src: &str) -> String {
+fn install_xterm_bridge_js(
+    css_href: &str,
+    js_src: &str,
+    fit_src: &str,
+    webgl_src: &str,
+    unicode11_src: &str,
+) -> String {
     format!(
         r#"(async () => {{
   const CSS_HREF = {css};
   const JS_SRC = {js};
   const FIT_SRC = {fit};
+  const WEBGL_SRC = {webgl};
+  const UNICODE11_SRC = {unicode11};
 
   function loadCss(href) {{
     if (document.querySelector('link[data-ac-xterm-css]')) return;
@@ -569,6 +450,9 @@ fn install_xterm_bridge_js(css_href: &str, js_src: &str, fit_src: &str) -> Strin
   loadCss(CSS_HREF);
   await loadScript(JS_SRC, 'data-ac-xterm-js');
   await loadScript(FIT_SRC, 'data-ac-xterm-fit');
+  // 渲染器与字宽 addon 属可选增强：加载失败仍用 DOM 渲染 + 内置字宽。
+  await loadScript(WEBGL_SRC, 'data-ac-xterm-webgl').catch(() => {{}});
+  await loadScript(UNICODE11_SRC, 'data-ac-xterm-unicode11').catch(() => {{}});
 
   const TermCtor = window.Terminal;
   const FitCtor = (window.FitAddon && window.FitAddon.FitAddon) || window.FitAddon;
@@ -590,7 +474,7 @@ fn install_xterm_bridge_js(css_href: &str, js_src: &str, fit_src: &str) -> Strin
   }} catch (_) {{}}
   window.__acXterm = null;
 
-  const BRIDGE_MARK = 13;
+  const BRIDGE_MARK = 16;
 
   function ensure() {{
     const host = document.getElementById('ac-xterm-host');
@@ -644,6 +528,13 @@ fn install_xterm_bridge_js(css_href: &str, js_src: &str, fit_src: &str) -> Strin
         cursorAccent: '#ffffff',
         selectionBackground: '#b3d4fc',
         selectionForeground: '#2a2f37',
+        // ratatui 颜色命名反直觉：.gray()→ANSI 37(white)、.white()→97(brightWhite)、
+        // .dark_gray()→90(brightBlack)。dx 标签用 .gray() 走 white，白底上默认 #e5e5e5
+        // 几乎不可见，故把 white/brightWhite 也压到深色。
+        black: '#000000',
+        brightBlack: '#2a2f37',
+        white: '#5a5f67',
+        brightWhite: '#2a2f37',
         yellow: warnOrange,
         brightYellow: warnOrange,
       }};
@@ -651,7 +542,9 @@ fn install_xterm_bridge_js(css_href: &str, js_src: &str, fit_src: &str) -> Strin
     const isDark = readIsDark();
     const term = new TermCtor({{
       cursorBlink: true,
-      fontSize: 12,
+      fontSize: 13,
+      lineHeight: 1.2,
+      letterSpacing: 0,
       fontFamily: 'SF Mono, Menlo, Monaco, ui-monospace, Cascadia Mono, Consolas, monospace',
       theme: themeFor(isDark),
       fontWeight: 'normal',
@@ -662,9 +555,30 @@ fn install_xterm_bridge_js(css_href: &str, js_src: &str, fit_src: &str) -> Strin
     }});
     const fitAddon = new FitCtor();
     term.loadAddon(fitAddon);
+    // unicode11：CJK / emoji 宽度与 VSCode 一致，避免列宽错位和行尾裁切。
+    try {{
+      if (window.Unicode11Addon) {{
+        term.loadAddon(new window.Unicode11Addon.Unicode11Addon());
+        term.unicode.activeVersion = '11';
+      }}
+    }} catch (_) {{}}
     term.open(host);
-    // macOS 拼音 + Caps Lock：xterm.js 已补 keyCode 20；再按 key/code 兜底，
-    // 避免 WKWebView 上报非 20 时仍 _finalizeComposition(false) 叠字。
+    // WebGL 渲染器：字形与 VSCode 一致（无 DOM 行高偏移），不可用时静默回退。
+    try {{
+      if (window.WebglAddon && window.WebglAddon.WebglAddon) {{
+        const webgl = new window.WebglAddon.WebglAddon();
+        term.loadAddon(webgl);
+        if (webgl.onContextLoss) {{
+          webgl.onContextLoss(() => {{ try {{ webgl.dispose(); }} catch (_) {{}} }});
+        }}
+      }}
+    }} catch (_) {{}}
+    // macOS 拼音 + Caps Lock / 输入法切换：
+    // 1) WKWebView 可能把 CapsLock 报成非 keyCode 20，xterm 默认会误走 _finalizeComposition(false)
+    //    导致叠字，这里按 key/code 兜底拦截。
+    // 2) 更关键：compositionend 提交组合串后，WKWebView 会在 keyup（_keyDownSeen 被清零）之后
+    //    再补发一记 input(insertText)，xterm 的 _inputEvent 会把同一段文本再发一次给 PTY，
+    //    出现 "cd" → "c dc d" 式重复。这里在组合结束后的短窗口内吞掉紧随的 insertText。
     try {{
       const isCapsEv = (ev) =>
         !!(ev && (ev.keyCode === 20 || ev.key === 'CapsLock' || ev.code === 'CapsLock'));
@@ -679,6 +593,23 @@ fn install_xterm_bridge_js(css_href: &str, js_src: &str, fit_src: &str) -> Strin
           }}
           return origKeydown(ev);
         }};
+        // compositionend 提交后置位，随后吞掉一记重复的 insertText。
+        const origCompositionend = helper.compositionend.bind(helper);
+        helper.compositionend = function () {{
+          helper.__acJustCommitted = true;
+          setTimeout(() => {{ helper.__acJustCommitted = false; }}, 200);
+          return origCompositionend();
+        }};
+        if (core._inputEvent) {{
+          const origInput = core._inputEvent.bind(core);
+          core._inputEvent = function (ev) {{
+            if (helper.__acJustCommitted && ev && ev.inputType === 'insertText') {{
+              helper.__acJustCommitted = false;
+              return false;
+            }}
+            return origInput(ev);
+          }};
+        }}
       }}
     }} catch (_) {{}}
     try {{ fitAddon.fit(); }} catch (_) {{}}
@@ -703,6 +634,10 @@ fn install_xterm_bridge_js(css_href: &str, js_src: &str, fit_src: &str) -> Strin
       __acBridgeGen: BRIDGE_MARK,
       rebindChannel,
       write(data) {{ try {{ term.write(data); }} catch (_) {{}} }},
+      // PTY 原始字节：xterm 自行按 UTF-8 解码，跨 chunk 多字节字符不会被破坏。
+      writeBytes(data) {{
+        try {{ term.write(data instanceof Uint8Array ? data : new Uint8Array(data)); }} catch (_) {{}}
+      }},
       reset(data) {{
         try {{
           term.reset();
@@ -958,6 +893,8 @@ fn install_xterm_bridge_js(css_href: &str, js_src: &str, fit_src: &str) -> Strin
         css = serde_json::to_string(css_href).unwrap_or_else(|_| "\"\"".into()),
         js = serde_json::to_string(js_src).unwrap_or_else(|_| "\"\"".into()),
         fit = serde_json::to_string(fit_src).unwrap_or_else(|_| "\"\"".into()),
+        webgl = serde_json::to_string(webgl_src).unwrap_or_else(|_| "\"\"".into()),
+        unicode11 = serde_json::to_string(unicode11_src).unwrap_or_else(|_| "\"\"".into()),
     )
 }
 
@@ -993,8 +930,12 @@ pub fn DesktopTerminal(
         let css = XTERM_CSS.to_string();
         let js = XTERM_JS.to_string();
         let fit = XTERM_FIT_JS.to_string();
+        let webgl = XTERM_WEBGL_JS.to_string();
+        let unicode11 = XTERM_UNICODE11_JS.to_string();
         spawn(async move {
-            let mut eval = document::eval(&install_xterm_bridge_js(&css, &js, &fit));
+            let mut eval = document::eval(&install_xterm_bridge_js(
+                &css, &js, &fit, &webgl, &unicode11,
+            ));
             loop {
                 let Ok(ev) = eval.recv::<TermBridgeEvent>().await else {
                     break;
@@ -1038,9 +979,7 @@ pub fn DesktopTerminal(
                     "selection" => {
                         selection_text.set(ev.data);
                         selection_lines.set(match (ev.start_line, ev.end_line) {
-                            (Some(s), Some(e)) if s > 0 && e > 0 => {
-                                Some((s.min(e), s.max(e)))
-                            }
+                            (Some(s), Some(e)) if s > 0 && e > 0 => Some((s.min(e), s.max(e))),
                             _ => None,
                         });
                     }
@@ -1147,7 +1086,9 @@ pub fn DesktopTerminal(
             line.push_str(&shell_quote(cwd));
             line.push_str(" && ");
         }
-        line.push_str(&crate::desktop::plugins::unwrap_shell_c_command(req.command.trim()));
+        line.push_str(&crate::desktop::plugins::unwrap_shell_c_command(
+            req.command.trim(),
+        ));
         if line.trim().is_empty() {
             pending_run.set(None);
             return;
@@ -1383,57 +1324,35 @@ pub fn DesktopTerminal(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        append_pty_scrollback, collapse_trailing_dup_prompts, filter_duplicate_prompt_chunk,
-    };
+    use super::{append_pty_scrollback, MAX_SCROLLBACK_BYTES};
 
     #[test]
-    fn clear_sequence_resets_scrollback() {
-        let mut buf = String::from("old output\n");
-        append_pty_scrollback(&mut buf, "keep\u{1b}[2Jfresh");
-        assert!(buf.contains("fresh"));
-        assert!(!buf.contains("old output"));
+    fn clear_sequence_is_kept_for_xterm() {
+        let mut buf = b"old output\n".to_vec();
+        append_pty_scrollback(&mut buf, b"keep\x1b[2Jfresh");
+        // 清屏序列原样保留，由 xterm 自己解释（与 VSCode 一致）。
+        assert_eq!(buf, b"old output\nkeep\x1b[2Jfresh".to_vec());
     }
 
     #[test]
     fn normal_append_keeps_ansi() {
-        let mut buf = String::new();
-        append_pty_scrollback(&mut buf, "\u{1b}[31mred\u{1b}[0m");
-        assert_eq!(buf, "\u{1b}[31mred\u{1b}[0m");
+        let mut buf = Vec::new();
+        append_pty_scrollback(&mut buf, b"\x1b[31mred\x1b[0m");
+        assert_eq!(buf, b"\x1b[31mred\x1b[0m".to_vec());
     }
 
     #[test]
-    fn filters_winch_duplicate_prompt() {
-        let existing = "mac@Macbook English %";
-        let chunk = "\u{1b}[0mmac@Macbook English %";
-        assert!(filter_duplicate_prompt_chunk(existing, chunk).is_empty());
+    fn keeps_multibyte_bytes_intact() {
+        let mut buf = Vec::new();
+        append_pty_scrollback(&mut buf, "中文输出".as_bytes());
+        assert_eq!(String::from_utf8(buf).unwrap(), "中文输出");
     }
 
     #[test]
-    fn filters_winch_prompt_after_newline() {
-        let existing = "mac@Macbook English %";
-        let chunk = "\r\nmac@Macbook English %";
-        assert!(filter_duplicate_prompt_chunk(existing, chunk).is_empty());
-    }
-
-    #[test]
-    fn filters_winch_repeated_prompt_chunk() {
-        let existing = "mac@Macbook English %";
-        let chunk = "mac@Macbook English %\nmac@Macbook English %";
-        assert!(filter_duplicate_prompt_chunk(existing, chunk).is_empty());
-    }
-
-    #[test]
-    fn keeps_real_command_output() {
-        let existing = "mac@Macbook English %";
-        let chunk = "hello\nmac@Macbook English %";
-        assert!(!filter_duplicate_prompt_chunk(existing, chunk).is_empty());
-    }
-
-    #[test]
-    fn collapses_two_trailing_prompts() {
-        let mut buf = String::from("mac@Macbook English %\nmac@Macbook English %\n");
-        collapse_trailing_dup_prompts(&mut buf);
-        assert_eq!(buf.matches("mac@Macbook English %").count(), 1);
+    fn trims_at_line_boundary_when_over_limit() {
+        let mut buf = Vec::new();
+        append_pty_scrollback(&mut buf, &b"x\n".repeat(MAX_SCROLLBACK_BYTES / 2 + 10));
+        assert!(buf.len() <= MAX_SCROLLBACK_BYTES);
+        assert_eq!(buf.first().copied(), Some(b'x'));
     }
 }

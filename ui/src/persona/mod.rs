@@ -4,7 +4,8 @@
 use protocol::PersonaBody;
 
 /// 与 SQLite 默认插入一致，供 UI 兜底。
-pub const DEFAULT_SYSTEM_PROMPT: &str = "你是一名「主动执行型」加密交易助手，是用户的执行手而不是只动嘴的顾问。";
+pub const DEFAULT_SYSTEM_PROMPT: &str =
+    "你是一名「主动执行型」加密交易助手，是用户的执行手而不是只动嘴的顾问。";
 
 /// 从服务端或本地 SQLite 拉取 system prompt。
 pub async fn load_persona() -> anyhow::Result<String> {

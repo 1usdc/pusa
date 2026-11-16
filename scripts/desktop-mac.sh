@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 本机 macOS 打包发版：dx bundle --release → 嵌入 dylib → Velopack（vpk 签名 + 公证 + 增量包）
+# 本机 macOS 打包发版：dx bundle --release → 清 target/dx 中间 .app → 嵌入 dylib → Velopack
 #   → desktop/dist/velopack/（.dmg / full+delta .nupkg / releases.<channel>.json；始终 --noInst 不出 .pkg）
 #
 # 用法：
@@ -65,10 +65,24 @@ mkdir -p "${ROOT}/desktop/dist"
 
 echo "== 2) dx bundle --release（desktop/）=="
 # 与 CI 一致：在 desktop crate 目录 bundle，不传 --target，用 host 默认目标
+# dx 会先写 target/dx/.../Pusa.app，再落到 desktop/dist（Dioxus.toml out_dir）
 (
 	cd "${ROOT}/desktop"
 	dx bundle --release
 )
+
+echo "== 2b) 清理 dx 中间产物 target/dx（保留 desktop/dist）=="
+dist_app="$(find "${ROOT}/desktop/dist" -maxdepth 1 -name '*.app' -type d 2>/dev/null | head -n1)"
+if [[ -z "${dist_app}" ]]; then
+	echo "❌ desktop/dist 下没有 .app，中止（避免误删唯一产物）" >&2
+	exit 1
+fi
+# staging：target/dx/desktop/bundle/macos/macos/Pusa.app（及同目录未签名 dmg）
+rm -rf "${ROOT}/target/dx/desktop/bundle/macos"
+if [[ -d "${ROOT}/target/dx" ]]; then
+	find "${ROOT}/target/dx" -type f -name '*.dmg' -delete 2>/dev/null || true
+fi
+echo "✓ 已保留 ${dist_app}，已删除 target/dx 中间包"
 
 echo "== 3) 嵌入 libpusa_core.dylib =="
 bash "${ROOT}/scripts/embed-pusa-core-macos.sh"

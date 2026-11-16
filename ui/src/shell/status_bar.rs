@@ -24,13 +24,24 @@ enum UpdateState {
     Checking,
     UpToDate,
     /// 非 Velopack 安装（`dx serve`、旧 DMG）：只能跳到发布页手动下载。
-    Available { latest: String, url: String },
+    Available {
+        latest: String,
+        url: String,
+    },
     /// Velopack：后台静默下载增量包中，`pct` 为 0..=100。
-    Downloading { latest: String, pct: i16 },
+    Downloading {
+        latest: String,
+        pct: i16,
+    },
     /// Velopack：更新包已就位，点击即退出→应用→重启。
-    RestartReady { latest: String },
+    RestartReady {
+        latest: String,
+    },
     /// Velopack 下载/应用失败：退化为跳发布页。
-    Failed { latest: String, msg: String },
+    Failed {
+        latest: String,
+        msg: String,
+    },
     Unknown,
 }
 

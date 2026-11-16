@@ -90,7 +90,8 @@ impl RuntimeContext {
     }
 
     pub async fn server_public_ip(&self) -> Result<String> {
-        self.call_json_async("server_public_ip", ffi::args_empty()).await
+        self.call_json_async("server_public_ip", ffi::args_empty())
+            .await
     }
 
     pub fn openai_key_configured(&self) -> bool {
@@ -99,7 +100,8 @@ impl RuntimeContext {
     }
 
     pub async fn llm_config_get(&self) -> Result<protocol::LlmConfigDto> {
-        self.call_json_async("llm_config_get", ffi::args_empty()).await
+        self.call_json_async("llm_config_get", ffi::args_empty())
+            .await
     }
 
     pub async fn llm_config_upsert(
@@ -133,7 +135,8 @@ impl RuntimeContext {
     }
 
     pub async fn persona_set(&self, text: &str) -> Result<()> {
-        self.call_unit_async("persona_set", json!({ "text": text })).await
+        self.call_unit_async("persona_set", json!({ "text": text }))
+            .await
     }
 
     pub async fn plugin_smart_ui_generate(
@@ -149,11 +152,8 @@ impl RuntimeContext {
     }
 
     pub async fn persona_polish(&self, text: &str, model: &str) -> Result<String> {
-        self.call_json_async(
-            "persona_polish",
-            json!({ "text": text, "model": model }),
-        )
-        .await
+        self.call_json_async("persona_polish", json!({ "text": text, "model": model }))
+            .await
     }
 
     pub async fn strategy_semantic_parse_stream(
@@ -182,7 +182,8 @@ impl RuntimeContext {
     }
 
     pub async fn role_create(&self, req: protocol::RoleCreateRequest) -> Result<protocol::RoleDto> {
-        self.call_json_async("role_create", json!({ "req": req })).await
+        self.call_json_async("role_create", json!({ "req": req }))
+            .await
     }
 
     pub async fn role_update(
@@ -344,7 +345,8 @@ impl RuntimeContext {
     }
 
     pub async fn strategies_list(&self) -> Result<Vec<protocol::StrategyDto>> {
-        self.call_json_async("strategies_list", ffi::args_empty()).await
+        self.call_json_async("strategies_list", ffi::args_empty())
+            .await
     }
 
     pub async fn strategy_create(
@@ -487,11 +489,8 @@ impl RuntimeContext {
         &self,
         exchange: &str,
     ) -> Result<protocol::LiveAssetTradeHistoryDto> {
-        self.call_json_async(
-            "live_asset_trade_history",
-            json!({ "exchange": exchange }),
-        )
-        .await
+        self.call_json_async("live_asset_trade_history", json!({ "exchange": exchange }))
+            .await
     }
 
     pub async fn credential_envs_for_working_dir(

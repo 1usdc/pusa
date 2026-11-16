@@ -99,17 +99,22 @@ const LLM_CREDENTIALS_ENABLED_KEY: &str = "anotherclaw_llm_credentials_enabled";
 
 /// 已开启的 LLM 密钥 id；从未保存返回 `None`。
 pub fn llm_credentials_enabled_get() -> Option<Vec<String>> {
-    let raw = storage()?.get_item(LLM_CREDENTIALS_ENABLED_KEY).ok().flatten()?;
+    let raw = storage()?
+        .get_item(LLM_CREDENTIALS_ENABLED_KEY)
+        .ok()
+        .flatten()?;
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return None;
     }
-    serde_json::from_str::<Vec<String>>(trimmed).ok().map(|ids| {
-        ids.into_iter()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect()
-    })
+    serde_json::from_str::<Vec<String>>(trimmed)
+        .ok()
+        .map(|ids| {
+            ids.into_iter()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
 }
 
 /// 写入已开启的 LLM 密钥 id 列表。
@@ -199,5 +204,32 @@ pub fn ui_theme_set(theme: &str) {
         let _ = st.remove_item(UI_THEME_KEY);
     } else {
         let _ = st.set_item(UI_THEME_KEY, trimmed);
+    }
+}
+
+/// 字体大小：`small` / `medium` / `large`。
+const FONT_SIZE_KEY: &str = "anotherclaw_font_size";
+
+/// 读取字体大小；未设置返回 `None`。
+pub fn font_size_get() -> Option<String> {
+    let raw = storage()?.get_item(FONT_SIZE_KEY).ok().flatten()?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+/// 写入字体大小。
+pub fn font_size_set(size: &str) {
+    let Some(st) = storage() else {
+        return;
+    };
+    let trimmed = size.trim();
+    if trimmed.is_empty() {
+        let _ = st.remove_item(FONT_SIZE_KEY);
+    } else {
+        let _ = st.set_item(FONT_SIZE_KEY, trimmed);
     }
 }

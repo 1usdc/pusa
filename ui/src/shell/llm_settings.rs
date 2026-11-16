@@ -126,6 +126,7 @@ fn display_name(provider: LlmApiProvider, label: &str) -> String {
 }
 
 /// 有改动才返回要写入 DTO `label` 的新名称。
+#[cfg(test)]
 fn renamed_label(draft: &str, stored_label: &str, provider: LlmApiProvider) -> Option<String> {
     let next = draft.trim();
     if next.is_empty() {
@@ -158,9 +159,7 @@ pub(crate) fn format_llm_settings_error(raw: &str) -> String {
         .trim()
         .trim_matches('"');
     if !code.is_empty()
-        && code
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c == '_')
+        && code.chars().all(|c| c.is_ascii_lowercase() || c == '_')
         && code.contains('_')
     {
         return "操作失败，请稍后重试。".into();
@@ -187,7 +186,6 @@ fn reset_add_form(
 pub fn LlmCredentialsPanel(
     credentials: Vec<LlmCredentialDto>,
     enabled_ids: Vec<String>,
-    hint: Option<String>,
     on_add: EventHandler<LlmCredentialUpsertBody>,
     on_update: EventHandler<LlmCredentialUpsertBody>,
     on_toggle: EventHandler<(String, bool)>,
@@ -206,9 +204,6 @@ pub fn LlmCredentialsPanel(
         div { class: "ac-llm-cred-panel",
             p { class: "ac-settings-lead",
                 "可添加多组AI大模型端点，打开的端点会同时启用，模型列表可切换选择这些模型。"
-            }
-            if let Some(h) = hint.filter(|s| !s.trim().is_empty()) {
-                p { class: "ac-settings-saved", "{h}" }
             }
 
             if !credentials.is_empty() {
@@ -385,7 +380,11 @@ fn LlmCredentialCard(
     let saved_name = display_credential_name(&cred);
     let masked = mask_api_key(&cred.api_key);
     let base = cred.openai_v1_base.clone();
-    let switch_title = if is_on { "关闭此密钥" } else { "开启此密钥" };
+    let switch_title = if is_on {
+        "关闭此密钥"
+    } else {
+        "开启此密钥"
+    };
     let mut editing = use_signal(|| false);
     let mut edit_provider = use_signal(|| cred.provider);
     let mut edit_label = use_signal(|| cred.label.clone());

@@ -9,15 +9,14 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use protocol::{
-    AboutInfoDto, AgentRunDetailDto, ChatTurnRequest,
-    ConversationSummaryDto, ConversationTitleBody, CredentialStatusDto, CredentialUpsertRequest,
-    EquippedSkillsDto, InstalledSkillsResponse, LiveAssetTradeHistoryDto, LiveAssetsDashboardDto, LlmConfigDto,
-    LlmConfigUpsertBody, LlmCredentialUpsertBody, LlmStatusBody, PersonaBody, PersonaPolishRequest, PersonaPolishResponse,
-    RoleCreateRequest, RoleDto, RoleUpdateRequest,
-    ServerIpDto, SkillEquipToggleRequest, SkillInstallRequest, SkillInstallResponse,
-    SkillMarketQuery, SkillMarketResponse, SseEvent,
-    StoredChatMessageDto, StrategyCreateRequest, StrategyDto, StrategyEvent, StrategyRunDto,
-    StrategySemanticParseRequest, StrategyUpdateRequest,
+    AboutInfoDto, AgentRunDetailDto, ChatTurnRequest, ConversationSummaryDto,
+    ConversationTitleBody, CredentialStatusDto, CredentialUpsertRequest, EquippedSkillsDto,
+    InstalledSkillsResponse, LiveAssetTradeHistoryDto, LiveAssetsDashboardDto, LlmConfigDto,
+    LlmConfigUpsertBody, LlmCredentialUpsertBody, LlmStatusBody, PersonaBody, PersonaPolishRequest,
+    PersonaPolishResponse, RoleCreateRequest, RoleDto, RoleUpdateRequest, ServerIpDto,
+    SkillEquipToggleRequest, SkillInstallRequest, SkillInstallResponse, SkillMarketQuery,
+    SkillMarketResponse, SseEvent, StoredChatMessageDto, StrategyCreateRequest, StrategyDto,
+    StrategyEvent, StrategyRunDto, StrategySemanticParseRequest, StrategyUpdateRequest,
 };
 use serde::Deserialize;
 use shared::{RuntimeContext, ERR_MODEL_REQUIRED};
@@ -86,7 +85,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/v1/llm/config", get(llm_config_get).put(llm_config_put))
         .route("/v1/llm/credentials", post(llm_credential_upsert))
         .route("/v1/llm/credentials/:id", delete(llm_credential_delete))
-        .route("/v1/llm/credentials/:id/activate", post(llm_credential_activate))
+        .route(
+            "/v1/llm/credentials/:id/activate",
+            post(llm_credential_activate),
+        )
         .route("/v1/persona", get(persona_get).put(persona_put))
         .route("/v1/persona/polish", post(persona_polish))
         .route("/v1/roles", get(roles_list).post(roles_create))
@@ -220,9 +222,7 @@ async fn about_info() -> Json<AboutInfoDto> {
 /// 用于「配置 API」弹窗提示用户把该 IP 加到交易所 API 密钥的 IP 白名单。
 /// 上游探测失败统一返回 502，前端据此展示降级提示。
 #[instrument(skip(state))]
-async fn system_server_ip(
-    State(state): State<AppState>,
-) -> Result<Json<ServerIpDto>, StatusCode> {
+async fn system_server_ip(State(state): State<AppState>) -> Result<Json<ServerIpDto>, StatusCode> {
     match state.ctx.server_public_ip().await {
         Ok(ip) => Ok(Json(ServerIpDto { ip })),
         Err(e) => {
@@ -336,7 +336,11 @@ async fn persona_polish(
     State(state): State<AppState>,
     Json(body): Json<PersonaPolishRequest>,
 ) -> Result<Json<PersonaPolishResponse>, (StatusCode, Json<serde_json::Value>)> {
-    match state.ctx.persona_polish(&body.system_prompt, &body.model).await {
+    match state
+        .ctx
+        .persona_polish(&body.system_prompt, &body.model)
+        .await
+    {
         Ok(polished) => Ok(Json(PersonaPolishResponse {
             system_prompt: polished,
         })),
@@ -353,10 +357,7 @@ async fn persona_polish(
             } else {
                 StatusCode::INTERNAL_SERVER_ERROR
             };
-            Err((
-                status,
-                Json(serde_json::json!({ "error": msg })),
-            ))
+            Err((status, Json(serde_json::json!({ "error": msg }))))
         }
     }
 }
@@ -582,8 +583,7 @@ async fn skills_installed_delete(
         .await
         .map_err(|e| {
             let msg = e.to_string();
-            if msg.contains("无效的技能") || msg.contains("不存在")
-            {
+            if msg.contains("无效的技能") || msg.contains("不存在") {
                 (StatusCode::BAD_REQUEST, msg)
             } else {
                 (StatusCode::INTERNAL_SERVER_ERROR, msg)
@@ -677,21 +677,25 @@ async fn asset_trades_get(
     State(state): State<AppState>,
     Path(exchange): Path<String>,
 ) -> Result<Json<LiveAssetTradeHistoryDto>, (StatusCode, String)> {
-    let dto = state.ctx.live_asset_trade_history(&exchange).await.map_err(|e| {
-        let msg = e.to_string();
-        if msg.contains("不支持的交易所")
-            || msg.contains("尚未配置凭证")
-            || msg.contains("缺少凭证字段")
-            || msg.contains("401")
-            || msg.contains("Unauthorized")
-            || msg.contains("Invalid")
-            || msg.contains("签名")
-        {
-            (StatusCode::BAD_REQUEST, msg)
-        } else {
-            (StatusCode::BAD_GATEWAY, msg)
-        }
-    })?;
+    let dto = state
+        .ctx
+        .live_asset_trade_history(&exchange)
+        .await
+        .map_err(|e| {
+            let msg = e.to_string();
+            if msg.contains("不支持的交易所")
+                || msg.contains("尚未配置凭证")
+                || msg.contains("缺少凭证字段")
+                || msg.contains("401")
+                || msg.contains("Unauthorized")
+                || msg.contains("Invalid")
+                || msg.contains("签名")
+            {
+                (StatusCode::BAD_REQUEST, msg)
+            } else {
+                (StatusCode::BAD_GATEWAY, msg)
+            }
+        })?;
     Ok(Json(dto))
 }
 
@@ -798,8 +802,7 @@ async fn strategy_events_sse(
     State(state): State<AppState>,
 ) -> Sse<UnboundedReceiverStream<Result<Event, Infallible>>> {
     let mut rx = state.ctx.subscribe_strategy_events();
-    let (event_tx, event_rx) =
-        tokio::sync::mpsc::unbounded_channel::<Result<Event, Infallible>>();
+    let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel::<Result<Event, Infallible>>();
     tokio::spawn(async move {
         loop {
             match rx.recv().await {

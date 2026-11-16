@@ -114,10 +114,20 @@ struct Caps {
 
 impl Caps {
     fn start(&self) -> usize {
-        self.groups.first().copied().flatten().map(|p| p.0).unwrap_or(0)
+        self.groups
+            .first()
+            .copied()
+            .flatten()
+            .map(|p| p.0)
+            .unwrap_or(0)
     }
     fn end(&self) -> usize {
-        self.groups.first().copied().flatten().map(|p| p.1).unwrap_or(0)
+        self.groups
+            .first()
+            .copied()
+            .flatten()
+            .map(|p| p.1)
+            .unwrap_or(0)
     }
 }
 
@@ -464,9 +474,7 @@ fn sanitize_jsonc(input: &str) -> String {
 
 fn plist_to_json(value: plist::Value) -> Value {
     match value {
-        plist::Value::Array(items) => {
-            Value::Array(items.into_iter().map(plist_to_json).collect())
-        }
+        plist::Value::Array(items) => Value::Array(items.into_iter().map(plist_to_json).collect()),
         plist::Value::Dictionary(dict) => {
             let mut map = serde_json::Map::new();
             for (k, v) in dict {
@@ -712,7 +720,11 @@ fn transform_pattern(pattern: &str, at_bol: bool) -> String {
             i += 2;
             continue;
         }
-        if !in_class && c == '(' && i + 2 < chars.len() && chars[i + 1] == '?' && chars[i + 2] == '>'
+        if !in_class
+            && c == '('
+            && i + 2 < chars.len()
+            && chars[i + 1] == '?'
+            && chars[i + 2] == '>'
         {
             out.push_str("(?:");
             i += 3;
@@ -738,7 +750,10 @@ fn transform_pattern(pattern: &str, at_bol: bool) -> String {
             i += 1;
             continue;
         }
-        if !in_class && (c == '*' || c == '+' || c == '?' || c == '}') && i + 1 < chars.len() && chars[i + 1] == '+'
+        if !in_class
+            && (c == '*' || c == '+' || c == '?' || c == '}')
+            && i + 1 < chars.len()
+            && chars[i + 1] == '+'
         {
             out.push(c);
             i += 2;
@@ -755,7 +770,11 @@ fn transform_pattern(pattern: &str, at_bol: bool) -> String {
     out
 }
 
-fn compiled<'a>(slot: &'a OnceLock<RePair>, pattern: &str, flag: &AtomicBool) -> Option<&'a RePair> {
+fn compiled<'a>(
+    slot: &'a OnceLock<RePair>,
+    pattern: &str,
+    flag: &AtomicBool,
+) -> Option<&'a RePair> {
     let owned = pattern.to_string();
     let pair = slot.get_or_init(|| {
         let pair = compile_pair(&owned);
@@ -1143,15 +1162,7 @@ fn consume_end(
         Some(Rule::BeginEnd { end_captures, .. }) => end_captures.clone(),
         _ => Vec::new(),
     };
-    emit_match(
-        emitter,
-        hay,
-        content_len,
-        &caps,
-        stack,
-        None,
-        &end_captures,
-    );
+    emit_match(emitter, hay, content_len, &caps, stack, None, &end_captures);
     let new_pos = caps.end();
     stack.pop();
     Some(new_pos)

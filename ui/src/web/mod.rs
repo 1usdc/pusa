@@ -8,22 +8,23 @@ pub struct ShellChromeCtx {
     pub show_settings_modal: dioxus::prelude::Signal<bool>,
     pub show_about_modal: dioxus::prelude::Signal<bool>,
     pub show_titlebar_settings_menu: dioxus::prelude::Signal<bool>,
+    pub show_font_size_modal: dioxus::prelude::Signal<bool>,
     pub developer_mode: dioxus::prelude::Signal<bool>,
 }
 
 pub mod auth;
 
 #[cfg(feature = "web")]
+pub mod about;
+#[cfg(feature = "web")]
 pub mod dev_mode;
 #[cfg(feature = "web")]
 pub mod llm_config;
 #[cfg(feature = "web")]
-pub mod password_field;
-#[cfg(feature = "web")]
-pub mod about;
-#[cfg(feature = "web")]
-pub mod settings;
-#[cfg(feature = "web")]
 pub mod origin;
 #[cfg(feature = "web")]
+pub mod password_field;
+#[cfg(feature = "web")]
 pub mod prefs;
+#[cfg(feature = "web")]
+pub mod settings;

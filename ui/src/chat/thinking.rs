@@ -70,7 +70,7 @@ fn json_str_field(args: &str, keys: &[&str]) -> Option<String> {
     None
 }
 
-/// 允许空字符串（如 `newText: ""` 表示删除片段）。
+/// 允许空字符串（如 `new_string: ""` 表示删除片段）。
 fn json_str_field_allow_empty(args: &str, keys: &[&str]) -> Option<String> {
     let v: Value = serde_json::from_str(args).ok()?;
     for key in keys {
@@ -146,14 +146,12 @@ fn format_tool_row(tool: &UiThinkingTool) -> TimelineKind {
     let running = matches!(tool.status, ToolStatus::Running);
     let name = tool.name.trim();
     match name {
-        "read_file" => {
-            let path = json_str_field(&tool.args, &["path"]).unwrap_or_default();
+        "Read" | "read_file" => {
+            let path = json_str_field(&tool.args, &["file_path", "path"]).unwrap_or_default();
             let open = if path.is_empty() {
                 None
             } else {
-                Some(TraceFileOpen::File {
-                    path: path.clone(),
-                })
+                Some(TraceFileOpen::File { path: path.clone() })
             };
             TimelineKind::Tool {
                 verb: "读取".into(),
@@ -167,15 +165,13 @@ fn format_tool_row(tool: &UiThinkingTool) -> TimelineKind {
                 open,
             }
         }
-        "write_file" => {
-            let path = json_str_field(&tool.args, &["path"]).unwrap_or_default();
+        "Write" | "write_file" => {
+            let path = json_str_field(&tool.args, &["file_path", "path"]).unwrap_or_default();
             let content = json_str_field_allow_empty(&tool.args, &["content"]).unwrap_or_default();
             let open = if path.is_empty() {
                 None
             } else if content.is_empty() {
-                Some(TraceFileOpen::File {
-                    path: path.clone(),
-                })
+                Some(TraceFileOpen::File { path: path.clone() })
             } else {
                 Some(TraceFileOpen::Diff {
                     path: path.clone(),
@@ -196,18 +192,18 @@ fn format_tool_row(tool: &UiThinkingTool) -> TimelineKind {
                 open,
             }
         }
-        "edit" => {
+        "Edit" | "edit" => {
             let path = json_str_field(&tool.args, &["file_path", "path"]).unwrap_or_default();
             let old_text =
-                json_str_field_allow_empty(&tool.args, &["oldText", "old_text"]).unwrap_or_default();
+                json_str_field_allow_empty(&tool.args, &["old_string", "oldText", "old_text"])
+                    .unwrap_or_default();
             let new_text =
-                json_str_field_allow_empty(&tool.args, &["newText", "new_text"]).unwrap_or_default();
+                json_str_field_allow_empty(&tool.args, &["new_string", "newText", "new_text"])
+                    .unwrap_or_default();
             let open = if path.is_empty() {
                 None
             } else if old_text.is_empty() && new_text.is_empty() {
-                Some(TraceFileOpen::File {
-                    path: path.clone(),
-                })
+                Some(TraceFileOpen::File { path: path.clone() })
             } else {
                 Some(TraceFileOpen::Diff {
                     path: path.clone(),
@@ -228,9 +224,9 @@ fn format_tool_row(tool: &UiThinkingTool) -> TimelineKind {
                 open,
             }
         }
-        "grep" => {
+        "Grep" | "grep" => {
             let pattern = json_str_field(&tool.args, &["pattern"]).unwrap_or_default();
-            let path = json_str_field(&tool.args, &["path"]).unwrap_or_default();
+            let path = json_str_field(&tool.args, &["file_path", "path"]).unwrap_or_default();
             TimelineKind::Tool {
                 verb: "搜索".into(),
                 primary: truncate_chars(&pattern, 48),
@@ -243,8 +239,8 @@ fn format_tool_row(tool: &UiThinkingTool) -> TimelineKind {
                 open: None,
             }
         }
-        "find_files" => {
-            let glob = json_str_field(&tool.args, &["glob"]).unwrap_or_default();
+        "Glob" | "find_files" => {
+            let glob = json_str_field(&tool.args, &["pattern", "glob"]).unwrap_or_default();
             TimelineKind::Tool {
                 verb: "找文件".into(),
                 primary: truncate_chars(&glob, 48),
@@ -301,11 +297,7 @@ fn format_tool_row(tool: &UiThinkingTool) -> TimelineKind {
             let id = json_str_field(&tool.args, &["id", "name"]).unwrap_or_default();
             TimelineKind::Tool {
                 verb: "安装技能".into(),
-                primary: if id.is_empty() {
-                    "技能".into()
-                } else {
-                    id
-                },
+                primary: if id.is_empty() { "技能".into() } else { id },
                 secondary: json_str_field(&tool.args, &["source"]).unwrap_or_default(),
                 running,
                 open: None,
@@ -447,10 +439,15 @@ fn activity_summary(steps: &[UiThinkingStep]) -> Option<String> {
     for step in steps {
         for tool in &step.tools {
             match tool.name.trim() {
-                "read_file" => reads += 1,
-                "write_file" => writes += 1,
-                "edit" => edits += 1,
-                "search_skills" | "search_market_skills" | "grep" | "find_files"
+                "Read" | "read_file" => reads += 1,
+                "Write" | "write_file" => writes += 1,
+                "Edit" | "edit" => edits += 1,
+                "search_skills"
+                | "search_market_skills"
+                | "Grep"
+                | "grep"
+                | "Glob"
+                | "find_files"
                 | "semantic_search" => searches += 1,
                 "exec_bash" => execs += 1,
                 "spawn_subagent" => subagents += 1,
@@ -791,9 +788,7 @@ pub fn ChatThinkingHydrator(
             if let Ok(detail) = load_agent_run_detail(run_id).await {
                 chat_messages.with_mut(|msgs| {
                     if let Some(UiChatMessage::Assistant {
-                        content,
-                        thinking,
-                        ..
+                        content, thinking, ..
                     }) = msgs.get_mut(msg_index)
                     {
                         let answer = content.clone();

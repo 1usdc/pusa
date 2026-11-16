@@ -115,9 +115,7 @@ pub enum ChatUserSeg {
 }
 
 fn attachment_matches_label(att: &ChatPendingAttachment, label: &str) -> bool {
-    att.send_label() == label
-        || att.name == label
-        || att.source_path.as_deref() == Some(label)
+    att.send_label() == label || att.name == label || att.source_path.as_deref() == Some(label)
 }
 
 /// 从正文里的 `[附件: …]` 标记还原与输入顺序一致的展示片段。
@@ -153,7 +151,10 @@ pub fn parse_user_message_segments(
             vec![inner]
         };
         for label in labels {
-            if let Some(idx) = unused.iter().position(|a| attachment_matches_label(a, label)) {
+            if let Some(idx) = unused
+                .iter()
+                .position(|a| attachment_matches_label(a, label))
+            {
                 segs.push(ChatUserSeg::Attachment(unused.remove(idx)));
             } else {
                 segs.push(ChatUserSeg::Attachment(attachment_from_path(0, label)));
@@ -176,7 +177,10 @@ pub fn parse_user_message_segments(
 
 /// 从历史正文里的附件标记还原路径 chip。
 #[allow(dead_code)]
-pub fn attachments_from_suffix_labels(labels: &[String], start_id: u64) -> Vec<ChatPendingAttachment> {
+pub fn attachments_from_suffix_labels(
+    labels: &[String],
+    start_id: u64,
+) -> Vec<ChatPendingAttachment> {
     labels
         .iter()
         .enumerate()
@@ -203,11 +207,7 @@ fn guess_mime(name: &str, content_type: Option<&str>) -> String {
     if let Some(ct) = content_type.map(str::trim).filter(|s| !s.is_empty()) {
         return ct.to_string();
     }
-    let ext = name
-        .rsplit('.')
-        .next()
-        .unwrap_or("")
-        .to_ascii_lowercase();
+    let ext = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
     match ext.as_str() {
         "png" => "image/png".into(),
         "jpg" | "jpeg" => "image/jpeg".into(),
@@ -224,7 +224,12 @@ fn bytes_to_data_url(mime: &str, bytes: &[u8]) -> String {
 }
 
 /// 由原始字节构建附件（粘贴 / 读文件后共用）。
-pub fn attachment_from_bytes(id: u64, name: String, mime: String, bytes: Vec<u8>) -> ChatPendingAttachment {
+pub fn attachment_from_bytes(
+    id: u64,
+    name: String,
+    mime: String,
+    bytes: Vec<u8>,
+) -> ChatPendingAttachment {
     let mime = guess_mime(&name, Some(mime.as_str()));
     let is_image = mime.starts_with("image/");
     let data_url = if is_image && !bytes.is_empty() {
@@ -273,7 +278,11 @@ pub fn attachment_from_path(id: u64, path: impl Into<String>) -> ChatPendingAtta
 }
 
 /// 终端选区引用标签名：`终端选区(16)` / `终端选区(16-18)`。
-fn terminal_selection_chip_name(start_line: Option<u32>, end_line: Option<u32>, text: &str) -> String {
+fn terminal_selection_chip_name(
+    start_line: Option<u32>,
+    end_line: Option<u32>,
+    text: &str,
+) -> String {
     match (start_line, end_line) {
         (Some(s), Some(e)) if s > 0 && e > 0 => {
             let (a, b) = if s <= e { (s, e) } else { (e, s) };
@@ -317,10 +326,7 @@ pub fn attachment_from_terminal_selection(
 }
 
 /// 从 Dioxus [`FileData`]（回形针 / 部分平台粘贴）异步读入附件。
-pub async fn attachment_from_file_data(
-    id: u64,
-    file: FileData,
-) -> Option<ChatPendingAttachment> {
+pub async fn attachment_from_file_data(id: u64, file: FileData) -> Option<ChatPendingAttachment> {
     let name = file.name();
     let mime = guess_mime(&name, file.content_type().as_deref());
     let bytes = file.read_bytes().await.ok()?.to_vec();
@@ -441,10 +447,7 @@ pub mod desktop_paste {
         pub b64: String,
     }
 
-    pub fn attachment_from_paste_image(
-        id: u64,
-        img: PasteImage,
-    ) -> Option<ChatPendingAttachment> {
+    pub fn attachment_from_paste_image(id: u64, img: PasteImage) -> Option<ChatPendingAttachment> {
         let bytes = B64.decode(img.b64.trim()).ok()?;
         if bytes.is_empty() {
             return None;
@@ -562,9 +565,8 @@ mod tests {
 
     #[test]
     fn strips_trailing_attachment_block() {
-        let (visible, labels) = split_attachment_suffix(
-            "现在要怎么启动\n\n[附件: /Volumes/SSD/codes/English/app]",
-        );
+        let (visible, labels) =
+            split_attachment_suffix("现在要怎么启动\n\n[附件: /Volumes/SSD/codes/English/app]");
         assert_eq!(visible, "现在要怎么启动");
         assert_eq!(labels, vec!["/Volumes/SSD/codes/English/app".to_string()]);
     }
@@ -590,10 +592,8 @@ mod tests {
             attachment_from_path(1, "/x/desktop"),
             attachment_from_path(2, "/x/app"),
         ];
-        let segs = parse_user_message_segments(
-            "[附件: /x/desktop][附件: /x/app]需要参考的内容",
-            &atts,
-        );
+        let segs =
+            parse_user_message_segments("[附件: /x/desktop][附件: /x/app]需要参考的内容", &atts);
         assert_eq!(segs.len(), 3);
         match &segs[0] {
             ChatUserSeg::Attachment(a) => assert_eq!(a.name, "desktop"),
@@ -611,12 +611,10 @@ mod tests {
 
     #[test]
     fn parses_text_between_chips() {
-        let segs = parse_user_message_segments(
-            "[附件: /x/app]参考[附件: /x/desktop]一下",
-            &[],
-        );
+        let segs = parse_user_message_segments("[附件: /x/app]参考[附件: /x/desktop]一下", &[]);
         match &segs[..] {
-            [ChatUserSeg::Attachment(a), ChatUserSeg::Text(t1), ChatUserSeg::Attachment(b), ChatUserSeg::Text(t2)] => {
+            [ChatUserSeg::Attachment(a), ChatUserSeg::Text(t1), ChatUserSeg::Attachment(b), ChatUserSeg::Text(t2)] =>
+            {
                 assert_eq!(a.name, "app");
                 assert_eq!(t1, "参考");
                 assert_eq!(b.name, "desktop");

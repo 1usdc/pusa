@@ -8,11 +8,13 @@ mod llm_settings;
 mod plugins;
 mod search;
 mod status_bar;
+pub(crate) mod syntax;
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 mod textmate;
-pub(crate) mod syntax;
 pub mod theme;
 pub mod toast;
+
+pub use theme::FontSize;
 
 pub(crate) use llm_enabled::{
     activate_id_after_toggle, enabled_after_delete, enabled_after_toggle, enabled_after_upsert,

@@ -64,12 +64,7 @@ async fn save_llm_config_full(
         clear_api_key,
         clear_openai_v1_base,
     };
-    let resp = Request::put(&url)
-        .json(&body)
-        .ok()?
-        .send()
-        .await
-        .ok()?;
+    let resp = Request::put(&url).json(&body).ok()?.send().await.ok()?;
     if !resp.ok() {
         return None;
     }

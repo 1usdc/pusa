@@ -5,12 +5,12 @@ use std::path::Path;
 
 use dioxus::html::point_interaction::ModifiersInteraction;
 use dioxus::prelude::*;
-use dioxus_free_icons::Icon;
 use dioxus_free_icons::icons::ld_icons::{
     LdCaseSensitive, LdCaseUpper, LdChevronDown, LdChevronRight, LdChevronUp, LdFile, LdFilePlus,
-    LdFolder, LdFolderPlus, LdMonitor, LdPause, LdPlay, LdRegex, LdReplace, LdReplaceAll,
-    LdRefreshCw, LdRotateCcw, LdSmartphone, LdWholeWord, LdX,
+    LdFolder, LdFolderPlus, LdMonitor, LdPause, LdPlay, LdRefreshCw, LdRegex, LdReplace,
+    LdReplaceAll, LdRotateCcw, LdSmartphone, LdWholeWord, LdX,
 };
+use dioxus_free_icons::Icon;
 use keyboard_types::{Key, Modifiers};
 
 use crate::icons::AiOutlineVerticalAlignBottom;
@@ -692,7 +692,11 @@ pub fn fs_relative_to_root(root: &str, path: &str) -> String {
         return path.to_string();
     };
     let s = rel.to_string_lossy().into_owned();
-    if s.is_empty() { ".".into() } else { s }
+    if s.is_empty() {
+        ".".into()
+    } else {
+        s
+    }
 }
 
 /// 最近打开的项目目录（最多 5 条，仅目录）。
@@ -1010,7 +1014,6 @@ pub fn SidebarFileExplorer(
     mut create_mode: Signal<Option<FsCreateKind>>,
     mut create_name: Signal<String>,
     mut create_parent: Signal<Option<String>>,
-    mut notice: Signal<Option<String>>,
     /// 最近写入成功的路径，短暂高亮。
     highlighted_paths: Signal<HashSet<String>>,
     on_open_file: EventHandler<String>,
@@ -1040,12 +1043,14 @@ pub fn SidebarFileExplorer(
     let root_tree = root_path.clone();
     let root_for_menu = root_path.clone();
 
+    let toast = super::toast::use_toast();
+
     let mut ctx_menu = use_signal(|| None::<FsCtxMenu>);
     let mut file_clipboard = use_signal(|| None::<FsFileClipboard>);
     let mut renaming_path = use_signal(|| None::<String>);
     let mut rename_draft = use_signal(String::new);
-    /// 右键「重命名」后强制聚焦输入框（桌面 WebView 上 autofocus 不可靠）。
-    let mut rename_focus_tick = use_signal(|| 0u64);
+    // 右键「重命名」后强制聚焦输入框（桌面 WebView 上 autofocus 不可靠）。
+    let rename_focus_tick = use_signal(|| 0u64);
     // Shift 范围多选；`selected_path` 为主选中 / 锚点。
     let mut selected_paths = use_signal(HashSet::<String>::new);
 
@@ -1170,7 +1175,7 @@ pub fn SidebarFileExplorer(
                             create_parent.set(Some(parent));
                             create_name.set(String::new());
                             create_mode.set(Some(FsCreateKind::Folder));
-                            notice.set(None);
+
                             section_open.set(true);
                         },
                         Icon { icon: LdFolderPlus, width: 14, height: 14, fill: "currentColor" }
@@ -1189,7 +1194,7 @@ pub fn SidebarFileExplorer(
                             create_parent.set(Some(parent));
                             create_name.set(String::new());
                             create_mode.set(Some(FsCreateKind::File));
-                            notice.set(None);
+
                             section_open.set(true);
                         },
                         Icon { icon: LdFilePlus, width: 14, height: 14, fill: "currentColor" }
@@ -1206,7 +1211,7 @@ pub fn SidebarFileExplorer(
                                 cache.clear();
                                 let _ = fs_cache_reload_open(cache, &root, &open);
                             });
-                            notice.set(None);
+
                         },
                         Icon { icon: LdRefreshCw, width: 14, height: 14, fill: "currentColor" }
                     }
@@ -1221,10 +1226,6 @@ pub fn SidebarFileExplorer(
                         Icon { icon: AiOutlineVerticalAlignBottom, width: 14, height: 14, fill: "currentColor" }
                     }
                 }
-            }
-
-            if let Some(msg) = notice() {
-                div { class: "ac-sidebar-files-notice", "{msg}" }
             }
 
             if section_open() {
@@ -1279,12 +1280,12 @@ pub fn SidebarFileExplorer(
                                         selected_path.set(Some(created.clone()));
                                         create_mode.set(None);
                                         create_name.set(String::new());
-                                        notice.set(None);
+
                                         if kind == FsCreateKind::File {
                                             on_open_file.call(created);
                                         }
                                     }
-                                    Err(err) => notice.set(Some(err)),
+                                    Err(err) => toast.error(err),
                                 }
                             },
                         }
@@ -1436,9 +1437,9 @@ pub fn SidebarFileExplorer(
                                                                     selected_paths.set(HashSet::from([new_path]));
                                                                     renaming_path.set(None);
                                                                     rename_draft.set(String::new());
-                                                                    notice.set(None);
+
                                                                 }
-                                                                Err(err) => notice.set(Some(err)),
+                                                                Err(err) => toast.error(err),
                                                             }
                                                         },
                                                         onblur: move |_| {
@@ -1673,7 +1674,7 @@ pub fn SidebarFileExplorer(
                             style: "{menu_style}",
                             onclick: move |evt| evt.stop_propagation(),
                             onmounted: move |_| {
-                                // 超出视口底/右边缘时上移或左移，避免菜单被裁切。
+                                // 超出视口底部时底边对齐窗口底部；超出右侧时左移，避免菜单被裁切。
                                 let _ = document::eval(&format!(
                                     r#"(() => {{
   const place = () => {{
@@ -1687,9 +1688,7 @@ pub fn SidebarFileExplorer(
     let left = {anchor_x};
     const h = Math.max(rect.height, 1);
     const w = Math.max(rect.width, 1);
-    if (top + h > vh - margin) {{
-      top = Math.max(margin, {anchor_y} - h);
-    }}
+    // 底部放不下：底边贴住窗口底部（不再翻到选项上方）。
     if (top + h > vh - margin) {{
       top = Math.max(margin, vh - h - margin);
     }}
@@ -1753,8 +1752,8 @@ pub fn SidebarFileExplorer(
                                                 move |_| {
                                                     ctx_menu.set(None);
                                                     match fs_open_in_browser(&path) {
-                                                        Ok(()) => notice.set(None),
-                                                        Err(e) => notice.set(Some(e)),
+                                                        Ok(()) => {},
+                                                        Err(e) => toast.error(e),
                                                     }
                                                 }
                                             },
@@ -1797,8 +1796,8 @@ pub fn SidebarFileExplorer(
                                                 move |_| {
                                                     ctx_menu.set(None);
                                                     match fs_open_in_browser(&path) {
-                                                        Ok(()) => notice.set(None),
-                                                        Err(e) => notice.set(Some(e)),
+                                                        Ok(()) => {},
+                                                        Err(e) => toast.error(e),
                                                     }
                                                 }
                                             },
@@ -1827,8 +1826,8 @@ pub fn SidebarFileExplorer(
                                                 move |_| {
                                                     ctx_menu.set(None);
                                                     match fs_open_in_browser(&path) {
-                                                        Ok(()) => notice.set(None),
-                                                        Err(e) => notice.set(Some(e)),
+                                                        Ok(()) => {},
+                                                        Err(e) => toast.error(e),
                                                     }
                                                 }
                                             },
@@ -1857,8 +1856,8 @@ pub fn SidebarFileExplorer(
                                                 move |_| {
                                                     ctx_menu.set(None);
                                                     match fs_open_in_browser(&path) {
-                                                        Ok(()) => notice.set(None),
-                                                        Err(e) => notice.set(Some(e)),
+                                                        Ok(()) => {},
+                                                        Err(e) => toast.error(e),
                                                     }
                                                 }
                                             },
@@ -1887,8 +1886,8 @@ pub fn SidebarFileExplorer(
                                                 move |_| {
                                                     ctx_menu.set(None);
                                                     match fs_open_in_browser(&path) {
-                                                        Ok(()) => notice.set(None),
-                                                        Err(e) => notice.set(Some(e)),
+                                                        Ok(()) => {},
+                                                        Err(e) => toast.error(e),
                                                     }
                                                 }
                                             },
@@ -1906,8 +1905,8 @@ pub fn SidebarFileExplorer(
                                     move |_| {
                                         ctx_menu.set(None);
                                         match fs_reveal_in_os(&path) {
-                                            Ok(()) => notice.set(None),
-                                            Err(e) => notice.set(Some(e)),
+                                            Ok(()) => {},
+                                            Err(e) => toast.error(e),
                                         }
                                     }
                                 },
@@ -1978,11 +1977,11 @@ pub fn SidebarFileExplorer(
                                             paths: paths.clone(),
                                             cut: true,
                                         }));
-                                        notice.set(Some(if paths.len() > 1 {
+                                        toast.success(if paths.len() > 1 {
                                             format!("已剪切 {} 项。", paths.len())
                                         } else {
                                             "已剪切。".into()
-                                        }));
+                                        });
                                     }
                                 },
                                 "剪切"
@@ -1999,11 +1998,11 @@ pub fn SidebarFileExplorer(
                                             paths: paths.clone(),
                                             cut: false,
                                         }));
-                                        notice.set(Some(if paths.len() > 1 {
+                                        toast.success(if paths.len() > 1 {
                                             format!("已复制 {} 项。", paths.len())
                                         } else {
                                             "已复制。".into()
-                                        }));
+                                        });
                                     }
                                 },
                                 "复制"
@@ -2048,7 +2047,11 @@ pub fn SidebarFileExplorer(
                                             if clip.cut {
                                                 file_clipboard.set(None);
                                             }
-                                            notice.set(err.or_else(|| Some("已粘贴。".into())));
+                                            if let Some(e) = err {
+                                                toast.error(e);
+                                            } else {
+                                                toast.success("已粘贴。");
+                                            }
                                         }
                                     },
                                     "粘贴"
@@ -2066,8 +2069,8 @@ pub fn SidebarFileExplorer(
                                     move |_| {
                                         ctx_menu.set(None);
                                         match fs_clipboard_set_text(&path) {
-                                            Ok(()) => notice.set(Some("已复制路径。".into())),
-                                            Err(e) => notice.set(Some(e)),
+                                            Ok(()) => toast.success("已复制路径。"),
+                                            Err(e) => toast.error(e),
                                         }
                                     }
                                 },
@@ -2084,8 +2087,8 @@ pub fn SidebarFileExplorer(
                                         ctx_menu.set(None);
                                         let rel = fs_relative_to_root(&root, &path);
                                         match fs_clipboard_set_text(&rel) {
-                                            Ok(()) => notice.set(Some("已复制相对路径。".into())),
-                                            Err(e) => notice.set(Some(e)),
+                                            Ok(()) => toast.success("已复制相对路径。"),
+                                            Err(e) => toast.error(e),
                                         }
                                     }
                                 },
@@ -2176,7 +2179,9 @@ pub fn SidebarFileExplorer(
                                                 selected_paths().iter().next().cloned(),
                                             );
                                         }
-                                        notice.set(err);
+                                        if let Some(e) = err {
+                                            toast.error(e);
+                                        }
                                     }
                                 },
                                 "{delete_label}"
@@ -2381,7 +2386,10 @@ fn collect_find_matches(
         } else {
             let chars: Vec<(usize, char)> = text.char_indices().collect();
             let q_chars: Vec<char> = query.chars().collect();
-            let q_lower: Vec<char> = q_chars.iter().map(|c| c.to_lowercase().next().unwrap_or(*c)).collect();
+            let q_lower: Vec<char> = q_chars
+                .iter()
+                .map(|c| c.to_lowercase().next().unwrap_or(*c))
+                .collect();
             let n = q_lower.len();
             if n == 0 {
                 return Ok(out);
@@ -2475,11 +2483,7 @@ fn build_find_marks_html(source: &str, matches: &[FindMatch], current: usize) ->
 fn select_find_match_in_editor(text: &str, m: FindMatch, focus_editor: bool) {
     let start = utf16_offset(text, m.start);
     let end = utf16_offset(text, m.end);
-    let focus_js = if focus_editor {
-        "ta.focus();"
-    } else {
-        ""
-    };
+    let focus_js = if focus_editor { "ta.focus();" } else { "" };
     let _ = document::eval(&format!(
         r#"(() => {{
   const scrollToHit = () => {{
@@ -2635,8 +2639,8 @@ fn editor_replace_one(
     next.push_str(&repl);
     next.push_str(&body[m.end..]);
     set_editor_draft(path, next.clone(), drafts, baselines, dirty, save_notice);
-    let new_matches =
-        collect_find_matches(&next, query, case_sensitive, whole_word, use_regex).unwrap_or_default();
+    let new_matches = collect_find_matches(&next, query, case_sensitive, whole_word, use_regex)
+        .unwrap_or_default();
     if new_matches.is_empty() {
         match_index.set(0);
     } else {
@@ -2763,10 +2767,7 @@ pub fn FileEditorPane(
         if !find_open() {
             return Vec::<FindMatch>::new();
         }
-        let body = drafts()
-            .get(&editor_path())
-            .cloned()
-            .unwrap_or_default();
+        let body = drafts().get(&editor_path()).cloned().unwrap_or_default();
         match collect_find_matches(
             &body,
             &find_query(),
@@ -2783,18 +2784,8 @@ pub fn FileEditorPane(
         if !find_open() || find_query().is_empty() || !use_regex() {
             return None;
         }
-        let body = drafts()
-            .get(&editor_path())
-            .cloned()
-            .unwrap_or_default();
-        collect_find_matches(
-            &body,
-            &find_query(),
-            case_sensitive(),
-            whole_word(),
-            true,
-        )
-        .err()
+        let body = drafts().get(&editor_path()).cloned().unwrap_or_default();
+        collect_find_matches(&body, &find_query(), case_sensitive(), whole_word(), true).err()
     });
 
     use_effect(move || {
@@ -3342,7 +3333,7 @@ fn snippet_diff_lines(old_text: &str, new_text: &str, start_line: u32) -> Vec<Di
     rows
 }
 
-/// 本次工具编辑的行内 diff（数据来自工具参数 oldText/newText）。
+/// 本次工具编辑的行内 diff（新数据来自 old_string/new_string，兼容历史 oldText/newText）。
 #[component]
 pub fn FileEditDiffPane(
     path: String,
@@ -3822,7 +3813,8 @@ pub fn FileAudioPreviewPane(path: String) -> Element {
             if !src_ok {
                 return;
             }
-            let audio_id_js = serde_json::to_string(&audio_dom_id).unwrap_or_else(|_| "\"\"".into());
+            let audio_id_js =
+                serde_json::to_string(&audio_dom_id).unwrap_or_else(|_| "\"\"".into());
             let fill_id_js = serde_json::to_string(&fill_dom_id).unwrap_or_else(|_| "\"\"".into());
             let seed_js = if seed_duration.is_finite() && seed_duration > 0.0 {
                 format!("{seed_duration:.6}")

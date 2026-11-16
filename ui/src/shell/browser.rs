@@ -134,7 +134,10 @@ mod tests {
     #[test]
     fn tab_title_uses_host_or_default() {
         assert_eq!(browser_tab_title(""), "Pusa 浏览器");
-        assert_eq!(browser_tab_title("https://example.com/a/b?x=1"), "example.com");
+        assert_eq!(
+            browser_tab_title("https://example.com/a/b?x=1"),
+            "example.com"
+        );
         assert_eq!(browser_tab_title("http://localhost:8080"), "localhost:8080");
         assert_eq!(browser_tab_title("example.com#top"), "example.com");
     }

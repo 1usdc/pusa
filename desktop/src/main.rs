@@ -5,8 +5,8 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use dioxus::desktop::tao::dpi::LogicalSize;
-use dioxus::desktop::wry::http::Response;
 use dioxus::desktop::tao::window::Icon;
+use dioxus::desktop::wry::http::Response;
 use dioxus::desktop::{Config, WindowBuilder};
 use dioxus::prelude::*;
 use ui::App;
@@ -118,8 +118,7 @@ fn set_macos_dock_icon() {
     };
 
     let data = NSData::with_bytes(PUSA_DOCK_ICON_PNG);
-    let Some(image): Option<Retained<NSImage>> =
-        NSImage::initWithData(NSImage::alloc(), &data)
+    let Some(image): Option<Retained<NSImage>> = NSImage::initWithData(NSImage::alloc(), &data)
     else {
         eprintln!("warning: failed to decode embedded Dock icon (app-icon.png)");
         return;
@@ -138,8 +137,10 @@ fn set_macos_dock_icon() {
     // 裸二进制下 Dock 有时不按 PNG alpha 裁切；再挂一层带 alpha 的 NSImageView。
     let tile = app.dockTile();
     let tile_size = tile.size();
-    let view =
-        NSImageView::initWithFrame(NSImageView::alloc(mtm), NSRect::new(NSPoint::ZERO, tile_size));
+    let view = NSImageView::initWithFrame(
+        NSImageView::alloc(mtm),
+        NSRect::new(NSPoint::ZERO, tile_size),
+    );
     view.setImage(Some(&image));
     view.setImageScaling(NSImageScaling::ScaleProportionallyUpOrDown);
     tile.setContentView(Some(&view));

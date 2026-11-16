@@ -2,10 +2,10 @@
 
 use futures_util::StreamExt;
 use protocol::{
-    AboutInfoDto, AgentRunDetailDto, ChatTurnRequest, ConversationSummaryDto, ConversationTitleBody,
-    EquippedSkillsDto, InstalledSkillsResponse, RoleCreateRequest, RoleDto, RoleUpdateRequest,
-    SkillEquipToggleRequest, SkillInstallRequest, SkillInstallResponse, SkillMarketResponse,
-    SseEvent, StoredChatMessageDto,
+    AboutInfoDto, AgentRunDetailDto, ChatTurnRequest, ConversationSummaryDto,
+    ConversationTitleBody, EquippedSkillsDto, InstalledSkillsResponse, RoleCreateRequest, RoleDto,
+    RoleUpdateRequest, SkillEquipToggleRequest, SkillInstallRequest, SkillInstallResponse,
+    SkillMarketResponse, SseEvent, StoredChatMessageDto,
 };
 use wasm_bindgen::JsCast;
 use wasm_streams::readable::ReadableStream;

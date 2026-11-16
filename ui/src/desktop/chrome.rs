@@ -112,6 +112,7 @@ pub fn NativeTitleBar(
     mut show_settings_modal: Signal<bool>,
     mut show_about_modal: Signal<bool>,
     mut show_titlebar_settings_menu: Signal<bool>,
+    mut show_font_size_modal: Signal<bool>,
 ) -> Element {
     let sidebar_title = if show_sidebar() {
         "隐藏左边栏"
@@ -296,6 +297,16 @@ pub fn NativeTitleBar(
                                 class: "ac-web-titlebar-menu__item",
                                 onclick: move |_| {
                                     show_titlebar_settings_menu.set(false);
+                                    show_font_size_modal.set(true);
+                                },
+                                "字体大小"
+                            }
+                            button {
+                                r#type: "button",
+                                role: "menuitem",
+                                class: "ac-web-titlebar-menu__item",
+                                onclick: move |_| {
+                                    show_titlebar_settings_menu.set(false);
                                     show_about_modal.set(true);
                                 },
                                 "关于本机"
@@ -320,6 +331,7 @@ pub fn NativeTitleBar(
     _show_settings_modal: Signal<bool>,
     _show_about_modal: Signal<bool>,
     _show_titlebar_settings_menu: Signal<bool>,
+    _show_font_size_modal: Signal<bool>,
 ) -> Element {
     rsx! {}
 }

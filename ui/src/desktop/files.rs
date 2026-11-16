@@ -93,6 +93,10 @@ fn ui_theme_path() -> PathBuf {
     app_data_dir().join("ui_theme.txt")
 }
 
+fn font_size_path() -> PathBuf {
+    app_data_dir().join("font_size.txt")
+}
+
 /// 读取中间栏标签页操作缓存 JSON；无文件或读失败返回 `None`。
 pub fn center_tabs_cache_get() -> Option<String> {
     let raw = fs::read_to_string(center_tabs_path()).ok()?;
@@ -165,12 +169,14 @@ pub fn llm_credentials_enabled_get() -> Option<Vec<String>> {
     if trimmed.is_empty() {
         return None;
     }
-    serde_json::from_str::<Vec<String>>(trimmed).ok().map(|ids| {
-        ids.into_iter()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect()
-    })
+    serde_json::from_str::<Vec<String>>(trimmed)
+        .ok()
+        .map(|ids| {
+            ids.into_iter()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
 }
 
 /// 写入已开启的 LLM 密钥 id 列表。
@@ -252,6 +258,28 @@ pub fn ui_theme_set(theme: &str) {
     }
 }
 
+/// 读取字体大小（`small` / `medium` / `large`）。
+pub fn font_size_get() -> Option<String> {
+    let raw = fs::read_to_string(font_size_path()).ok()?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+/// 写入字体大小。
+pub fn font_size_set(size: &str) {
+    let path = font_size_path();
+    let trimmed = size.trim();
+    if trimmed.is_empty() {
+        let _ = fs::remove_file(path);
+    } else {
+        let _ = fs::write(path, trimmed);
+    }
+}
+
 fn load_recent_store() -> RecentProjectsStore {
     let path = recent_projects_path();
     let Ok(raw) = fs::read_to_string(&path) else {
@@ -325,9 +353,7 @@ fn restore_tools_root_if_needed() {
 
 /// 系统目录选择器：选择项目根目录。
 pub fn pick_project_directory() -> Option<PathBuf> {
-    rfd::FileDialog::new()
-        .set_title("打开项目")
-        .pick_folder()
+    rfd::FileDialog::new().set_title("打开项目").pick_folder()
 }
 
 /// 将工作区根切换到指定目录，并写入最近列表。
@@ -453,12 +479,72 @@ fn is_muted_name(name: &str) -> bool {
 /// 常见文本扩展名；未知扩展名会再做 UTF-8 嗅探。
 fn has_text_extension(path: &Path) -> bool {
     const TEXT_EXT: &[&str] = &[
-        "rs", "toml", "md", "txt", "json", "jsonl", "yaml", "yml", "toml", "css", "scss", "html",
-        "htm", "js", "jsx", "ts", "tsx", "mjs", "cjs", "py", "sh", "bash", "zsh", "fish", "sql",
-        "graphql", "svg", "xml", "csv", "tsv", "env", "gitignore", "dockerignore", "editorconfig",
-        "lock", "just", "dockerfile", "makefile", "cmake", "ini", "cfg", "conf", "log", "rake",
-        "rb", "go", "java", "kt", "swift", "c", "h", "cpp", "hpp", "cc", "m", "mm", "plist",
-        "properties", "gradle", "proto", "vue", "svelte", "astro", "nix", "tf", "hcl",
+        "rs",
+        "toml",
+        "md",
+        "txt",
+        "json",
+        "jsonl",
+        "yaml",
+        "yml",
+        "toml",
+        "css",
+        "scss",
+        "html",
+        "htm",
+        "js",
+        "jsx",
+        "ts",
+        "tsx",
+        "mjs",
+        "cjs",
+        "py",
+        "sh",
+        "bash",
+        "zsh",
+        "fish",
+        "sql",
+        "graphql",
+        "svg",
+        "xml",
+        "csv",
+        "tsv",
+        "env",
+        "gitignore",
+        "dockerignore",
+        "editorconfig",
+        "lock",
+        "just",
+        "dockerfile",
+        "makefile",
+        "cmake",
+        "ini",
+        "cfg",
+        "conf",
+        "log",
+        "rake",
+        "rb",
+        "go",
+        "java",
+        "kt",
+        "swift",
+        "c",
+        "h",
+        "cpp",
+        "hpp",
+        "cc",
+        "m",
+        "mm",
+        "plist",
+        "properties",
+        "gradle",
+        "proto",
+        "vue",
+        "svelte",
+        "astro",
+        "nix",
+        "tf",
+        "hcl",
     ];
     let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
         // 无扩展名：允许常见点文件 / Makefile 等
@@ -601,9 +687,7 @@ pub fn copy_entry_into(src: &Path, dest_dir: &Path) -> Result<PathBuf, String> {
     if !dest_dir.is_dir() {
         return Err("目标不是目录。".into());
     }
-    let name = src
-        .file_name()
-        .ok_or_else(|| "无效路径。".to_string())?;
+    let name = src.file_name().ok_or_else(|| "无效路径。".to_string())?;
     let dest = dest_dir.join(name);
     if dest.exists() {
         return Err(format!("目标已存在：{}", dest.display()));
@@ -639,9 +723,7 @@ pub fn move_entry_into(src: &Path, dest_dir: &Path) -> Result<PathBuf, String> {
     if !dest_dir.is_dir() {
         return Err("目标不是目录。".into());
     }
-    let name = src
-        .file_name()
-        .ok_or_else(|| "无效路径。".to_string())?;
+    let name = src.file_name().ok_or_else(|| "无效路径。".to_string())?;
     let dest = dest_dir.join(name);
     if dest.exists() {
         return Err(format!("目标已存在：{}", dest.display()));
@@ -741,10 +823,7 @@ pub fn clipboard_set_text(text: &str) -> Result<(), String> {
             .spawn()
             .map_err(|e| format!("clip 失败：{e}"))?;
         if let Some(mut stdin) = child.stdin.take() {
-            let utf16: Vec<u8> = text
-                .encode_utf16()
-                .flat_map(|u| u.to_le_bytes())
-                .collect();
+            let utf16: Vec<u8> = text.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
             stdin
                 .write_all(&utf16)
                 .map_err(|e| format!("写入剪贴板失败：{e}"))?;

@@ -20,9 +20,7 @@
 //! ```
 
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::ld_icons::{
-    LdCircleCheck, LdCircleX, LdInfo, LdTriangleAlert,
-};
+use dioxus_free_icons::icons::ld_icons::{LdCircleCheck, LdCircleX, LdInfo, LdTriangleAlert};
 use dioxus_free_icons::Icon;
 
 /// 每条 toast 的显示时长。设计上比标准 1500ms 略长，便于多条堆叠时用户也能看完。

@@ -204,29 +204,27 @@ mod imp {
         if STARTED.swap(true, Ordering::SeqCst) {
             return;
         }
-        std::thread::spawn(|| {
-            loop {
-                std::thread::sleep(std::time::Duration::from_millis(120));
-                super::dispatch_ui_to_main(|| {
-                    let Some(mtm) = MainThreadMarker::new() else {
-                        return;
-                    };
-                    let app = NSApplication::sharedApplication(mtm);
-                    let Some(win) = app.mainWindow().or_else(|| app.keyWindow()) else {
-                        return;
-                    };
-                    let is_key = win.isKeyWindow();
-                    let changed = !HAS_SAMPLE.load(Ordering::SeqCst)
-                        || LAST_KEY.load(Ordering::SeqCst) != is_key;
-                    if !changed {
-                        return;
-                    }
-                    HAS_SAMPLE.store(true, Ordering::SeqCst);
-                    LAST_KEY.store(is_key, Ordering::SeqCst);
-                    inset_traffic_lights(&win);
-                    schedule_traffic_light_appearance_refresh();
-                });
-            }
+        std::thread::spawn(|| loop {
+            std::thread::sleep(std::time::Duration::from_millis(120));
+            super::dispatch_ui_to_main(|| {
+                let Some(mtm) = MainThreadMarker::new() else {
+                    return;
+                };
+                let app = NSApplication::sharedApplication(mtm);
+                let Some(win) = app.mainWindow().or_else(|| app.keyWindow()) else {
+                    return;
+                };
+                let is_key = win.isKeyWindow();
+                let changed =
+                    !HAS_SAMPLE.load(Ordering::SeqCst) || LAST_KEY.load(Ordering::SeqCst) != is_key;
+                if !changed {
+                    return;
+                }
+                HAS_SAMPLE.store(true, Ordering::SeqCst);
+                LAST_KEY.store(is_key, Ordering::SeqCst);
+                inset_traffic_lights(&win);
+                schedule_traffic_light_appearance_refresh();
+            });
         });
     }
 

@@ -243,10 +243,7 @@ pub fn parse_extension_contributes(dir: &Path) -> Result<ExtensionContributes, S
     let v: serde_json::Value =
         serde_json::from_str(&raw).map_err(|e| format!("解析 package.json 失败：{e}"))?;
 
-    let publisher = v
-        .get("publisher")
-        .and_then(|x| x.as_str())
-        .unwrap_or("");
+    let publisher = v.get("publisher").and_then(|x| x.as_str()).unwrap_or("");
     let name = v.get("name").and_then(|x| x.as_str()).unwrap_or("");
     let extension_id = if !publisher.is_empty() && !name.is_empty() {
         format!("{publisher}.{name}")
@@ -257,7 +254,10 @@ pub fn parse_extension_contributes(dir: &Path) -> Result<ExtensionContributes, S
             .to_string()
     };
 
-    let contributes = v.get("contributes").cloned().unwrap_or(serde_json::json!({}));
+    let contributes = v
+        .get("contributes")
+        .cloned()
+        .unwrap_or(serde_json::json!({}));
     let mut grammars = Vec::new();
     if let Some(arr) = contributes.get("grammars").and_then(|x| x.as_array()) {
         for g in arr {
@@ -509,8 +509,8 @@ fn package_display_info(dir: &Path) -> Option<(String, String, bool)> {
         .and_then(|g| g.as_array())
         .map(|a| !a.is_empty())
         .unwrap_or(false);
-    let highlight = has_grammar
-        || is_highlight_extension(&categories, &keywords, &name, &description);
+    let highlight =
+        has_grammar || is_highlight_extension(&categories, &keywords, &name, &description);
     Some((name, description, highlight))
 }
 
@@ -537,11 +537,9 @@ pub fn list_installed_plugins() -> Vec<PluginItem> {
         }
         let id = dirname.to_string();
         let meta = read_install_meta(&path);
-        let stored_icon = meta.as_ref().and_then(|m| {
-            m.icon_url
-                .clone()
-                .filter(|s| !s.trim().is_empty())
-        });
+        let stored_icon = meta
+            .as_ref()
+            .and_then(|m| m.icon_url.clone().filter(|s| !s.trim().is_empty()));
         let icon_url = stored_icon.or_else(|| package_icon_url(&path));
         let pkg = package_display_info(&path);
         let (name, description, source, git_url, homepage, version, highlight) =
@@ -565,10 +563,7 @@ pub fn list_installed_plugins() -> Vec<PluginItem> {
                 } else {
                     m.homepage
                 };
-                let highlight = pkg
-                    .as_ref()
-                    .map(|(_, _, h)| *h)
-                    .unwrap_or(false);
+                let highlight = pkg.as_ref().map(|(_, _, h)| *h).unwrap_or(false);
                 (
                     name,
                     description,
@@ -979,9 +974,11 @@ async fn openvsx_search_raw(
     size: u32,
 ) -> Result<Vec<OpenVsxSearchItem>, String> {
     let client = http_client()?;
-    let mut req = client
-        .get(format!("{OPEN_VSX_API}/-/search"))
-        .query(&[("size", size.to_string()), ("sortBy", "downloadCount".into()), ("sortOrder", "desc".into())]);
+    let mut req = client.get(format!("{OPEN_VSX_API}/-/search")).query(&[
+        ("size", size.to_string()),
+        ("sortBy", "downloadCount".into()),
+        ("sortOrder", "desc".into()),
+    ]);
     if !query.trim().is_empty() {
         req = req.query(&[("query", query)]);
     }
@@ -995,7 +992,10 @@ async fn openvsx_search_raw(
     let status = resp.status().as_u16();
     if !(200..300).contains(&status) {
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Open VSX 搜索失败（HTTP {status}）：{}", body.chars().take(120).collect::<String>()));
+        return Err(format!(
+            "Open VSX 搜索失败（HTTP {status}）：{}",
+            body.chars().take(120).collect::<String>()
+        ));
     }
     let parsed = resp
         .json::<OpenVsxSearchResponse>()
@@ -1391,10 +1391,7 @@ pub fn list_ids_missing_smart_ui() -> Vec<String> {
 }
 
 /// 有缓存则读取，否则扫描项目并用 LLM 生成后写入 `applications/{id}/.pusa-smart-ui.json`。
-pub async fn ensure_smart_ui(
-    id: &str,
-    model: &str,
-) -> Result<protocol::PluginSmartUiDto, String> {
+pub async fn ensure_smart_ui(id: &str, model: &str) -> Result<protocol::PluginSmartUiDto, String> {
     if let Some(dto) = load_smart_ui(id)? {
         return Ok(dto);
     }
@@ -1431,11 +1428,7 @@ pub async fn ensure_missing_smart_uis(
 fn save_smart_ui(dir: &Path, dto: &protocol::PluginSmartUiDto) -> Result<(), String> {
     let path = smart_ui_path(dir);
     let raw = serde_json::to_string_pretty(dto).map_err(|e| e.to_string())?;
-    let tmp = dir.join(format!(
-        "{}.tmp.{}",
-        SMART_UI_FILENAME,
-        std::process::id()
-    ));
+    let tmp = dir.join(format!("{}.tmp.{}", SMART_UI_FILENAME, std::process::id()));
     fs::write(&tmp, &raw).map_err(|e| format!("写入智能 UI 缓存失败：{e}"))?;
     // Windows 上 rename 不能覆盖已有目标，先尝试删除旧文件。
     if path.exists() {
@@ -1599,10 +1592,7 @@ pub fn unwrap_shell_c_command(command: &str) -> String {
     ] {
         if let Some(rest) = t.strip_prefix(prefix) {
             let rest = rest.trim();
-            if rest.len() >= 2
-                && rest.starts_with(quote)
-                && rest.ends_with(quote)
-            {
+            if rest.len() >= 2 && rest.starts_with(quote) && rest.ends_with(quote) {
                 return rest[1..rest.len() - 1].to_string();
             }
         }
@@ -1823,10 +1813,7 @@ mod tests {
 
     #[test]
     fn resolves_when_workspace_is_single_app() {
-        let base = std::env::temp_dir().join(format!(
-            "pusa-app-root-test-{}",
-            std::process::id()
-        ));
+        let base = std::env::temp_dir().join(format!("pusa-app-root-test-{}", std::process::id()));
         let app_dir = base.join("applications").join("MyApp");
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&app_dir).unwrap();
@@ -1837,10 +1824,7 @@ mod tests {
 
     #[test]
     fn resolves_nested_application_under_repo() {
-        let base = std::env::temp_dir().join(format!(
-            "pusa-app-root-repo-{}",
-            std::process::id()
-        ));
+        let base = std::env::temp_dir().join(format!("pusa-app-root-repo-{}", std::process::id()));
         let apps = base.join("applications");
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&apps).unwrap();
@@ -1858,10 +1842,8 @@ mod tests {
 
     #[test]
     fn prefers_legacy_application_dir_if_present() {
-        let base = std::env::temp_dir().join(format!(
-            "pusa-app-root-legacy-{}",
-            std::process::id()
-        ));
+        let base =
+            std::env::temp_dir().join(format!("pusa-app-root-legacy-{}", std::process::id()));
         let legacy = base.join("application");
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&legacy).unwrap();
@@ -1872,10 +1854,7 @@ mod tests {
 
     #[test]
     fn detects_pnpm_over_yarn_lock() {
-        let base = std::env::temp_dir().join(format!(
-            "pusa-pm-detect-{}",
-            std::process::id()
-        ));
+        let base = std::env::temp_dir().join(format!("pusa-pm-detect-{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&base).unwrap();
         fs::write(base.join("pnpm-lock.yaml"), "lockfileVersion: '9.0'\n").unwrap();
@@ -1894,9 +1873,6 @@ mod tests {
             super::rewrite_install_command_for_pm("yarn install", "pnpm").as_deref(),
             Some("pnpm install")
         );
-        assert_eq!(
-            super::yarn_script_to_pnpm("dev"),
-            "pnpm run dev"
-        );
+        assert_eq!(super::yarn_script_to_pnpm("dev"), "pnpm run dev");
     }
 }

@@ -42,7 +42,9 @@ pub async fn list_chat_models_from_v1_base(
     if !key.is_empty() {
         req = req.header("Authorization", &format!("Bearer {key}"));
         if key.starts_with("sk-ant-") {
-            req = req.header("x-api-key", key).header("anthropic-version", "2023-06-01");
+            req = req
+                .header("x-api-key", key)
+                .header("anthropic-version", "2023-06-01");
         }
     }
     let resp = req
@@ -126,7 +128,9 @@ pub async fn probe_v1_models_endpoint(base: &str, api_key: &str) -> bool {
     if !key.is_empty() {
         req = req.header("Authorization", &format!("Bearer {key}"));
         if key.starts_with("sk-ant-") {
-            req = req.header("x-api-key", key).header("anthropic-version", "2023-06-01");
+            req = req
+                .header("x-api-key", key)
+                .header("anthropic-version", "2023-06-01");
         }
     }
     match req.send().await {
@@ -246,15 +250,8 @@ where
     F: FnMut(SseEvent),
 {
     let base = api_base_url();
-    crate::chat::transport_wasm::post_chat_stream(
-        &base,
-        req,
-        abort,
-        None,
-        None,
-        &mut on_event,
-    )
-    .await
+    crate::chat::transport_wasm::post_chat_stream(&base, req, abort, None, None, &mut on_event)
+        .await
 }
 
 /// 非 web feature 的 wasm 构建（理论上不会发生，因 `web` 在 `default-features` 内，
@@ -503,7 +500,9 @@ pub async fn load_roles() -> anyhow::Result<Vec<RoleDto>> {
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
 pub async fn create_role(body: RoleCreateRequest) -> anyhow::Result<RoleDto> {
-    crate::desktop::agent::runtime_ctx()?.role_create(body).await
+    crate::desktop::agent::runtime_ctx()?
+        .role_create(body)
+        .await
 }
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
@@ -515,7 +514,9 @@ pub async fn update_role(id: i64, body: RoleUpdateRequest) -> anyhow::Result<Rol
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
 pub async fn activate_role(id: i64) -> anyhow::Result<RoleDto> {
-    crate::desktop::agent::runtime_ctx()?.role_activate(id).await
+    crate::desktop::agent::runtime_ctx()?
+        .role_activate(id)
+        .await
 }
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "native"))]

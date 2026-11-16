@@ -37,6 +37,15 @@ fn markdown_options() -> Options {
     opts
 }
 
+/// 表格外层包一个横向滚动容器：列多/内容宽时可左右滑动，不撑破气泡。
+fn wrap_tables(html: &str) -> String {
+    if !html.contains("<table>") {
+        return html.to_string();
+    }
+    html.replace("<table>", "<div class=\"ac-chat-md-table-scroll\"><table>")
+        .replace("</table>", "</table></div>")
+}
+
 fn flush_html(buf: &mut String, out: &mut Vec<ChatMdPart>) {
     if buf.is_empty() {
         return;
@@ -44,7 +53,7 @@ fn flush_html(buf: &mut String, out: &mut Vec<ChatMdPart>) {
     let cleaned = ammonia::clean(buf);
     buf.clear();
     if !cleaned.is_empty() {
-        out.push(ChatMdPart::Html(cleaned));
+        out.push(ChatMdPart::Html(wrap_tables(&cleaned)));
     }
 }
 
@@ -380,16 +389,8 @@ pub fn ChatMarkdownBody(content: String) -> Element {
 }
 
 #[component]
-fn ChatCodeBlock(
-    lang: String,
-    path_hint: Option<String>,
-    code: String,
-) -> Element {
-    let path_label = path_hint
-        .as_deref()
-        .unwrap_or("")
-        .trim()
-        .to_string();
+fn ChatCodeBlock(lang: String, path_hint: Option<String>, code: String) -> Element {
+    let path_label = path_hint.as_deref().unwrap_or("").trim().to_string();
     let header_right = if path_label.is_empty() {
         if lang.is_empty() {
             String::new()

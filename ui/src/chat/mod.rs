@@ -9,22 +9,22 @@ mod thinking;
 pub(crate) mod transport_wasm;
 mod ui;
 
-pub use attachments::{
-    attachment_from_file_data, attachment_from_path, attachment_from_terminal_selection,
-    parse_user_message_segments, ChatPendingAttachment, ChatUserSeg,
-};
-pub use composer_ce::{
-    ce_clear, ce_clear_now, ce_focus_end, ce_insert_chip, ce_insert_text, ce_serialize, ce_set_html,
-    chip_html, compose_user_payload, composer_seed_html, composer_seed_html_from_segs,
-    pending_has_path, pending_remove_ids, ComposerBridgeEvent, COMPOSER_ROOT_EDIT,
-    COMPOSER_ROOT_MAIN, INSTALL_BRIDGE_JS,
-};
 #[cfg(target_arch = "wasm32")]
 pub use attachments::attachment_from_bytes;
 #[cfg(not(target_arch = "wasm32"))]
 pub use attachments::desktop_paste;
 #[cfg(target_arch = "wasm32")]
 pub use attachments::wasm_paste;
+pub use attachments::{
+    attachment_from_file_data, attachment_from_path, attachment_from_terminal_selection,
+    parse_user_message_segments, ChatPendingAttachment, ChatUserSeg,
+};
+pub use composer_ce::{
+    ce_clear, ce_clear_now, ce_focus_end, ce_insert_chip, ce_insert_text, ce_restore_take,
+    ce_set_html, ce_set_html_wait, ce_take, chip_html, compose_user_payload, composer_seed_html,
+    composer_seed_html_from_segs, pending_has_path, pending_remove_ids, ComposerBridgeEvent,
+    COMPOSER_ROOT_EDIT, COMPOSER_ROOT_MAIN, INSTALL_BRIDGE_JS,
+};
 pub use error_text::friendly_chat_error_message;
 #[cfg(target_arch = "wasm32")]
 pub use facade::api_base_url;

@@ -6,13 +6,13 @@ use dioxus::prelude::*;
 pub mod shell;
 pub use shell::{Console, StatusBar};
 
-mod version;
-mod icons;
 mod chat;
-mod custom_chat_models;
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
 pub mod components;
+mod custom_chat_models;
+mod icons;
 mod persona;
+mod version;
 #[cfg(target_arch = "wasm32")]
 mod web;
 
@@ -29,29 +29,53 @@ pub fn serve_html_preview(uri: &str) -> Result<(&'static str, Vec<u8>), u16> {
 pub const HTML_PREVIEW_PROTOCOL: &str = desktop::html_preview::PROTOCOL_NAME;
 
 // favicon：浏览器原生 .ico（多尺寸打包，桌面浏览器最兼容）
-#[cfg(any(all(target_arch = "wasm32", feature = "web"), all(not(target_arch = "wasm32"), feature = "native")))]
+#[cfg(any(
+    all(target_arch = "wasm32", feature = "web"),
+    all(not(target_arch = "wasm32"), feature = "native")
+))]
 const FAVICON: Asset = asset!("/assets/icons/favicon.ico");
 // apple-touch-icon：iOS Safari「添加到主屏」用，挂最大的 180x180，iOS 会按需缩放
-#[cfg(any(all(target_arch = "wasm32", feature = "web"), all(not(target_arch = "wasm32"), feature = "native")))]
+#[cfg(any(
+    all(target_arch = "wasm32", feature = "web"),
+    all(not(target_arch = "wasm32"), feature = "native")
+))]
 const APPLE_TOUCH_ICON: Asset = asset!("/assets/icons/apple-touch-icon-180x180.png");
-#[cfg(any(all(target_arch = "wasm32", feature = "web"), all(not(target_arch = "wasm32"), feature = "native")))]
+#[cfg(any(
+    all(target_arch = "wasm32", feature = "web"),
+    all(not(target_arch = "wasm32"), feature = "native")
+))]
 const COLORS_CSS: Asset = asset!("/assets/css/colors.css");
-#[cfg(any(all(target_arch = "wasm32", feature = "web"), all(not(target_arch = "wasm32"), feature = "native")))]
+#[cfg(any(
+    all(target_arch = "wasm32", feature = "web"),
+    all(not(target_arch = "wasm32"), feature = "native")
+))]
 const MAIN_CSS: Asset = asset!("/assets/css/main.css");
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
 const DX_COMPONENTS_THEME_CSS: Asset = asset!("/assets/css/dx-components-theme.css");
-#[cfg(any(all(target_arch = "wasm32", feature = "web"), all(not(target_arch = "wasm32"), feature = "native")))]
+#[cfg(any(
+    all(target_arch = "wasm32", feature = "web"),
+    all(not(target_arch = "wasm32"), feature = "native")
+))]
 const TAILWIND_CSS: Asset = asset!("/assets/css/tailwind.css");
 
 /// 中文正文：Source Han Sans HW SC Regular。
-#[cfg(any(all(target_arch = "wasm32", feature = "web"), all(not(target_arch = "wasm32"), feature = "native")))]
+#[cfg(any(
+    all(target_arch = "wasm32", feature = "web"),
+    all(not(target_arch = "wasm32"), feature = "native")
+))]
 const SOURCE_HAN_SANS_HWSC_REGULAR: Asset = asset!("/assets/fonts/SourceHanSansHWSC-Regular.otf");
 /// 中文加粗：Source Han Sans HW SC Bold。
-#[cfg(any(all(target_arch = "wasm32", feature = "web"), all(not(target_arch = "wasm32"), feature = "native")))]
+#[cfg(any(
+    all(target_arch = "wasm32", feature = "web"),
+    all(not(target_arch = "wasm32"), feature = "native")
+))]
 const SOURCE_HAN_SANS_HWSC_BOLD: Asset = asset!("/assets/fonts/SourceHanSansHWSC-Bold.otf");
 
 /// 将 `asset!` 解析后的 URL 写入 `@font-face`，与 `rel=preload` 同源，避免 `main.css` 写死 `/assets/fonts/…` 在 dx 下 404/HTML。
-#[cfg(any(all(target_arch = "wasm32", feature = "web"), all(not(target_arch = "wasm32"), feature = "native")))]
+#[cfg(any(
+    all(target_arch = "wasm32", feature = "web"),
+    all(not(target_arch = "wasm32"), feature = "native")
+))]
 fn source_han_sans_hwsc_font_face_css() -> String {
     format!(
         r#"@font-face{{font-family:"Source Han Sans HW SC";src:url("{regular}")format("opentype");font-weight:400;font-style:normal;font-display:swap;}}@font-face{{font-family:"Source Han Sans HW SC";src:url("{bold}")format("opentype");font-weight:700;font-style:normal;font-display:swap;}}"#,
@@ -59,7 +83,6 @@ fn source_han_sans_hwsc_font_face_css() -> String {
         bold = SOURCE_HAN_SANS_HWSC_BOLD,
     )
 }
-
 
 #[cfg(all(
     feature = "native",
@@ -106,6 +129,7 @@ fn WebAppShell() -> Element {
     let mut show_settings_modal = use_signal(|| false);
     let show_about_modal = use_signal(|| false);
     let show_titlebar_settings_menu = use_signal(|| false);
+    let show_font_size_modal = use_signal(|| false);
     let developer_mode = use_signal(crate::shell::dev_mode::load);
     // 必须在子组件首次 `use_toast()` 之前调用：把全局 toast ctx 注入到 Dioxus context。
     let _toast_ctx = use_init_toast_ctx();
@@ -118,6 +142,7 @@ fn WebAppShell() -> Element {
 
     use_effect(move || {
         crate::shell::theme::restore_on_launch();
+        crate::shell::theme::restore_font_size_on_launch();
     });
 
     use_context_provider(|| crate::shell::dev_mode::DeveloperMode(developer_mode));
@@ -125,6 +150,7 @@ fn WebAppShell() -> Element {
         show_settings_modal,
         show_about_modal,
         show_titlebar_settings_menu,
+        show_font_size_modal,
         developer_mode,
     });
     let open_browser_tick = use_signal(|| 0u64);
@@ -185,6 +211,11 @@ fn WebAppShell() -> Element {
             }
             if show_about_modal() {
                 WebAboutModal { show_about_modal }
+            }
+            if show_font_size_modal() {
+                crate::shell::theme::FontSizeModal {
+                    show_font_size_modal,
+                }
             }
             ToastViewport {}
         }

@@ -17,7 +17,8 @@ const STL_VIEWER_FILE: &str = "__pusa_stl_viewer__.html";
 /// 内置 Office 查看器（docx/xlsx/pptx + 旧版 doc/xls/ppt；JS 库随仓库 vendoring，离线可用）。
 const OFFICE_VIEWER_HTML: &str = include_str!("../../assets/office-viewer/index.html");
 const OFFICE_VIEWER_FILE: &str = "__pusa_office_viewer__.html";
-const OFFICE_MAMMOTH_JS: &[u8] = include_bytes!("../../assets/office-viewer/mammoth.browser.min.js");
+const OFFICE_MAMMOTH_JS: &[u8] =
+    include_bytes!("../../assets/office-viewer/mammoth.browser.min.js");
 const OFFICE_XLSX_JS: &[u8] = include_bytes!("../../assets/office-viewer/xlsx.full.min.js");
 const OFFICE_JSZIP_JS: &[u8] = include_bytes!("../../assets/office-viewer/jszip.min.js");
 const OFFICE_MAMMOTH_FILE: &str = "__pusa_office_mammoth.min.js";
@@ -42,25 +43,21 @@ pub fn is_pdf_path(path: &Path) -> bool {
 }
 
 pub fn is_image_path(path: &Path) -> bool {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| {
-            matches!(
-                e.to_ascii_lowercase().as_str(),
-                "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "ico" | "bmp" | "avif"
-            )
-        })
+    path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+        matches!(
+            e.to_ascii_lowercase().as_str(),
+            "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "ico" | "bmp" | "avif"
+        )
+    })
 }
 
 pub fn is_audio_path(path: &Path) -> bool {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| {
-            matches!(
-                e.to_ascii_lowercase().as_str(),
-                "mp3" | "wav" | "ogg" | "oga" | "m4a" | "aac" | "flac" | "opus" | "webm"
-            )
-        })
+    path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+        matches!(
+            e.to_ascii_lowercase().as_str(),
+            "mp3" | "wav" | "ogg" | "oga" | "m4a" | "aac" | "flac" | "opus" | "webm"
+        )
+    })
 }
 
 /// 图片预览：`pusapreview` 直接回源文件，供 `<img src>` 加载。
@@ -118,10 +115,6 @@ pub fn audio_duration_secs(audio_path: &Path) -> Option<f64> {
         "m4a" | "aac" | "webm" => None,
         _ => None,
     }
-}
-
-fn read_u16_le(data: &[u8], at: usize) -> Option<u16> {
-    Some(u16::from_le_bytes(data.get(at..at + 2)?.try_into().ok()?))
 }
 
 fn read_u32_le(data: &[u8], at: usize) -> Option<u32> {
@@ -234,16 +227,19 @@ fn mp3_duration_secs(data: &[u8]) -> Option<f64> {
     };
     // Layer III bitrates (kbps), MPEG1 / MPEG2.
     let bitrate = if mpeg1 {
-        [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0][bitrate_idx]
+        [
+            0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0,
+        ][bitrate_idx]
     } else {
-        [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0][bitrate_idx]
+        [
+            0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0,
+        ][bitrate_idx]
     } as f64;
     if bitrate <= 0.0 {
         return None;
     }
     let samples_per_frame = if mpeg1 { 1152.0 } else { 576.0 };
-    let frame_len = ((samples_per_frame / 8.0 * bitrate * 1000.0 / sample_rate)
-        + padding as f64)
+    let frame_len = ((samples_per_frame / 8.0 * bitrate * 1000.0 / sample_rate) + padding as f64)
         .floor() as usize;
     // Xing/Info after side info.
     let side = if mpeg1 { 36 } else { 21 };
@@ -397,10 +393,7 @@ pub fn is_legacy_office_path(path: &Path) -> bool {
 
 /// 可预览的 Office：OOXML + 旧版 .doc/.xls/.ppt。
 pub fn is_office_path(path: &Path) -> bool {
-    is_docx_path(path)
-        || is_xlsx_path(path)
-        || is_pptx_path(path)
-        || is_legacy_office_path(path)
+    is_docx_path(path) || is_xlsx_path(path) || is_pptx_path(path) || is_legacy_office_path(path)
 }
 
 /// 准备预览文件：旧版必要时先转 OOXML，再注册 `pusapreview` 站点。
@@ -477,9 +470,7 @@ pub fn office_preview_srcdoc(office_path: &Path, theme: &str) -> Result<String, 
         "theme": theme
     });
     let cfg_js = cfg.to_string().replace("</", "<\\/");
-    let tag = format!(
-        r#"<base href="{base}"><script>window.__PUSA_OFFICE__={cfg_js};</script>"#
-    );
+    let tag = format!(r#"<base href="{base}"><script>window.__PUSA_OFFICE__={cfg_js};</script>"#);
     Ok(inject_head(OFFICE_VIEWER_HTML, &tag))
 }
 
@@ -777,10 +768,7 @@ mod audio_duration_tests {
         let dir = std::env::temp_dir().join("pusa_audio_dur_test");
         let _ = fs::create_dir_all(&dir);
         let path = dir.join("one_sec.wav");
-        fs::File::create(&path)
-            .unwrap()
-            .write_all(&wav)
-            .unwrap();
+        fs::File::create(&path).unwrap().write_all(&wav).unwrap();
         let secs = audio_duration_secs(&path).expect("wav duration");
         assert!((secs - 1.0).abs() < 0.01, "got {secs}");
     }

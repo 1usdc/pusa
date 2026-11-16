@@ -412,15 +412,85 @@ pub const INSTALL_BRIDGE_JS: &str = r#"(async () => {
     });
   };
 
+  /**
+   * 软换行（Shift+Enter）：在 caret 处插 `<br>` + ZWS。
+   * 末尾只插 `<br>` 时浏览器不产生新行高，必须跟一个零宽文本节点撑开空行。
+   */
+  const insertLineBreak = (id) => {
+    const el = rootEl(id);
+    if (!el) return false;
+    el.focus();
+    return withSuppress(() => {
+      const sel = window.getSelection();
+      if (!sel) return false;
+      let range;
+      if (sel.rangeCount > 0 && el.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+        range = sel.getRangeAt(0).cloneRange();
+      } else {
+        range = document.createRange();
+        range.selectNodeContents(el);
+        range.collapse(false);
+      }
+      range.deleteContents();
+      const zws = document.createTextNode('\u200b');
+      const frag = document.createDocumentFragment();
+      frag.appendChild(document.createElement('br'));
+      frag.appendChild(zws);
+      range.insertNode(frag);
+      placeCaretInText(zws, (zws.nodeValue || '').length);
+      saveCaret(el);
+      syncEmptyClass(el);
+      return isSendable(el);
+    });
+  };
+
   const clear = (id) => {
     const el = rootEl(id);
     if (!el) return false;
     delete lastCaret[id];
+    if (window.__acComposerLastTake) delete window.__acComposerLastTake[id];
     return withSuppress(() => {
       // 逐个移除，避免部分 WebView 上 innerHTML='' 后仍绘出旧层。
       while (el.firstChild) el.removeChild(el.firstChild);
       el.textContent = '';
       el.classList.add('is-empty');
+      return true;
+    });
+  };
+
+  if (!window.__acComposerLastTake) window.__acComposerLastTake = Object.create(null);
+
+  /**
+   * 原子「取走」：同一个 JS tick 里读快照 + 清空 DOM。
+   * 发送走这里，避免「序列化」「清空」两次异步 eval 之间的时序丢失导致输入框残留旧内容。
+   */
+  const take = (id) => {
+    const el = rootEl(id);
+    if (!el) return { text: '', attach_ids: [], parts: [] };
+    const snap = serialize(id);
+    if (isSendable(el)) window.__acComposerLastTake[id] = el.innerHTML;
+    delete lastCaret[id];
+    withSuppress(() => {
+      while (el.firstChild) el.removeChild(el.firstChild);
+      el.textContent = '';
+      el.classList.add('is-empty');
+    });
+    return snap;
+  };
+
+  /** 前置校验拦下发送时，把刚取走的内容放回（仅当输入区仍为空，避免覆盖用户新输入）。 */
+  const restoreTake = (id) => {
+    const el = rootEl(id);
+    const html = window.__acComposerLastTake[id];
+    if (!el || html == null) return false;
+    delete window.__acComposerLastTake[id];
+    if (isSendable(el)) return false;
+    return withSuppress(() => {
+      el.innerHTML = html;
+      flattenNestedChips(el);
+      ensureChipAnchors(el);
+      syncEmptyClass(el);
+      focusEnd(id);
       return true;
     });
   };
@@ -664,8 +734,8 @@ pub const INSTALL_BRIDGE_JS: &str = r#"(async () => {
     document.querySelectorAll('[data-ac-composer]').forEach(observeRoot);
   };
 
-  if (window.__acComposerDocBound !== 9) {
-    window.__acComposerDocBound = 9;
+  if (window.__acComposerDocBound !== 10) {
+    window.__acComposerDocBound = 10;
 
     // 粘贴统一转纯文本：网页/Word/IDE 复制来的 HTML、颜色、字体、链接、<div>/<br> 结构
     // 一律只保留文字。含文件（截图/图片）的粘贴不拦截，交给 attachments.rs 的 capture 钩子。
@@ -833,6 +903,16 @@ pub const INSTALL_BRIDGE_JS: &str = r#"(async () => {
     document.addEventListener('keydown', (e) => {
       const el = e.target && e.target.closest ? e.target.closest('[data-ac-composer]') : null;
       if (!el) return;
+      // Shift+Enter：在 JS 侧同步插软换行，不依赖 Rust 事件里的修饰键与异步 eval。
+      // stopPropagation 后 Rust 的 Enter=发送 不会再收到该事件。
+      if (e.key === 'Enter') {
+        if (!e.shiftKey || e.isComposing || e.keyCode === 229) return;
+        if (el.getAttribute('contenteditable') === 'false') return;
+        e.preventDefault();
+        e.stopPropagation();
+        insertLineBreak(el.getAttribute('data-ac-composer'));
+        return;
+      }
       if (e.key === 'Home') {
         e.preventDefault();
         ensureChipAnchors(el);
@@ -970,8 +1050,11 @@ pub const INSTALL_BRIDGE_JS: &str = r#"(async () => {
 
   window.__acComposer = {
     serialize,
+    take,
+    restoreTake,
     insertChip,
     insertText,
+    insertLineBreak,
     clear,
     setHtml,
     focusEnd,
@@ -1123,7 +1206,10 @@ fn prefer_snippet_chip_segs(
         }
     }
     for snip in snippets {
-        if !out.iter().any(|s| matches!(s, ChatUserSeg::Attachment(a) if a.id == snip.id)) {
+        if !out
+            .iter()
+            .any(|s| matches!(s, ChatUserSeg::Attachment(a) if a.id == snip.id))
+        {
             out.push(ChatUserSeg::Attachment(snip));
         }
     }
@@ -1311,13 +1397,13 @@ pub fn ce_insert_text(root: &str, text: &str) {
     let _ = document::eval(&script);
 }
 
-/// 清空 composer；`await` 以确保发送路径在 bump epoch 前 DOM 已干净。
+/// 清空 composer 并等待 JS 执行完成（挂载/切会话等需要确认已清空的路径）。
 pub async fn ce_clear(root: &str) {
     let script = format!(
         r#"return !!(window.__acComposer && window.__acComposer.clear({}));"#,
         js_str(root)
     );
-    let mut eval = document::eval(&script);
+    let eval = document::eval(&script);
     let _ = eval.join::<bool>().await;
 }
 
@@ -1339,6 +1425,24 @@ pub fn ce_set_html(root: &str, html: &str) {
     let _ = document::eval(&script);
 }
 
+/// 与 `ce_set_html` 相同，但等待 JS 执行完成（重试等需要严格「先写入再发送」时序的路径）。
+pub async fn ce_set_html_wait(root: &str, html: &str) {
+    let script = format!(
+        "return !!(window.__acComposer && window.__acComposer.setHtml({}, {}));",
+        js_str(root),
+        js_str(html)
+    );
+    let _ = document::eval(&script).join::<bool>().await;
+}
+
+pub fn ce_restore_take(root: &str) {
+    let script = format!(
+        "window.__acComposer && window.__acComposer.restoreTake({});",
+        js_str(root)
+    );
+    let _ = document::eval(&script);
+}
+
 pub fn ce_focus_end(root: &str) {
     let script = format!(
         "window.__acComposer && window.__acComposer.focusEnd({});",
@@ -1347,15 +1451,17 @@ pub fn ce_focus_end(root: &str) {
     let _ = document::eval(&script);
 }
 
-pub async fn ce_serialize(root: &str) -> ComposerDomSnapshot {
+/// 原子取快照并清空 DOM；返回 `None` 表示 JS 侧未执行成功（此时不动输入框）。
+pub async fn ce_take(root: &str) -> Option<ComposerDomSnapshot> {
     let script = format!(
-        "return (window.__acComposer && window.__acComposer.serialize({})) || {{ text: '', attach_ids: [], parts: [] }};",
+        "return (window.__acComposer && window.__acComposer.take({})) || null;",
         js_str(root)
     );
-    match document::eval(&script).join::<ComposerDomSnapshot>().await {
-        Ok(snap) => snap,
-        Err(_) => ComposerDomSnapshot::default(),
-    }
+    document::eval(&script)
+        .join::<Option<ComposerDomSnapshot>>()
+        .await
+        .ok()
+        .flatten()
 }
 
 #[allow(dead_code)]

@@ -41,11 +41,7 @@ enum ConvertKind {
     Ppt,
 }
 
-fn convert_or_passthrough(
-    src: &Path,
-    out_ext: &str,
-    kind: ConvertKind,
-) -> Result<PathBuf, String> {
+fn convert_or_passthrough(src: &Path, out_ext: &str, kind: ConvertKind) -> Result<PathBuf, String> {
     match try_convert(src, out_ext, kind) {
         Ok(converted) => Ok(converted),
         Err(err) => {
@@ -93,25 +89,23 @@ fn try_convert(src: &Path, out_ext: &str, kind: ConvertKind) -> Result<PathBuf, 
                 Err(e) => errors.push(e),
             }
         }
-        ConvertKind::Ppt => match convert_via_soffice(
-            src,
-            out.parent().unwrap_or(Path::new(".")),
-            out_ext,
-        ) {
-            Ok(p) => {
-                if p != out {
-                    let _ = fs::rename(&p, &out).or_else(|_| fs::copy(&p, &out).map(|_| ()));
+        ConvertKind::Ppt => {
+            match convert_via_soffice(src, out.parent().unwrap_or(Path::new(".")), out_ext) {
+                Ok(p) => {
+                    if p != out {
+                        let _ = fs::rename(&p, &out).or_else(|_| fs::copy(&p, &out).map(|_| ()));
+                    }
+                    if out.is_file() {
+                        return Ok(out);
+                    }
+                    if p.is_file() {
+                        return Ok(p);
+                    }
+                    errors.push("LibreOffice 转换后未找到输出文件。".into());
                 }
-                if out.is_file() {
-                    return Ok(out);
-                }
-                if p.is_file() {
-                    return Ok(p);
-                }
-                errors.push("LibreOffice 转换后未找到输出文件。".into());
+                Err(e) => errors.push(e),
             }
-            Err(e) => errors.push(e),
-        },
+        }
     }
 
     Err(format_convert_error(kind, &errors))
@@ -246,7 +240,13 @@ fn cached_output_path(src: &Path, out_ext: &str) -> Result<PathBuf, String> {
     // 安全文件名：去掉路径分隔符。
     let safe_stem: String = stem
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     Ok(std::env::temp_dir()
         .join("pusa-office-preview")
@@ -284,13 +284,13 @@ fn find_soffice_uncached() -> Option<PathBuf> {
             "/Applications/LibreOffice.app/Contents/MacOS/soffice",
         ));
         // Homebrew Cask 未 link 到 /Applications 时仍可能在 Caskroom。
-        for base in ["/opt/homebrew/Caskroom/libreoffice", "/usr/local/Caskroom/libreoffice"]
-        {
+        for base in [
+            "/opt/homebrew/Caskroom/libreoffice",
+            "/usr/local/Caskroom/libreoffice",
+        ] {
             if let Ok(rd) = fs::read_dir(base) {
                 for ent in rd.flatten() {
-                    let p = ent
-                        .path()
-                        .join("LibreOffice.app/Contents/MacOS/soffice");
+                    let p = ent.path().join("LibreOffice.app/Contents/MacOS/soffice");
                     candidates.push(p);
                 }
             }
@@ -311,12 +311,8 @@ fn find_soffice_uncached() -> Option<PathBuf> {
     {
         candidates.push(PathBuf::from("/usr/bin/soffice"));
         candidates.push(PathBuf::from("/usr/bin/libreoffice"));
-        candidates.push(PathBuf::from(
-            "/usr/lib/libreoffice/program/soffice",
-        ));
-        candidates.push(PathBuf::from(
-            "/snap/bin/libreoffice",
-        ));
+        candidates.push(PathBuf::from("/usr/lib/libreoffice/program/soffice"));
+        candidates.push(PathBuf::from("/snap/bin/libreoffice"));
     }
 
     candidates.into_iter().find(|p| soffice_usable(p))
@@ -357,9 +353,7 @@ fn which(name: &str) -> Option<PathBuf> {
 }
 
 fn path_to_file_uri(path: &Path) -> String {
-    let abs = path
-        .canonicalize()
-        .unwrap_or_else(|_| path.to_path_buf());
+    let abs = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
     let s = abs.to_string_lossy();
     #[cfg(target_os = "windows")]
     {

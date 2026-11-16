@@ -1,3 +1,11 @@
+# 重点流程
+# just push # 推送代码到 Git，同时推送两个仓库
+# just desktop-mac # 打包 macOS 桌面应用
+# just release-mac # 发布 macOS 版本（发布前需要推送到仓库）
+# just desktop-windows # 打包 Windows 桌面应用
+# just release-windows # 发布 Windows 版本
+# just version # 查看当前版本号和仓库打包版本号
+
 # 从 docker/.env 注入环境（compose / just server 共用）
 
 set dotenv-path := "docker/.env"
@@ -107,3 +115,12 @@ push:
 [windows]
 push:
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\push.ps1
+
+# 查看当前版本号和仓库打包版本号
+[unix]
+version:
+    @bash scripts/version.sh
+
+[windows]
+version:
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\version.ps1

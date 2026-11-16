@@ -50,6 +50,19 @@ html {
     }
 }
 
+/* 字体大小设置：优先级高于媒体查询 */
+html[data-font-size="small"] {
+    font-size: 14px !important;
+}
+
+html[data-font-size="medium"] {
+    font-size: 16px !important;
+}
+
+html[data-font-size="large"] {
+    font-size: 18px !important;
+}
+
 html,
 body,
 button,
@@ -1105,9 +1118,9 @@ html[data-theme="dark"] .ac-native-caption-icon-restore::after {
     z-index: 1300;
 }
 
-.ac-sidebar:has(.ac-fs-ctx-open) .ac-sidebar-scroll {
-    overflow: visible;
-}
+/* 注意：不要改 .ac-sidebar-scroll 的 overflow。它一旦从 auto 变 visible，
+   文件树就失去高度约束、被内容撑高，scrollTop 被重置为 0（列表跳回顶部）。
+   菜单是 position: fixed，本身不会被该 overflow 裁切。 */
 
 /* 显式收起：先保留在 DOM 内，宽度插值到 0，再切到 .ac-sidebar-hidden */
 .ac-sidebar.ac-sidebar-shutting {
@@ -2642,7 +2655,8 @@ html[data-theme="dark"] .ac-audio-preview-card {
 }
 
 .ac-terminal-body--xterm {
-    padding: 4px 0 0 8px;
+    /* 留白放在外层，xterm 自身高度 100% 不再叠加 padding，避免末行被裁切。 */
+    padding: 4px 0 6px 8px;
     background: #ffffff;
 }
 
@@ -2666,11 +2680,32 @@ html[data-theme="dark"] .ac-xterm-host {
 
 .ac-xterm-host .xterm {
     height: 100%;
-    padding-bottom: 4px;
 }
 
 .ac-xterm-host .xterm-viewport {
     overflow-y: auto !important;
+    /* VSCode 风格：细滚动条、透明轨道 */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(121, 121, 121, 0.4) transparent;
+}
+
+.ac-xterm-host .xterm-viewport::-webkit-scrollbar {
+    width: 10px;
+}
+
+.ac-xterm-host .xterm-viewport::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.ac-xterm-host .xterm-viewport::-webkit-scrollbar-thumb {
+    background-color: rgba(121, 121, 121, 0.4);
+    background-clip: content-box;
+    border: 2px solid transparent;
+    border-radius: 5px;
+}
+
+.ac-xterm-host .xterm-viewport::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(100, 100, 100, 0.7);
 }
 
 .ac-terminal-output {
@@ -2988,17 +3023,6 @@ html[data-theme="dark"] .ac-xterm-host {
 .ac-sidebar-files-action:hover {
     color: var(--secondary-color-1);
     background: color-mix(in srgb, var(--primary-color-2) 70%, transparent);
-}
-
-.ac-sidebar-files-notice {
-    margin: 0 0.35rem;
-    padding: 0.35rem 0.45rem;
-    border-radius: 0.35rem;
-    font-size: 0.7rem;
-    font-weight: 600;
-    color: var(--ac-color-92400e);
-    background: var(--ac-color-fffbeb);
-    border: 1px solid var(--ac-color-fde68a);
 }
 
 .ac-sidebar-files-create {
@@ -3371,17 +3395,6 @@ html[data-theme="dark"] .ac-xterm-host {
 .ac-search-filter-input::placeholder {
     color: var(--secondary-color-3);
     opacity: 0.8;
-}
-
-.ac-sidebar-search-notice {
-    margin: 0 0.35rem;
-    padding: 0.3rem 0.45rem;
-    border-radius: 0.35rem;
-    font-size: 0.7rem;
-    font-weight: 600;
-    color: var(--secondary-color-1);
-    background: color-mix(in srgb, var(--brand) 12%, var(--primary-color-1));
-    border: 1px solid color-mix(in srgb, var(--brand) 28%, var(--border-color-light));
 }
 
 .ac-sidebar-search-summary {
@@ -9048,6 +9061,39 @@ button.ac-scope-pair-input.ac-builder-model-dropdown-trigger {
     flex-direction: column;
 }
 
+/* 聊天栏左边缘：提问导航短条（最多 10 个，当前项深色） */
+.ac-chat-nav {
+    position: absolute;
+    left: 3px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 7px;
+    padding: 2px 0;
+}
+
+.ac-chat-nav-dot {
+    width: 15px;
+    height: 4px;
+    padding: 0;
+    border: 0;
+    border-radius: 2px;
+    background: #d5d5d5;
+    cursor: pointer;
+    transition: background 0.12s ease;
+}
+
+.ac-chat-nav-dot:hover {
+    background: #a8a8a8;
+}
+
+.ac-chat-nav-dot.is-current {
+    background: #1a1a1a;
+}
+
 .ac-chat-thread {
     min-width: 0;
     min-height: 0;
@@ -9635,9 +9681,18 @@ button.ac-chat-trace-primary.is-link:hover {
     background: var(--primary-color-1);
 }
 
-.ac-chat-md table {
-    width: 100%;
+/* 表格横向滚动容器：列多/内容宽时可左右滑动，不撑破气泡 */
+.ac-chat-md-table-scroll {
+    max-width: 100%;
     margin: 0.55em 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+}
+
+.ac-chat-md table {
+    width: max-content;
+    min-width: 100%;
+    margin: 0;
     border-collapse: collapse;
     font-size: 0.8rem;
 }
@@ -10318,7 +10373,7 @@ button.ac-chat-trace-primary.is-link:hover {
 .ac-chat-composer-ce .ac-chat-attach-chip,
 .ac-chat-bubble-user .ac-chat-attach-chip {
     display: inline-flex;
-    vertical-align: text-bottom;
+    vertical-align: middle;
     margin: 0 0.22rem 0 0.18rem;
     user-select: none;
     -webkit-user-select: none;
@@ -11179,8 +11234,8 @@ button.ac-chat-trace-primary.is-link:hover {
     align-items: center;
     gap: 0.3rem;
     max-width: 12rem;
-    min-height: 1.55rem;
-    padding: 0.1rem 0.45rem 0.1rem 0.3rem;
+    min-height: 1.6rem;
+    padding: 0.1rem 0.3rem 0.1rem 0.3rem;
     border-radius: 0.45rem;
     border: 0;
     background: var(--ac-chat-attach-file-bg);
@@ -11212,8 +11267,8 @@ button.ac-chat-trace-primary.is-link:hover {
 .ac-chat-attach-chip-icon {
     position: relative;
     flex-shrink: 0;
-    width: 1.15rem;
-    height: 1.15rem;
+    width: 1rem;
+    height: 1rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -11227,9 +11282,16 @@ button.ac-chat-trace-primary.is-link:hover {
     color: inherit;
 }
 
+.ac-chat-attach-chip-type-icon svg {
+    display: block;
+    width: 0.75rem;
+    height: 0.75rem;
+}
+
 .ac-chat-attach-chip-name {
-    font-size: 0.72rem;
+    font-size: 0.66rem;
     font-weight: 650;
+    line-height: 1.15;
     color: inherit;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -12146,6 +12208,56 @@ button.ac-chat-trace-primary.is-link:hover {
     font-weight: 600;
     color: var(--ac-color-0f172a);
     word-break: break-word;
+}
+
+/* 字体大小选项 */
+.ac-font-size-options {
+    display: flex;
+    gap: 0.75rem;
+    padding: 1rem 0;
+}
+
+.ac-font-size-option {
+    flex: 1;
+    padding: 0.75rem 1rem;
+    border: 2px solid var(--ac-color-e2e8f0);
+    border-radius: 0.5rem;
+    background: var(--ac-color-f8fafc);
+    color: var(--ac-color-0f172a);
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.ac-font-size-option:hover {
+    background: var(--ac-color-f1f5f9);
+    border-color: var(--ac-color-cbd5e1);
+}
+
+.ac-font-size-option.ac-font-size-option--active {
+    background: var(--primary-color-2) !important;
+    border: none !important;
+    color: #000000 !important;
+    font-weight: 600 !important;
+}
+
+[data-theme="dark"] .ac-font-size-option {
+    background: var(--ac-color-1e293b);
+    border-color: var(--ac-color-334155);
+    color: var(--ac-color-f1f5f9);
+}
+
+[data-theme="dark"] .ac-font-size-option:hover {
+    background: var(--ac-color-334155);
+    border-color: var(--ac-color-475569);
+}
+
+[data-theme="dark"] .ac-font-size-option.ac-font-size-option--active {
+    background: var(--primary-color-2) !important;
+    border: none !important;
+    color: #ffffff !important;
+    font-weight: 600 !important;
 }
 
 .ac-about-row-tappable {

@@ -4,21 +4,33 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use dioxus::prelude::*;
-use dioxus_free_icons::Icon;
 use dioxus_free_icons::icons::ld_icons::{
     LdCaseSensitive, LdCaseUpper, LdChevronDown, LdChevronRight, LdFile, LdRefreshCw, LdRegex,
     LdReplaceAll, LdSearch, LdWholeWord, LdX,
 };
+use dioxus_free_icons::Icon;
 use keyboard_types::Key;
 
 use crate::icons::AiOutlineVerticalAlignBottom;
 
-const SEARCH_DEBOUNCE_MS: u64 = 220;
+const SEARCH_DEBOUNCE_MS: u64 = 80;
 const SEARCH_TIMEOUT_SECS: u64 = 25;
 const MAX_MATCHES: usize = 2000;
 const MAX_FILES: usize = 200;
 const MAX_FILES_SCANNED: usize = 8_000;
 const MAX_LINE_CHARS: usize = 240;
+/// 结果自动展开的文件数，其余默认折叠。
+const AUTO_EXPAND_FILES: usize = 5;
+/// 文件数超过该值时启用虚拟滚动，只渲染可见区域。
+const VIRTUAL_MIN_FILES: usize = 50;
+const VIRTUAL_OVERSCAN: usize = 4;
+/// 虚拟滚动用的估算行高（与 CSS 实际高度允许有偏差）。
+const EST_FILE_HEAD_PX: f64 = 28.0;
+const EST_HIT_ROW_PX: f64 = 22.0;
+const EST_VIEWPORT_PX: f64 = 560.0;
+/// 流式推送节奏：每累积这么多条匹配、或距上次推送超过 50ms，就发一次快照。
+const STREAM_FLUSH_MATCHES: usize = 24;
+const STREAM_FLUSH_MS: u64 = 50;
 const SKIP_DIR_NAMES: &[&str] = &[
     ".git",
     "node_modules",
@@ -73,6 +85,22 @@ struct SearchRequest {
     exclude: String,
 }
 
+/// 文件组展开状态：`open` 为当前展开集合；`user_collapsed` 记录用户手动折叠过的路径，
+/// 流式追加结果时不再自动展开它们，避免打断用户操作。
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct ExpandState {
+    open: HashSet<String>,
+    user_collapsed: HashSet<String>,
+}
+
+/// 流式搜索事件：搜索线程边扫边推，UI 增量渲染。
+#[derive(Clone, Debug)]
+enum SearchEvent {
+    Progress(SearchOutcome),
+    Done(SearchOutcome),
+    Error(String),
+}
+
 /// 侧栏「搜索」面板。
 #[component]
 pub fn SidebarSearchPanel(
@@ -96,9 +124,9 @@ pub fn SidebarSearchPanel(
     let mut outcome = use_signal(SearchOutcome::default);
     let mut loading = use_signal(|| false);
     let mut search_epoch = use_signal(|| 0_u64);
-    let mut expanded = use_signal(HashSet::<String>::new);
+    let mut expanded = use_signal(ExpandState::default);
     let mut replacing = use_signal(|| false);
-    let mut notice = use_signal(|| None::<String>);
+    let mut scroll_top = use_signal(|| 0.0_f64);
 
     if !super::files::fs_available() {
         return rsx! {
@@ -117,18 +145,69 @@ pub fn SidebarSearchPanel(
     let has_query = !query().trim().is_empty();
     let file_count = current.files.len();
     let match_count = current.match_count;
-    let summary = if loading() {
-        "正在搜索…".to_string()
-    } else if let Some(err) = current.error.as_ref() {
+    let summary = if let Some(err) = current.error.as_ref() {
         err.clone()
     } else if !has_query {
         "输入关键词即可实时搜索文件内容".to_string()
+    } else if loading() && match_count == 0 {
+        "正在搜索…".to_string()
     } else if match_count == 0 {
         "未找到结果".to_string()
-    } else if current.truncated {
-        format!("已找到 {match_count} 个结果 · {file_count} 个文件（已截断）")
     } else {
-        format!("已找到 {match_count} 个结果 · {file_count} 个文件")
+        // 流式搜索中：保留旧结果统计，边搜边涨。
+        let mut s = format!("已找到 {match_count} 个结果 · {file_count} 个文件");
+        if current.truncated {
+            s.push_str("（已截断）");
+        }
+        if loading() {
+            s.push_str("（搜索中…）");
+        }
+        s
+    };
+
+    // 虚拟滚动：文件数超过阈值时只渲染可见窗口，其余用 spacer 撑高。
+    let expanded_now = expanded();
+    let total_files = current.files.len();
+    let virtualize = total_files > VIRTUAL_MIN_FILES;
+    let mut offsets: Vec<f64> = Vec::with_capacity(total_files);
+    let mut heights: Vec<f64> = Vec::with_capacity(total_files);
+    let mut acc_px = 0.0_f64;
+    for g in &current.files {
+        offsets.push(acc_px);
+        let h = if expanded_now.open.contains(&g.path) {
+            EST_FILE_HEAD_PX + g.hits.len() as f64 * EST_HIT_ROW_PX
+        } else {
+            EST_FILE_HEAD_PX
+        };
+        heights.push(h);
+        acc_px += h;
+    }
+    let total_px = acc_px;
+    let st = scroll_top();
+    let (view_start, view_end) = if virtualize {
+        let bottom = st + EST_VIEWPORT_PX;
+        let mut s = 0usize;
+        while s + 1 < total_files && offsets[s] + heights[s] < st {
+            s += 1;
+        }
+        s = s.saturating_sub(VIRTUAL_OVERSCAN);
+        let mut e = s;
+        while e < total_files && offsets[e] < bottom {
+            e += 1;
+        }
+        (s, (e + VIRTUAL_OVERSCAN).min(total_files))
+    } else {
+        (0, total_files)
+    };
+    let top_pad_px = if virtualize && view_start > 0 {
+        offsets[view_start]
+    } else {
+        0.0
+    };
+    let bottom_pad_px = if virtualize && view_end < total_files {
+        total_px - offsets[view_end]
+    } else {
+        0.0
     };
 
     rsx! {
@@ -143,7 +222,7 @@ pub fn SidebarSearchPanel(
                         aria_label: "刷新",
                         disabled: loading() || !has_query,
                         onclick: move |_| {
-                            notice.set(None);
+
                             kick_search(
                                 query(),
                                 case_sensitive(),
@@ -168,9 +247,9 @@ pub fn SidebarSearchPanel(
                         onclick: move |_| {
                             search_epoch.with_mut(|n| *n += 1);
                             outcome.set(SearchOutcome::default());
-                            expanded.set(HashSet::new());
+                            expanded.set(ExpandState::default());
                             loading.set(false);
-                            notice.set(None);
+                            scroll_top.set(0.0);
                         },
                         Icon { icon: LdX, width: 14, height: 14, fill: "currentColor" }
                     }
@@ -180,7 +259,13 @@ pub fn SidebarSearchPanel(
                         title: "全部折叠",
                         aria_label: "全部折叠",
                         onclick: move |_| {
-                            expanded.set(HashSet::new());
+                            // 全部折叠：同时记入 user_collapsed，防止流式追加时被重新展开。
+                            let paths: HashSet<String> =
+                                outcome().files.iter().map(|f| f.path.clone()).collect();
+                            expanded.set(ExpandState {
+                                open: HashSet::new(),
+                                user_collapsed: paths,
+                            });
                         },
                         Icon { icon: AiOutlineVerticalAlignBottom, width: 14, height: 14, fill: "currentColor" }
                     }
@@ -214,7 +299,7 @@ pub fn SidebarSearchPanel(
                                 spellcheck: false,
                                 oninput: move |e| {
                                     query.set(e.value());
-                                    notice.set(None);
+
                                     kick_search(
                                         e.value(),
                                         case_sensitive(),
@@ -234,7 +319,7 @@ pub fn SidebarSearchPanel(
                                         return;
                                     }
                                     e.prevent_default();
-                                    notice.set(None);
+
                                     kick_search(
                                         query(),
                                         case_sensitive(),
@@ -419,7 +504,7 @@ pub fn SidebarSearchPanel(
                                             return;
                                         }
                                         replacing.set(true);
-                                        notice.set(None);
+
                                         spawn(async move {
                                             let result = run_replace_all(
                                                 req,
@@ -459,11 +544,9 @@ pub fn SidebarSearchPanel(
                                                     } else {
                                                         toast.success(msg.clone());
                                                     }
-                                                    notice.set(Some(msg));
                                                 }
                                                 Err(e) => {
                                                     toast.error(e.clone());
-                                                    notice.set(Some(e));
                                                 }
                                             }
                                             replacing.set(false);
@@ -608,13 +691,12 @@ pub fn SidebarSearchPanel(
                 }
             }
 
-            if let Some(msg) = notice() {
-                div { class: "ac-sidebar-search-notice", "{msg}" }
-            }
-
             div { class: "ac-sidebar-search-summary", "{summary}" }
 
             div { class: "ac-sidebar-search-results", role: "tree",
+                onscroll: move |e| {
+                    scroll_top.set(e.data().scroll_top());
+                },
                 if loading() && current.files.is_empty() {
                     div { class: "ac-sidebar-files-empty",
                         Icon { icon: LdSearch, width: 16, height: 16, fill: "currentColor" }
@@ -630,13 +712,16 @@ pub fn SidebarSearchPanel(
                         }
                     }
                 }
-                for group in current.files.iter() {
+                if top_pad_px > 0.0 {
+                    div { style: "height: {top_pad_px}px; flex: none;", aria_hidden: "true" }
+                }
+                for group in current.files[view_start..view_end].iter() {
                     {
                         let path = group.path.clone();
                         let path_open = path.clone();
                         let path_toggle = path.clone();
                         let rel = group.rel.clone();
-                        let open = expanded().contains(&path);
+                        let open = expanded_now.open.contains(&path);
                         let hits = group.hits.clone();
                         let hit_n = hits.len();
                         rsx! {
@@ -647,9 +732,12 @@ pub fn SidebarSearchPanel(
                                     title: "{rel}",
                                     onclick: move |_| {
                                         let p = path_toggle.clone();
-                                        expanded.with_mut(|set| {
-                                            if !set.remove(&p) {
-                                                set.insert(p);
+                                        expanded.with_mut(|state| {
+                                            if state.open.remove(&p) {
+                                                state.user_collapsed.insert(p);
+                                            } else {
+                                                state.open.insert(p.clone());
+                                                state.user_collapsed.remove(&p);
                                             }
                                         });
                                     },
@@ -699,8 +787,26 @@ pub fn SidebarSearchPanel(
                         }
                     }
                 }
+                if bottom_pad_px > 0.0 {
+                    div { style: "height: {bottom_pad_px}px; flex: none;", aria_hidden: "true" }
+                }
             }
         }
+    }
+}
+
+/// 流式追加结果时，自动展开前 N 个文件；用户手动折叠过的不动。
+fn auto_expand_first(files: &[SearchFileHits], mut expanded: Signal<ExpandState>) {
+    let mut state = expanded();
+    let mut changed = false;
+    for f in files.iter().take(AUTO_EXPAND_FILES) {
+        if !state.open.contains(&f.path) && !state.user_collapsed.contains(&f.path) {
+            state.open.insert(f.path.clone());
+            changed = true;
+        }
+    }
+    if changed {
+        expanded.set(state);
     }
 }
 
@@ -733,7 +839,7 @@ fn kick_search(
     mut epoch: Signal<u64>,
     mut loading: Signal<bool>,
     mut outcome: Signal<SearchOutcome>,
-    mut expanded: Signal<HashSet<String>>,
+    mut expanded: Signal<ExpandState>,
 ) {
     epoch.with_mut(|n| *n += 1);
     let this_epoch = epoch();
@@ -742,7 +848,7 @@ fn kick_search(
     if trimmed.is_empty() {
         loading.set(false);
         outcome.set(SearchOutcome::default());
-        expanded.set(HashSet::new());
+        expanded.set(ExpandState::default());
         return;
     }
     let req = SearchRequest {
@@ -756,6 +862,7 @@ fn kick_search(
     };
     #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
     {
+        // 注意：不清空旧 outcome，输入期间保留上一次结果，流式结果到达后增量替换。
         loading.set(true);
         spawn(async move {
             if delay_ms > 0 {
@@ -764,24 +871,76 @@ fn kick_search(
             if epoch() != this_epoch {
                 return;
             }
-            let found = match run_search_async(req).await {
-                Ok(out) => out,
-                Err(e) => SearchOutcome {
-                    error: Some(e),
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<SearchEvent>();
+            let req_thread = req.clone();
+            if std::thread::Builder::new()
+                .name("pusa-sidebar-search".into())
+                .spawn(move || run_search_stream(req_thread, tx))
+                .is_err()
+            {
+                outcome.set(SearchOutcome {
+                    error: Some("无法启动搜索线程。".into()),
                     ..SearchOutcome::default()
-                },
-            };
-            // 已被更新的查询取代：不要清 loading（新一轮会负责）。
-            if epoch() != this_epoch {
+                });
+                loading.set(false);
                 return;
             }
-            let mut open = HashSet::new();
-            for file in &found.files {
-                open.insert(file.path.clone());
+
+            let deadline =
+                tokio::time::Instant::now() + std::time::Duration::from_secs(SEARCH_TIMEOUT_SECS);
+            // 旧结果保留到首批新结果到达；随后按新查询重新计算默认展开项。
+            let mut first_result = true;
+            loop {
+                let ev = match tokio::time::timeout_at(deadline, rx.recv()).await {
+                    Ok(Some(ev)) => ev,
+                    Ok(None) => break, // 线程结束且未发 Done（异常），由下方兜底
+                    Err(_) => {
+                        outcome.set(SearchOutcome {
+                            error: Some(format!(
+                                "搜索超时（>{SEARCH_TIMEOUT_SECS}s）。可缩小范围，或填写「包含文件」如 *.rs。"
+                            )),
+                            ..SearchOutcome::default()
+                        });
+                        loading.set(false);
+                        return;
+                    }
+                };
+                // 已被更新的查询取代：丢弃本批，不再触碰状态。
+                if epoch() != this_epoch {
+                    return;
+                }
+                match ev {
+                    SearchEvent::Progress(out) => {
+                        if first_result {
+                            expanded.set(ExpandState::default());
+                            first_result = false;
+                        }
+                        auto_expand_first(&out.files, expanded);
+                        outcome.set(out);
+                    }
+                    SearchEvent::Done(out) => {
+                        if first_result {
+                            expanded.set(ExpandState::default());
+                        }
+                        auto_expand_first(&out.files, expanded);
+                        outcome.set(out);
+                        loading.set(false);
+                        break;
+                    }
+                    SearchEvent::Error(e) => {
+                        outcome.set(SearchOutcome {
+                            error: Some(e),
+                            ..SearchOutcome::default()
+                        });
+                        loading.set(false);
+                        break;
+                    }
+                }
             }
-            expanded.set(open);
-            outcome.set(found);
-            loading.set(false);
+            // channel 意外关闭（线程 panic 等）时兜底，避免永远停在「正在搜索…」。
+            if epoch() == this_epoch && loading() {
+                loading.set(false);
+            }
         });
     }
     #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
@@ -790,22 +949,29 @@ fn kick_search(
     }
 }
 
-/// 在独立线程跑搜索，并加总超时，避免卡在「正在搜索…」。
+/// 在独立线程跑搜索：优先 ripgrep 流式读取，边扫边通过 channel 推送快照；
+/// 无 rg 且非正则时回退到 walk_search（一次性发 Done）。超时由接收侧控制。
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
-async fn run_search_async(req: SearchRequest) -> Result<SearchOutcome, String> {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    std::thread::Builder::new()
-        .name("pusa-sidebar-search".into())
-        .spawn(move || {
-            let _ = tx.send(run_search(&req));
-        })
-        .map_err(|e| format!("无法启动搜索线程：{e}"))?;
-    match tokio::time::timeout(std::time::Duration::from_secs(SEARCH_TIMEOUT_SECS), rx).await {
-        Ok(Ok(out)) => Ok(out),
-        Ok(Err(_)) => Err("搜索任务已中断。".into()),
-        Err(_) => Err(format!(
-            "搜索超时（>{SEARCH_TIMEOUT_SECS}s）。可缩小范围，或填写「包含文件」如 *.rs。"
-        )),
+fn run_search_stream(req: SearchRequest, tx: tokio::sync::mpsc::UnboundedSender<SearchEvent>) {
+    if req.root.trim().is_empty() {
+        let _ = tx.send(SearchEvent::Error("未打开工作区。".into()));
+        return;
+    }
+    match try_rg_stream(&req, &tx) {
+        Ok(Some(())) => {}
+        Ok(None) => {
+            if req.regex {
+                let _ = tx.send(SearchEvent::Error(
+                    "正则搜索需要系统已安装 ripgrep（rg）。".into(),
+                ));
+            } else {
+                let out = walk_search(&req);
+                let _ = tx.send(SearchEvent::Done(out));
+            }
+        }
+        Err(e) => {
+            let _ = tx.send(SearchEvent::Error(e));
+        }
     }
 }
 
@@ -982,41 +1148,6 @@ fn replace_text_regex(
 }
 
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
-fn run_search(req: &SearchRequest) -> SearchOutcome {
-    if req.root.trim().is_empty() {
-        return SearchOutcome {
-            error: Some("未打开工作区。".into()),
-            ..SearchOutcome::default()
-        };
-    }
-    if req.regex {
-        match try_rg_search(req) {
-            Ok(Some(out)) => return out,
-            Ok(None) => {
-                return SearchOutcome {
-                    error: Some("正则搜索需要系统已安装 ripgrep（rg）。".into()),
-                    ..SearchOutcome::default()
-                };
-            }
-            Err(e) => {
-                return SearchOutcome {
-                    error: Some(e),
-                    ..SearchOutcome::default()
-                };
-            }
-        }
-    }
-    match try_rg_search(req) {
-        Ok(Some(out)) => out,
-        Ok(None) => walk_search(req),
-        Err(e) => SearchOutcome {
-            error: Some(e),
-            ..SearchOutcome::default()
-        },
-    }
-}
-
-#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 fn resolve_rg_bin() -> Option<std::path::PathBuf> {
     use std::path::PathBuf;
     if let Ok(path) = which_rg_on_path() {
@@ -1050,8 +1181,13 @@ fn which_rg_on_path() -> Result<std::path::PathBuf, ()> {
 }
 
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
-fn try_rg_search(req: &SearchRequest) -> Result<Option<SearchOutcome>, String> {
+fn try_rg_stream(
+    req: &SearchRequest,
+    tx: &tokio::sync::mpsc::UnboundedSender<SearchEvent>,
+) -> Result<Option<()>, String> {
+    use std::io::{BufRead, BufReader, Read};
     use std::process::Stdio;
+    use std::time::{Duration, Instant};
 
     let Some(rg) = resolve_rg_bin() else {
         return Ok(None);
@@ -1090,93 +1226,176 @@ fn try_rg_search(req: &SearchRequest) -> Result<Option<SearchOutcome>, String> {
     }
     cmd.arg("--").arg(&req.query).arg(".");
 
-    let output = match cmd.output() {
+    let mut child = match cmd.spawn() {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(format!("启动 ripgrep 失败：{e}")),
-        Ok(out) => out,
+        Ok(c) => c,
     };
-    if !output.status.success() && output.status.code() != Some(1) {
-        let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        if err.is_empty() {
-            return Err("ripgrep 搜索失败。".into());
+    let Some(stdout) = child.stdout.take() else {
+        return Err("无法读取 ripgrep 输出。".into());
+    };
+
+    // 流式读取：每行立即解析累积，按节奏推送快照到 UI。
+    let mut acc = RgAccumulator::new(Path::new(&req.root));
+    let mut last_flush = Instant::now();
+    let mut since_flush = 0usize;
+    let reader = BufReader::new(stdout);
+    for line in reader.lines() {
+        let Ok(line) = line else { break };
+        if acc.push_line(&line) {
+            since_flush += 1;
+            if since_flush >= STREAM_FLUSH_MATCHES
+                || last_flush.elapsed() >= Duration::from_millis(STREAM_FLUSH_MS)
+            {
+                if tx.send(SearchEvent::Progress(acc.snapshot())).is_err() {
+                    // 接收端已取消（新查询取代），杀掉 rg 尽早退出。
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Ok(Some(()));
+                }
+                last_flush = Instant::now();
+                since_flush = 0;
+            }
         }
-        return Err(err);
+        if acc.truncated {
+            let _ = child.kill();
+            break;
+        }
     }
-    Ok(Some(parse_rg_json(
-        &String::from_utf8_lossy(&output.stdout),
-        Path::new(&req.root),
-    )))
+
+    let status = child.wait();
+    let mut err_text = String::new();
+    if let Some(mut stderr) = child.stderr.take() {
+        let _ = stderr.read_to_string(&mut err_text);
+    }
+    match status {
+        Ok(s) if !s.success() && s.code() != Some(1) && !acc.truncated => {
+            let err = err_text.trim().to_string();
+            return Err(if err.is_empty() {
+                "ripgrep 搜索失败。".into()
+            } else {
+                err
+            });
+        }
+        Err(_) if !acc.truncated => {
+            return Err("ripgrep 搜索中断。".into());
+        }
+        _ => {}
+    }
+
+    let _ = tx.send(SearchEvent::Done(acc.snapshot()));
+    Ok(Some(()))
+}
+
+/// rg `--json` 行格式（强类型，替代 serde_json::Value 动态解析）。
+/// 非 match 类型（begin/end/summary）的 data 字段也能解析：字段全为 Option/default。
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+#[derive(serde::Deserialize)]
+struct RgLine {
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(default)]
+    data: Option<RgMatchData>,
 }
 
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
-fn parse_rg_json(stdout: &str, root: &Path) -> SearchOutcome {
-    let mut files: Vec<SearchFileHits> = Vec::new();
-    let mut index: HashMap<String, usize> = HashMap::new();
-    let mut match_count = 0usize;
-    let mut truncated = false;
+#[derive(serde::Deserialize)]
+struct RgMatchData {
+    #[serde(default)]
+    path: Option<RgText>,
+    #[serde(default)]
+    lines: Option<RgText>,
+    #[serde(default)]
+    line_number: Option<u64>,
+    #[serde(default)]
+    submatches: Vec<RgSubmatch>,
+}
 
-    for line in stdout.lines() {
-        if match_count >= MAX_MATCHES || files.len() > MAX_FILES {
-            truncated = true;
-            break;
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+#[derive(serde::Deserialize)]
+struct RgText {
+    #[serde(default)]
+    text: Option<String>,
+}
+
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+#[derive(serde::Deserialize)]
+struct RgSubmatch {
+    #[serde(default)]
+    start: Option<usize>,
+    #[serde(default)]
+    end: Option<usize>,
+}
+
+/// 流式累积器：逐行吞 rg JSON，随时可对当前进度拍快照。
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+struct RgAccumulator {
+    root: std::path::PathBuf,
+    files: Vec<SearchFileHits>,
+    index: HashMap<String, usize>,
+    match_count: usize,
+    truncated: bool,
+}
+
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+impl RgAccumulator {
+    fn new(root: &Path) -> Self {
+        Self {
+            root: root.to_path_buf(),
+            files: Vec::new(),
+            index: HashMap::new(),
+            match_count: 0,
+            truncated: false,
         }
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
-            continue;
-        };
-        if value.get("type").and_then(|t| t.as_str()) != Some("match") {
-            continue;
+    }
+
+    /// 解析一行，返回是否为有效 match（用于推送节奏计数）。
+    fn push_line(&mut self, line: &str) -> bool {
+        if self.truncated {
+            return false;
         }
-        let data = match value.get("data") {
-            Some(d) => d,
-            None => continue,
+        let Ok(msg) = serde_json::from_str::<RgLine>(line) else {
+            return false;
         };
-        let path = data
-            .pointer("/path/text")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        if msg.kind != "match" {
+            return false;
+        }
+        let Some(data) = msg.data else { return false };
+        let Some(path) = data.path.and_then(|p| p.text) else {
+            return false;
+        };
         if path.is_empty() {
-            continue;
+            return false;
         }
         let abs = {
-            let p = Path::new(path);
+            let p = Path::new(&path);
             if p.is_absolute() {
                 p.to_path_buf()
             } else {
-                root.join(p)
+                self.root.join(p)
             }
         };
         let abs_s = abs.to_string_lossy().into_owned();
-        let rel = rel_path(root, &abs);
-        let line_no = data
-            .get("line_number")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u32;
-        let raw_line = data
-            .pointer("/lines/text")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .trim_end_matches(['\n', '\r']);
+        let rel = rel_path(&self.root, &abs);
+        let line_no = data.line_number.unwrap_or(0) as u32;
+        let raw_line = data.lines.and_then(|l| l.text).unwrap_or_default();
+        let raw_line = raw_line.trim_end_matches(['\n', '\r']);
         let (start, end) = data
-            .get("submatches")
-            .and_then(|v| v.as_array())
-            .and_then(|arr| arr.first())
-            .map(|sub| {
-                let s = sub.get("start").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-                let e = sub.get("end").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-                (s, e)
-            })
+            .submatches
+            .first()
+            .map(|sub| (sub.start.unwrap_or(0), sub.end.unwrap_or(0)))
             .unwrap_or((0, 0));
         let (line, hs, he) = truncate_hit_line(raw_line, start, end);
-        let idx = match index.get(&abs_s).copied() {
+        let idx = match self.index.get(&abs_s).copied() {
             Some(i) => i,
             None => {
-                if files.len() >= MAX_FILES {
-                    truncated = true;
-                    break;
+                if self.files.len() >= MAX_FILES {
+                    self.truncated = true;
+                    return true;
                 }
-                let i = files.len();
-                index.insert(abs_s.clone(), i);
-                files.push(SearchFileHits {
+                let i = self.files.len();
+                self.index.insert(abs_s.clone(), i);
+                self.files.push(SearchFileHits {
                     path: abs_s.clone(),
                     rel,
                     hits: Vec::new(),
@@ -1184,20 +1403,26 @@ fn parse_rg_json(stdout: &str, root: &Path) -> SearchOutcome {
                 i
             }
         };
-        files[idx].hits.push(SearchHit {
+        self.files[idx].hits.push(SearchHit {
             line_no,
             line,
             start: hs,
             end: he,
         });
-        match_count += 1;
+        self.match_count += 1;
+        if self.match_count >= MAX_MATCHES {
+            self.truncated = true;
+        }
+        true
     }
 
-    SearchOutcome {
-        files,
-        match_count,
-        truncated,
-        error: None,
+    fn snapshot(&self) -> SearchOutcome {
+        SearchOutcome {
+            files: self.files.clone(),
+            match_count: self.match_count,
+            truncated: self.truncated,
+            error: None,
+        }
     }
 }
 

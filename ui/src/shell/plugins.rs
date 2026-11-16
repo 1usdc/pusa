@@ -135,9 +135,16 @@ fn urlencoding_encode(s: &str) -> String {
 #[cfg(target_arch = "wasm32")]
 fn is_highlight_text(name: &str, description: &str) -> bool {
     let blob = format!("{} {}", name, description).to_ascii_lowercase();
-    ["grammar", "syntax", "highlight", "textmate", "language", "tmlanguage"]
-        .iter()
-        .any(|k| blob.contains(k))
+    [
+        "grammar",
+        "syntax",
+        "highlight",
+        "textmate",
+        "language",
+        "tmlanguage",
+    ]
+    .iter()
+    .any(|k| blob.contains(k))
 }
 
 async fn run_openvsx_search(query: String) -> Result<Vec<PluginCard>, String> {
@@ -183,7 +190,11 @@ async fn run_openvsx_search(query: String) -> Result<Vec<PluginCard>, String> {
             icon: Option<String>,
         }
 
-        async fn one_search(q: &str, category: Option<&str>, size: u32) -> Result<Vec<SearchItem>, String> {
+        async fn one_search(
+            q: &str,
+            category: Option<&str>,
+            size: u32,
+        ) -> Result<Vec<SearchItem>, String> {
             let mut url = format!(
                 "https://open-vsx.org/api/-/search?size={size}&sortBy=downloadCount&sortOrder=desc"
             );
@@ -371,8 +382,7 @@ fn open_installed_card(_card: &PluginCard) -> Result<(), String> {
 fn installed_absolute_path(card: &PluginCard) -> Result<String, String> {
     #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
     {
-        crate::desktop::plugins::plugin_dir(&card.id)
-            .map(|p| p.to_string_lossy().into_owned())
+        crate::desktop::plugins::plugin_dir(&card.id).map(|p| p.to_string_lossy().into_owned())
     }
     #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
     {
@@ -468,17 +478,16 @@ async fn ensure_smart_ui_for(
 fn spawn_auto_scan_missing_smart_ui(toast: super::toast::ToastCtx) {
     let model = resolve_ai_model();
     spawn(async move {
-        let missing = match tokio::task::spawn_blocking(
-            crate::desktop::plugins::list_ids_missing_smart_ui,
-        )
-        .await
-        {
-            Ok(list) => list,
-            Err(e) => {
-                toast.error(format!("扫描智能 UI 失败：{e}"));
-                return;
-            }
-        };
+        let missing =
+            match tokio::task::spawn_blocking(crate::desktop::plugins::list_ids_missing_smart_ui)
+                .await
+            {
+                Ok(list) => list,
+                Err(e) => {
+                    toast.error(format!("扫描智能 UI 失败：{e}"));
+                    return;
+                }
+            };
         if missing.is_empty() {
             return;
         }
@@ -671,7 +680,6 @@ fn PluginGlyph(icon_url: ReadSignal<Option<String>>, name: String, large: bool) 
     }
 }
 
-
 #[component]
 pub fn PluginDetailPane(
     plugin_key: String,
@@ -731,9 +739,7 @@ pub fn PluginDetailPane(
         }
     });
 
-    let card = catalog()
-        .into_iter()
-        .find(|c| c.install_key == plugin_key);
+    let card = catalog().into_iter().find(|c| c.install_key == plugin_key);
 
     rsx! {
         section { class: "ac-skills-detail-pane",
@@ -1118,8 +1124,6 @@ pub fn PluginDetailPane(
         }
     }
 }
-
-
 
 #[component]
 pub fn SidebarPluginMarket(

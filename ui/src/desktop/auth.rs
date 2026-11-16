@@ -33,7 +33,6 @@ fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
     let credentials = use_signal(Vec::<protocol::LlmCredentialDto>::new);
     let active_id = use_signal(String::new);
     let mut enabled_ids = use_signal(Vec::<String>::new);
-    let mut load_hint = use_signal(|| None::<String>);
     let refresh = use_context::<LlmModelsRefresh>().0;
 
     use_effect(move || {
@@ -41,9 +40,8 @@ fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
             match async { agent::runtime_ctx()?.llm_config_get().await }.await {
                 Ok(cfg) => {
                     apply_cfg(cfg, credentials, active_id, enabled_ids);
-                    load_hint.set(None);
                 }
-                Err(err) => load_hint.set(Some(format_llm_settings_error(&err.to_string()))),
+                Err(err) => toast.error(format_llm_settings_error(&err.to_string())),
             }
         });
     });
@@ -64,7 +62,6 @@ fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
             LlmCredentialsPanel {
                 credentials: credentials(),
                 enabled_ids: enabled_ids(),
-                hint: load_hint(),
                 on_update: move |body: LlmCredentialUpsertBody| {
                     spawn(async move {
                         let prev_ids: Vec<String> =
@@ -81,11 +78,11 @@ fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
                                     &new_ids,
                                     refresh,
                                 ));
-                                load_hint.set(None);
+
                                 toast.success("已更新密钥");
                             }
                             Err(err) => {
-                                load_hint.set(Some(format_llm_settings_error(&err.to_string())))
+                                toast.error(format_llm_settings_error(&err.to_string()))
                             }
                         }
                     });
@@ -106,11 +103,11 @@ fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
                                     &new_ids,
                                     refresh,
                                 ));
-                                load_hint.set(None);
+
                                 toast.success("已添加密钥");
                             }
                             Err(err) => {
-                                load_hint.set(Some(format_llm_settings_error(&err.to_string())))
+                                toast.error(format_llm_settings_error(&err.to_string()))
                             }
                         }
                     });
@@ -130,10 +127,10 @@ fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
                                 Ok(cfg) => {
                                     apply_cfg(cfg, credentials, active_id, enabled_ids);
                                     enabled_ids.set(next);
-                                    load_hint.set(None);
+
                                 }
                                 Err(err) => {
-                                    load_hint.set(Some(format_llm_settings_error(&err.to_string())))
+                                    toast.error(format_llm_settings_error(&err.to_string()))
                                 }
                             }
                         }
@@ -148,11 +145,11 @@ fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
                                     cfg.credentials.iter().map(|c| c.id.clone()).collect();
                                 apply_cfg(cfg, credentials, active_id, enabled_ids);
                                 enabled_ids.set(enabled_after_delete(&prev_enabled, &known, refresh));
-                                load_hint.set(None);
+
                                 toast.success("已删除密钥");
                             }
                             Err(err) => {
-                                load_hint.set(Some(format_llm_settings_error(&err.to_string())))
+                                toast.error(format_llm_settings_error(&err.to_string()))
                             }
                         }
                     });
@@ -282,6 +279,7 @@ pub fn DesktopAppShell() -> Element {
     let mut show_settings_modal = use_signal(|| false);
     let show_about_modal = use_signal(|| false);
     let show_titlebar_settings_menu = use_signal(|| false);
+    let show_font_size_modal = use_signal(|| false);
     let developer_mode = use_signal(crate::shell::dev_mode::load);
     let _toast_ctx = use_init_toast_ctx();
     let llm_models_refresh = use_signal(|| 0u32);
@@ -292,6 +290,7 @@ pub fn DesktopAppShell() -> Element {
 
     use_effect(move || {
         crate::shell::theme::restore_on_launch();
+        crate::shell::theme::restore_font_size_on_launch();
         crate::shell::syntax::preload_installed_grammars();
     });
 
@@ -300,7 +299,8 @@ pub fn DesktopAppShell() -> Element {
     });
 
     use_effect(move || {
-        let host_css = serde_json::to_string(desktop_host_shell_css()).unwrap_or_else(|_| "\"\"".to_string());
+        let host_css =
+            serde_json::to_string(desktop_host_shell_css()).unwrap_or_else(|_| "\"\"".to_string());
         let font_css = serde_json::to_string(&crate::source_han_sans_hwsc_font_face_css())
             .unwrap_or_else(|_| "\"\"".to_string());
         let js = format!(
@@ -396,6 +396,7 @@ pub fn DesktopAppShell() -> Element {
                 show_settings_modal,
                 show_about_modal,
                 show_titlebar_settings_menu,
+                show_font_size_modal,
             }
             Console {
                 show_sidebar,
@@ -420,6 +421,11 @@ pub fn DesktopAppShell() -> Element {
             }
             if show_about_modal() {
                 DesktopAboutModal { show_about_modal }
+            }
+            if show_font_size_modal() {
+                crate::shell::theme::FontSizeModal {
+                    show_font_size_modal,
+                }
             }
             ToastViewport {}
         }

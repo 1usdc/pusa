@@ -4,23 +4,6 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use dioxus::events::FormEvent;
-use dioxus::html::input_data::MouseButton;
-use dioxus::html::point_interaction::ModifiersInteraction;
-use dioxus::prelude::*;
-use dioxus_free_icons::icons::bs_icons::{BsIntersect, BsStopFill};
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
-use dioxus_free_icons::icons::bs_icons::{
-    BsGear, BsLayoutSidebar, BsLayoutSidebarInset, BsLayoutSidebarInsetReverse,
-    BsLayoutSidebarReverse,
-};
-use dioxus_free_icons::icons::ld_icons::{
-    LdArrowUp, LdBug, LdCheck, LdChevronDown, LdChevronRight, LdChevronsDown, LdChevronUp,
-    LdCopy, LdDownload, LdEye, LdFileSearch, LdFolder, LdGlobe, LdInfinity, LdListTodo,
-    LdMessageCircle, LdMessageSquare, LdPaperclip, LdPencil, LdPlus, LdRefreshCw, LdSave,
-    LdScrollText, LdSearch, LdShieldCheck, LdSparkles, LdTrash2, LdWandSparkles, LdWifi, LdX,
-};
-use dioxus_free_icons::Icon;
 use crate::icons::{
     PiMagicWandBold, PiMagicWandFill, RiApps2Fill, RiApps2Line, RiBearSmileFill, RiBearSmileLine,
     TbFile, TbFileFilled,
@@ -29,34 +12,50 @@ use crate::icons::{
 use crate::icons::{
     VscLayoutPanel, VscLayoutPanelOff, VscLayoutSidebarLeftDock, VscLayoutSidebarRightDock,
 };
+use dioxus::events::FormEvent;
+use dioxus::html::input_data::MouseButton;
+use dioxus::html::point_interaction::ModifiersInteraction;
+use dioxus::prelude::*;
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+use dioxus_free_icons::icons::bs_icons::{
+    BsGear, BsLayoutSidebar, BsLayoutSidebarInset, BsLayoutSidebarInsetReverse,
+    BsLayoutSidebarReverse,
+};
+use dioxus_free_icons::icons::bs_icons::{BsIntersect, BsStopFill};
+use dioxus_free_icons::icons::ld_icons::{
+    LdArrowUp, LdBug, LdCheck, LdChevronDown, LdChevronRight, LdChevronUp, LdChevronsDown, LdCopy,
+    LdDownload, LdEye, LdFileSearch, LdFolder, LdGlobe, LdInfinity, LdListTodo, LdMessageCircle,
+    LdMessageSquare, LdPaperclip, LdPencil, LdPlus, LdRefreshCw, LdSave, LdScrollText, LdSearch,
+    LdShieldCheck, LdSparkles, LdTrash2, LdWandSparkles, LdWifi, LdX,
+};
+use dioxus_free_icons::Icon;
 use keyboard_types::{Key, Modifiers};
 
 use crate::chat::{
     activate_role, attachment_from_file_data, attachment_from_path,
     attachment_from_terminal_selection, ce_clear, ce_clear_now, ce_focus_end, ce_insert_chip,
-    ce_insert_text, ce_serialize, ce_set_html, chip_html, compose_user_payload,
-    composer_seed_html, composer_seed_html_from_segs, create_conversation, create_role,
-    delete_conversation, delete_role, install_skill, list_chat_models_from_credentials,
-    list_conversations,
-    load_agent_run_detail, load_conversation_messages, load_equipped_skills, load_installed_skills,
-    load_roles, load_skill_market, parse_user_message_segments, pending_has_path, pending_remove_ids,
+    ce_insert_text, ce_restore_take, ce_set_html, ce_set_html_wait, ce_take, chip_html,
+    compose_user_payload, composer_seed_html, composer_seed_html_from_segs, create_conversation,
+    create_role, delete_conversation, delete_role, install_skill,
+    list_chat_models_from_credentials, list_conversations, load_agent_run_detail,
+    load_conversation_messages, load_equipped_skills, load_installed_skills, load_roles,
+    load_skill_market, parse_user_message_segments, pending_has_path, pending_remove_ids,
     probe_v1_models_endpoint, run_chat_turn, toggle_skill_equip, uninstall_installed_skill,
     update_conversation_title, update_role, ChatMarkdownBody, ChatPendingAttachment,
     ChatThinkingHydrator, ChatThinkingPanel, ChatUserSeg, ComposerBridgeEvent, StepPhase,
     ThinkingStatus, ToolStatus, TraceFileOpen, UiAgentThinking, UiChatMessage, UiThinkingStep,
-    UiThinkingTool, COMPOSER_ROOT_EDIT,
-    COMPOSER_ROOT_MAIN, INSTALL_BRIDGE_JS,
+    UiThinkingTool, COMPOSER_ROOT_EDIT, COMPOSER_ROOT_MAIN, INSTALL_BRIDGE_JS,
 };
+use crate::custom_chat_models::CustomChatModelPref;
 use crate::persona;
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
 use crate::web::llm_config;
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
 use crate::web::password_field::{AcPasswordInput, PasswordFieldStyle};
-use crate::custom_chat_models::CustomChatModelPref;
 use protocol::{
-    AgentRunDetailDto, ChatMessageDto, ChatTurnRequest, ConversationSummaryDto,
-    InstalledSkillDto, LlmApiProvider, LlmCredentialDto, RoleCreateRequest, RoleDto,
-    RoleUpdateRequest, SkillMarketItemDto, SkillRegistryDto, SseEvent, StoredChatMessageDto,
+    AgentRunDetailDto, ChatMessageDto, ChatTurnRequest, ConversationSummaryDto, InstalledSkillDto,
+    LlmApiProvider, LlmCredentialDto, RoleCreateRequest, RoleDto, RoleUpdateRequest,
+    SkillMarketItemDto, SkillRegistryDto, SseEvent, StoredChatMessageDto,
     DEFAULT_CHAT_MAX_AGENT_STEPS,
 };
 
@@ -181,7 +180,10 @@ fn custom_chat_model_entries() -> Vec<ChatModelEntry> {
 }
 
 /// 合并远端列表与自定义：远端在前；自定义仅追加远端没有的 id。
-fn merge_chat_models(remote: Vec<ChatModelEntry>, custom: Vec<ChatModelEntry>) -> Vec<ChatModelEntry> {
+fn merge_chat_models(
+    remote: Vec<ChatModelEntry>,
+    custom: Vec<ChatModelEntry>,
+) -> Vec<ChatModelEntry> {
     let mut out = remote;
     for c in custom {
         if !out.iter().any(|m| m.id == c.id) {
@@ -221,10 +223,7 @@ fn chat_model_group_key(m: &ChatModelEntry, keys: &[SavedLlmKey]) -> String {
     MODEL_GROUP_OTHER.to_string()
 }
 
-fn build_chat_model_groups(
-    models: &[ChatModelEntry],
-    keys: &[SavedLlmKey],
-) -> Vec<ChatModelGroup> {
+fn build_chat_model_groups(models: &[ChatModelEntry], keys: &[SavedLlmKey]) -> Vec<ChatModelGroup> {
     let mut used_ids = HashSet::new();
     let mut groups = Vec::new();
 
@@ -299,12 +298,7 @@ fn truncate_chars(s: &str, max: usize) -> String {
 }
 
 fn saved_key_option_label(k: &SavedLlmKey) -> String {
-    format!(
-        "{} · {} · {}",
-        k.label,
-        k.id,
-        truncate_chars(&k.base, 28)
-    )
+    format!("{} · {} · {}", k.label, k.id, truncate_chars(&k.base, 28))
 }
 
 fn saved_keys_from_credentials(creds: &[LlmCredentialDto]) -> Vec<SavedLlmKey> {
@@ -518,14 +512,9 @@ fn apply_custom_chat_model_edit(
     } else {
         Some(cred)
     };
-    let rename = !next_id.is_empty()
-        && next_id != id
-        && !chat_models().iter().any(|m| m.id == next_id);
-    let applied_id = if rename {
-        next_id
-    } else {
-        id.to_string()
-    };
+    let rename =
+        !next_id.is_empty() && next_id != id && !chat_models().iter().any(|m| m.id == next_id);
+    let applied_id = if rename { next_id } else { id.to_string() };
     chat_models.with_mut(|list| {
         if let Some(m) = list.iter_mut().find(|m| m.id == id && m.custom) {
             if rename {
@@ -605,24 +594,46 @@ struct SkillMarketCardVm {
 #[derive(Clone, PartialEq)]
 enum CenterTabKind {
     Role,
-    SkillInstalled { slug: String },
-    SkillMarket { key: String },
-    Plugin { key: String },
-    File { path: String },
+    SkillInstalled {
+        slug: String,
+    },
+    SkillMarket {
+        key: String,
+    },
+    Plugin {
+        key: String,
+    },
+    File {
+        path: String,
+    },
     /// Markdown 预览（不写入操作缓存；关闭不影响编辑草稿）。
-    FileMdPreview { path: String },
+    FileMdPreview {
+        path: String,
+    },
     /// HTML 内置浏览器预览（不写入操作缓存）。
-    FileHtmlPreview { path: String },
+    FileHtmlPreview {
+        path: String,
+    },
     /// PDF 内置预览（不写入操作缓存）。
-    FilePdfPreview { path: String },
+    FilePdfPreview {
+        path: String,
+    },
     /// 图片内置预览（不写入操作缓存）。
-    FileImagePreview { path: String },
+    FileImagePreview {
+        path: String,
+    },
     /// 音频内置预览（播放 + 进度条；不写入操作缓存）。
-    FileAudioPreview { path: String },
+    FileAudioPreview {
+        path: String,
+    },
     /// STL 3D 模型内置预览（不写入操作缓存）。
-    FileStlPreview { path: String },
+    FileStlPreview {
+        path: String,
+    },
     /// Office（含旧版 doc/xls/ppt）内置预览（不写入操作缓存）。
-    FileOfficePreview { path: String },
+    FileOfficePreview {
+        path: String,
+    },
     /// 工具轨迹中某次编辑的前后对比（不写入操作缓存）。
     FileDiff {
         path: String,
@@ -630,7 +641,9 @@ enum CenterTabKind {
         new_text: String,
     },
     /// Pusa 浏览器：地址栏 + iframe 浏览任意网址（url 为空时显示地址栏空态）。
-    WebBrowser { url: String },
+    WebBrowser {
+        url: String,
+    },
 }
 
 #[derive(Clone, PartialEq)]
@@ -683,9 +696,9 @@ impl CenterTabKindCache {
     fn try_from_kind(kind: &CenterTabKind) -> Option<Self> {
         match kind {
             CenterTabKind::Role => Some(Self::Role),
-            CenterTabKind::SkillInstalled { slug } => Some(Self::SkillInstalled {
-                slug: slug.clone(),
-            }),
+            CenterTabKind::SkillInstalled { slug } => {
+                Some(Self::SkillInstalled { slug: slug.clone() })
+            }
             CenterTabKind::SkillMarket { key } => Some(Self::SkillMarket { key: key.clone() }),
             CenterTabKind::Plugin { key } => Some(Self::Plugin { key: key.clone() }),
             CenterTabKind::File { path } => Some(Self::File { path: path.clone() }),
@@ -805,9 +818,7 @@ fn load_center_session_restore() -> CenterSessionRestore {
         .filter(|id| tabs.iter().any(|t| t.id == *id))
         .or_else(|| tabs.first().map(|t| t.id.clone()));
     let active_kind = center_active_kind(&tabs, &active_id);
-    let selected_skill_key = active_kind
-        .as_ref()
-        .and_then(center_tab_skill_key);
+    let selected_skill_key = active_kind.as_ref().and_then(center_tab_skill_key);
     let selected_plugin_key = active_kind
         .as_ref()
         .and_then(center_tab_plugin_key)
@@ -1010,11 +1021,7 @@ fn load_file_tree_restore(root: &str) -> FileTreeRestore {
     }
 }
 
-fn persist_file_tree_state(
-    root: &str,
-    expanded: &HashSet<String>,
-    selected_path: &Option<String>,
-) {
+fn persist_file_tree_state(root: &str, expanded: &HashSet<String>, selected_path: &Option<String>) {
     let root = root.trim();
     if root.is_empty() || !super::files::fs_available() {
         write_file_tree_cache_raw("");
@@ -1205,8 +1212,7 @@ impl CenterTab {
             .iter()
             .filter(|t| matches!(t.kind, CenterTabKind::WebBrowser { .. }))
             .map(|t| {
-                t.id
-                    .strip_prefix(CENTER_TAB_WEB_BROWSER_PREFIX)
+                t.id.strip_prefix(CENTER_TAB_WEB_BROWSER_PREFIX)
                     .and_then(|n| n.parse::<u32>().ok())
                     .unwrap_or(0)
             })
@@ -1481,14 +1487,11 @@ fn apply_opened_project_root(
     root: String,
     mut fs_root_path: Signal<String>,
     mut fs_expanded: Signal<HashSet<String>>,
-    mut fs_children_cache: Signal<
-        HashMap<String, Result<Vec<super::files::FsEntryDto>, String>>,
-    >,
+    mut fs_children_cache: Signal<HashMap<String, Result<Vec<super::files::FsEntryDto>, String>>>,
     mut fs_selected_path: Signal<Option<String>>,
     mut fs_create_mode: Signal<Option<super::files::FsCreateKind>>,
     mut fs_create_name: Signal<String>,
     mut fs_create_parent: Signal<Option<String>>,
-    mut fs_notice: Signal<Option<String>>,
     mut recent_project_dirs: Signal<Vec<String>>,
     mut active_tab: Signal<&'static str>,
     mut center_tabs: Signal<Vec<CenterTab>>,
@@ -1503,7 +1506,6 @@ fn apply_opened_project_root(
     fs_create_mode.set(None);
     fs_create_name.set(String::new());
     fs_create_parent.set(None);
-    fs_notice.set(None);
     recent_project_dirs.set(super::files::fs_recent_project_dirs());
     active_tab.set("files");
     center_tabs.with_mut(|tabs| {
@@ -1516,9 +1518,7 @@ fn apply_opened_project_root(
             | CenterTabKind::FileAudioPreview { path }
             | CenterTabKind::FileStlPreview { path }
             | CenterTabKind::FileOfficePreview { path }
-            | CenterTabKind::FileDiff { path, .. } => {
-                Path::new(path).starts_with(Path::new(&root))
-            }
+            | CenterTabKind::FileDiff { path, .. } => Path::new(path).starts_with(Path::new(&root)),
             _ => true,
         });
     });
@@ -1604,9 +1604,7 @@ fn apply_created_extension_plugin(
     plugin_path: String,
     fs_root_path: Signal<String>,
     mut fs_expanded: Signal<HashSet<String>>,
-    mut fs_children_cache: Signal<
-        HashMap<String, Result<Vec<super::files::FsEntryDto>, String>>,
-    >,
+    mut fs_children_cache: Signal<HashMap<String, Result<Vec<super::files::FsEntryDto>, String>>>,
     mut fs_selected_path: Signal<Option<String>>,
     toast: super::toast::ToastCtx,
     mut active_tab: Signal<&'static str>,
@@ -1644,14 +1642,11 @@ fn apply_created_local_application(
     app_path: String,
     fs_root_path: Signal<String>,
     fs_expanded: Signal<HashSet<String>>,
-    fs_children_cache: Signal<
-        HashMap<String, Result<Vec<super::files::FsEntryDto>, String>>,
-    >,
+    fs_children_cache: Signal<HashMap<String, Result<Vec<super::files::FsEntryDto>, String>>>,
     fs_selected_path: Signal<Option<String>>,
     fs_create_mode: Signal<Option<super::files::FsCreateKind>>,
     fs_create_name: Signal<String>,
     fs_create_parent: Signal<Option<String>>,
-    fs_notice: Signal<Option<String>>,
     recent_project_dirs: Signal<Vec<String>>,
     active_tab: Signal<&'static str>,
     center_tabs: Signal<Vec<CenterTab>>,
@@ -1677,7 +1672,6 @@ fn apply_created_local_application(
                 fs_create_mode,
                 fs_create_name,
                 fs_create_parent,
-                fs_notice,
                 recent_project_dirs,
                 active_tab,
                 center_tabs,
@@ -1720,9 +1714,7 @@ fn reveal_and_select_workspace_file(
     mut fs_section_open: Signal<bool>,
     fs_root_path: Signal<String>,
     mut fs_expanded: Signal<HashSet<String>>,
-    mut fs_children_cache: Signal<
-        HashMap<String, Result<Vec<super::files::FsEntryDto>, String>>,
-    >,
+    mut fs_children_cache: Signal<HashMap<String, Result<Vec<super::files::FsEntryDto>, String>>>,
     mut fs_selected_path: Signal<Option<String>>,
     mut fs_save_notice: Signal<Option<String>>,
 ) -> String {
@@ -1765,9 +1757,7 @@ fn reveal_and_expand_workspace_dir(
     mut fs_section_open: Signal<bool>,
     fs_root_path: Signal<String>,
     mut fs_expanded: Signal<HashSet<String>>,
-    mut fs_children_cache: Signal<
-        HashMap<String, Result<Vec<super::files::FsEntryDto>, String>>,
-    >,
+    mut fs_children_cache: Signal<HashMap<String, Result<Vec<super::files::FsEntryDto>, String>>>,
     mut fs_selected_path: Signal<Option<String>>,
     mut fs_save_notice: Signal<Option<String>>,
 ) -> String {
@@ -1818,9 +1808,7 @@ fn activate_pending_attachment_path(
     fs_section_open: Signal<bool>,
     fs_root_path: Signal<String>,
     fs_expanded: Signal<HashSet<String>>,
-    fs_children_cache: Signal<
-        HashMap<String, Result<Vec<super::files::FsEntryDto>, String>>,
-    >,
+    fs_children_cache: Signal<HashMap<String, Result<Vec<super::files::FsEntryDto>, String>>>,
     fs_selected_path: Signal<Option<String>>,
     fs_save_notice: Signal<Option<String>>,
     mut center_tabs: Signal<Vec<CenterTab>>,
@@ -1929,7 +1917,12 @@ fn document_root_font_size_px() -> Option<f64> {
     let el = document.document_element()?;
     let style = window.get_computed_style(&el).ok()??;
     let value = style.get_property_value("font-size").ok()?;
-    let px = value.trim().trim_end_matches("px").trim().parse::<f64>().ok()?;
+    let px = value
+        .trim()
+        .trim_end_matches("px")
+        .trim()
+        .parse::<f64>()
+        .ok()?;
     (px.is_finite() && px > 0.0).then_some(px)
 }
 
@@ -1978,11 +1971,7 @@ fn console_layout_width_px() -> f64 {
 
 /// 对话区拉到最大宽度时，中间栏剩余宽度（视为中间栏最小宽度）。
 fn center_width_at_chat_max(show_sidebar: bool, sidebar_width: f64) -> f64 {
-    let sidebar_w = if show_sidebar {
-        sidebar_width
-    } else {
-        0.0
-    };
+    let sidebar_w = if show_sidebar { sidebar_width } else { 0.0 };
     (console_layout_width_px() - sidebar_w - AC_CHAT_MAX_WIDTH_PX).max(0.0)
 }
 
@@ -2175,6 +2164,8 @@ fn schedule_chat_thread_scroll_bottom() {
     // 桌面 WebView：commit 后再走两帧 rAF，等新气泡和输入框收起完成布局。
     let _ = dioxus::document::eval(
         r#"(function(){
+  // 一次性置底同时恢复流式跟随（常驻监听读这个全局标志）。
+  window.__acChatFollow = true;
   const go = () => {
     const el = document.getElementById('ac-chat-thread');
     if (!el) return;
@@ -2218,6 +2209,64 @@ fn set_show_jump_bottom(mut show_jump_bottom: Signal<bool>, show: bool) {
     }
 }
 
+/// 桌面常驻 JS 监听回传的视图状态：是否显示「回到底部」+ 当前所处提问下标。
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+struct ChatThreadViewState {
+    #[serde(default)]
+    show: bool,
+    #[serde(default)]
+    active: Option<usize>,
+}
+
+/// 左侧短条导航：最近 10 条用户提问的消息下标。
+fn chat_nav_msg_idxs(msgs: &[UiChatMessage]) -> Vec<usize> {
+    let all: Vec<usize> = msgs
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| matches!(m, UiChatMessage::User { .. }))
+        .map(|(i, _)| i)
+        .collect();
+    let skip = all.len().saturating_sub(10);
+    all.into_iter().skip(skip).collect()
+}
+
+/// 定位到某条历史提问：滚动聊天列表，使其贴到视口顶部附近。
+fn scroll_chat_thread_to_msg(msg_idx: usize) {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        // 一次性定位＝离开最新位置，切断流式吸底。
+        let _ = dioxus::document::eval(&format!(
+            r#"(function(){{
+  window.__acChatFollow = false;
+  const el = document.getElementById('{id}');
+  if (!el) return;
+  const a = el.querySelector('[data-ac-msg-idx="{idx}"]');
+  if (!a) return;
+  const top =
+    a.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
+  el.scrollTop = Math.max(0, top - 12);
+}})()"#,
+            id = AC_CHAT_THREAD_DOM_ID,
+            idx = msg_idx,
+        ));
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let Some(el) = web_sys::window()
+            .and_then(|w| w.document())
+            .and_then(|d| d.get_element_by_id(AC_CHAT_THREAD_DOM_ID))
+        else {
+            return;
+        };
+        let Ok(Some(a)) = el.query_selector(&format!("[data-ac-msg-idx=\"{msg_idx}\"]")) else {
+            return;
+        };
+        let top = a.get_bounding_client_rect().top() - el.get_bounding_client_rect().top()
+            + f64::from(el.scroll_top());
+        el.set_scroll_top((top - 12.0).max(0.0) as i32);
+    }
+}
+
 /// Web：只读 `#ac-chat-thread`。量不到则保持现状（不把按钮打灭）。
 #[cfg(target_arch = "wasm32")]
 fn chat_thread_show_jump_from_dom(currently_shown: bool) -> Option<bool> {
@@ -2234,6 +2283,50 @@ fn chat_thread_show_jump_from_dom(currently_shown: bool) -> Option<bool> {
     )
 }
 
+/// Web：只读 `#ac-chat-thread` 距底像素；量不到返回 `None`。
+#[cfg(target_arch = "wasm32")]
+fn chat_thread_dist_from_dom() -> Option<f64> {
+    use wasm_bindgen::JsCast;
+    let w = web_sys::window()?;
+    let doc = w.document()?;
+    let el = doc.get_element_by_id(AC_CHAT_THREAD_DOM_ID)?;
+    let he = el.dyn_into::<web_sys::HtmlElement>().ok()?;
+    let dist =
+        f64::from(he.scroll_height()) - f64::from(he.scroll_top()) - f64::from(he.client_height());
+    dist.is_finite().then(|| dist.max(0.0))
+}
+
+/// Web：只读 DOM，算出当前视口所处的提问消息下标（视口顶部之前最后一条）。
+#[cfg(target_arch = "wasm32")]
+fn chat_thread_active_msg_from_dom() -> Option<usize> {
+    use wasm_bindgen::JsCast;
+    let w = web_sys::window()?;
+    let doc = w.document()?;
+    let el = doc.get_element_by_id(AC_CHAT_THREAD_DOM_ID)?;
+    let nodes = el.query_selector_all("[data-ac-msg-idx]").ok()?;
+    if nodes.length() == 0 {
+        return None;
+    }
+    let top = el.get_bounding_client_rect().top();
+    let mut active = None;
+    for i in 0..nodes.length() {
+        let Some(node) = nodes.item(i) else { continue };
+        let Ok(item) = node.dyn_into::<web_sys::Element>() else {
+            continue;
+        };
+        let idx = item
+            .get_attribute("data-ac-msg-idx")
+            .and_then(|v| v.parse::<usize>().ok());
+        let Some(idx) = idx else { continue };
+        if item.get_bounding_client_rect().top() - top <= 24.0 {
+            active = Some(idx);
+        } else {
+            break;
+        }
+    }
+    active
+}
+
 /// 桌面端：只认长期 JS 监听（`#ac-chat-thread` 的 scroll / 内容变化），带显示滞后。
 #[cfg(not(target_arch = "wasm32"))]
 fn chat_jump_bottom_listen_js() -> String {
@@ -2243,30 +2336,65 @@ fn chat_jump_bottom_listen_js() -> String {
   const HIDE_PX = {hide_px};
   const ID = '{id}';
   let last = false;
+  let lastActive = null;
   let bound = null;
   let ro = null;
   let contentMo = null;
+  // 流式跟随：默认吸底；用户上翻（距底超过 SHOW_PX）立即切断，
+  // 只有一次性置底动作（回到底部按钮 / 发送 / 切换会话）会重新打开。
+  if (typeof window.__acChatFollow !== 'boolean') window.__acChatFollow = true;
+  const distOf = (el) => Math.max(0, el.scrollHeight - el.scrollTop - el.clientHeight);
+  const stick = (el) => {{
+    if (window.__acChatFollow === false) return;
+    if (distOf(el) > 1) el.scrollTop = el.scrollHeight;
+  }};
+  /** 当前所处的提问：视口顶部（留 24px 余量）之前最后一条 user 消息。 */
+  const activeOf = (el) => {{
+    const list = el.querySelectorAll('[data-ac-msg-idx]');
+    if (!list.length) return null;
+    const top = el.getBoundingClientRect().top;
+    let active = Number(list[0].getAttribute('data-ac-msg-idx'));
+    for (let i = 0; i < list.length; i++) {{
+      if (list[i].getBoundingClientRect().top - top <= 24) {{
+        active = Number(list[i].getAttribute('data-ac-msg-idx'));
+      }} else {{
+        break;
+      }}
+    }}
+    return active;
+  }};
   const report = () => {{
     const el = bound;
     if (!el) return;
     const sh = el.scrollHeight;
     const ch = el.clientHeight;
     if (!(sh > 0) || !(ch > 0)) return;
-    const dist = Math.max(0, sh - el.scrollTop - ch);
+    // 内容变高（流式增量）时先跟随到底，再算可见性。
+    stick(el);
+    const dist = distOf(el);
     const show = last ? dist >= HIDE_PX : dist > SHOW_PX;
-    if (last === show) return;
+    const active = activeOf(el);
+    if (last === show && lastActive === active) return;
     last = show;
-    try {{ dioxus.send(show); }} catch (_) {{}}
+    lastActive = active;
+    try {{ dioxus.send({{ show: show, active: active }}); }} catch (_) {{}}
+  }};
+  const onScroll = () => {{
+    const el = bound;
+    if (!el) return;
+    // 程序化置底的 scroll 事件 dist≈0，不会误判成用户上翻。
+    if (distOf(el) > SHOW_PX) window.__acChatFollow = false;
+    report();
   }};
   const bind = () => {{
     const el = document.getElementById(ID);
     if (!el) return;
     if (el === bound) return;
-    if (bound) bound.removeEventListener('scroll', report);
+    if (bound) bound.removeEventListener('scroll', onScroll);
     if (ro) {{ try {{ ro.disconnect(); }} catch (_) {{}} ro = null; }}
     if (contentMo) {{ try {{ contentMo.disconnect(); }} catch (_) {{}} contentMo = null; }}
     bound = el;
-    el.addEventListener('scroll', report, {{ passive: true }});
+    el.addEventListener('scroll', onScroll, {{ passive: true }});
     if (typeof ResizeObserver === 'function') {{
       ro = new ResizeObserver(report);
       ro.observe(el);
@@ -2317,10 +2445,7 @@ mod jump_bottom_visibility_tests {
 
     #[test]
     fn invalid_metrics_do_not_toggle() {
-        assert_eq!(
-            chat_scroll_metrics_show_jump(0.0, 0.0, 300.0, true),
-            None
-        );
+        assert_eq!(chat_scroll_metrics_show_jump(0.0, 0.0, 300.0, true), None);
         assert_eq!(
             chat_scroll_metrics_show_jump(f64::NAN, 800.0, 300.0, false),
             None
@@ -2713,11 +2838,7 @@ fn read_conversation_messages(
     if cid == active_id {
         chat_messages()
     } else {
-        cache
-            .peek()
-            .get(cid)
-            .cloned()
-            .unwrap_or_default()
+        cache.peek().get(cid).cloned().unwrap_or_default()
     }
 }
 
@@ -2990,7 +3111,6 @@ fn ChatComposerCe(
 ) -> Element {
     let root_for_mount = root_id.clone();
     let seed_for_mount = seed_html.clone();
-    let root_for_keys = root_id.clone();
     rsx! {
         div {
             // epoch 放进 key，发送后强制换新节点，避免 CE 复用旧 DOM 残留。
@@ -3028,11 +3148,9 @@ fn ChatComposerCe(
                 if disabled {
                     return;
                 }
-                // Shift+Enter：显式插入换行（不依赖 CE 默认行为，避免被当成发送）。
+                // Shift+Enter：换行由 JS 桥同步插入（composer_ce 的 insertLineBreak）；
+                // 这里直接放行默认行为，绝不 preventDefault，避免被当发送吞掉。
                 if e.modifiers().contains(Modifiers::SHIFT) {
-                    e.prevent_default();
-                    e.stop_propagation();
-                    ce_insert_text(&root_for_keys, "\n");
                     return;
                 }
                 e.prevent_default();
@@ -3152,6 +3270,7 @@ fn WebShellTitlebar(
     let mut show_settings_modal = ctx.show_settings_modal;
     let mut show_about_modal = ctx.show_about_modal;
     let mut show_titlebar_settings_menu = ctx.show_titlebar_settings_menu;
+    let mut show_font_size_modal = ctx.show_font_size_modal;
     // 设置 API Key 入口：在设置中配置 OpenAI 兼容接口凭证。
     let _developer_mode = ctx.developer_mode;
     let mut ui_theme = use_signal(crate::shell::theme::load);
@@ -3333,6 +3452,16 @@ fn WebShellTitlebar(
                                     class: "ac-web-titlebar-menu__item",
                                     onclick: move |_| {
                                         show_titlebar_settings_menu.set(false);
+                                        show_font_size_modal.set(true);
+                                    },
+                                    "字体大小"
+                                }
+                                button {
+                                    r#type: "button",
+                                    role: "menuitem",
+                                    class: "ac-web-titlebar-menu__item",
+                                    onclick: move |_| {
+                                        show_titlebar_settings_menu.set(false);
                                         show_about_modal.set(true);
                                     },
                                     "关于本机"
@@ -3451,7 +3580,6 @@ pub fn Console(
     let fs_create_mode = use_signal(|| None::<super::files::FsCreateKind>);
     let fs_create_name = use_signal(String::new);
     let fs_create_parent = use_signal(|| None::<String>);
-    let mut fs_notice = use_signal(|| None::<String>);
     let recent_project_dirs = use_signal(super::files::fs_recent_project_dirs);
     // 中间栏标签栏右键菜单：视口坐标（position: fixed），None = 关闭。
     let mut center_tabs_ctx_menu = use_signal(|| None::<CenterTabsCtxMenu>);
@@ -3571,11 +3699,15 @@ pub fn Console(
     let mut agent_detail_copy_notice = use_signal(|| None::<String>);
     let mut chat_messages = use_signal(welcome_chat_messages);
     // 一次性「置底请求」计数器：每次会话切换 / 历史加载完成后递增，
-    // 配套 use_effect 监听变化并在 dioxus 完成 commit 之后 schedule 一次滚到底；
-    // 生成过程中不跟随，用户可自由上下滚动。
+    // 配套 use_effect 监听变化并在 dioxus 完成 commit 之后 schedule 一次滚到底。
     let mut chat_scroll_bottom_request = use_signal(|| 0_u64);
-    // 距底部超过阈值时显示「回到底部」；点击只一次性置底，不打开持续吸底。
+    // 距底部超过阈值时显示「回到底部」。
     let mut show_jump_bottom = use_signal(|| false);
+    // 流式自动吸底：默认开启；用户上翻后切断，只有一次性置底动作重新打开。
+    // 桌面端开关在常驻 JS 监听里（window.__acChatFollow），此信号供 Web 端使用。
+    let mut chat_follow_bottom = use_signal(|| true);
+    // 当前视口所处的提问消息下标（左侧短条导航的当前项）。
+    let mut chat_active_msg_idx = use_signal(|| Option::<usize>::None);
     let mut chat_pending = use_signal(Vec::<ChatPendingAttachment>::new);
     // 仅布尔：JS input 事件在 sendable 变化时才写入，避免每键重渲 Console。
     let mut chat_can_send = use_signal(|| false);
@@ -3594,9 +3726,9 @@ pub fn Console(
     let mut chat_edit_can_send = use_signal(|| false);
     let mut chat_edit_epoch = use_signal(|| 0_u64);
     let mut chat_edit_seed = use_signal(String::new);
-    let chat_enter_tick = use_signal(|| 0_u64);
+    let mut chat_enter_tick = use_signal(|| 0_u64);
     let chat_paste_tick = use_signal(|| 0_u64);
-    let chat_edit_enter_tick = use_signal(|| 0_u64);
+    let mut chat_edit_enter_tick = use_signal(|| 0_u64);
     let chat_edit_paste_tick = use_signal(|| 0_u64);
     let mut chat_edit_truncate_at = use_signal(|| 0_usize);
 
@@ -3701,8 +3833,9 @@ pub fn Console(
         spawn(async move {
             let mut eval = dioxus::document::eval(crate::chat::desktop_paste::INSTALL_HOOK_JS);
             loop {
-                let Ok(payload) =
-                    eval.recv::<crate::chat::desktop_paste::PastePayload>().await
+                let Ok(payload) = eval
+                    .recv::<crate::chat::desktop_paste::PastePayload>()
+                    .await
                 else {
                     break;
                 };
@@ -3815,15 +3948,17 @@ pub fn Console(
     });
     #[cfg(target_arch = "wasm32")]
     let chat_stream_abort = use_signal(|| {
-        std::rc::Rc::new(std::cell::RefCell::new(
-            HashMap::<u64, web_sys::AbortController>::new(),
-        ))
+        std::rc::Rc::new(std::cell::RefCell::new(HashMap::<
+            u64,
+            web_sys::AbortController,
+        >::new()))
     });
     #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
     let chat_stream_abort = use_signal(|| {
-        Rc::new(RefCell::new(
-            HashMap::<u64, std::sync::Arc<crate::desktop::agent::ChatAbort>>::new(),
-        ))
+        Rc::new(RefCell::new(HashMap::<
+            u64,
+            std::sync::Arc<crate::desktop::agent::ChatAbort>,
+        >::new()))
     });
 
     let developer_mode = use_context::<crate::shell::dev_mode::DeveloperMode>().0;
@@ -4107,9 +4242,20 @@ pub fn Console(
     // JS 把「回到底部」打开展示，本 effect 会再跑并把列表吸回底部。
     use_effect(move || {
         let _ = chat_scroll_bottom_request();
+        // 一次性置底动作（切会话 / 发送 / 重试 / 点回到底部）恢复流式跟随。
+        chat_follow_bottom.set(true);
         schedule_chat_thread_scroll_bottom();
         if *show_jump_bottom.peek() {
             show_jump_bottom.set(false);
+        }
+    });
+
+    // Web：流式内容更新时自动吸底（桌面端由常驻 JS 监听直接跟随，避免每 token 走 IPC）。
+    #[cfg(target_arch = "wasm32")]
+    use_effect(move || {
+        let _ = chat_messages.read();
+        if chat_follow_bottom() {
+            schedule_chat_thread_scroll_bottom();
         }
     });
 
@@ -4119,10 +4265,15 @@ pub fn Console(
         spawn(async move {
             let mut eval = dioxus::document::eval(&chat_jump_bottom_listen_js());
             loop {
-                let Ok(show) = eval.recv::<bool>().await else {
+                let Ok(st) = eval.recv::<ChatThreadViewState>().await else {
                     break;
                 };
-                set_show_jump_bottom(show_jump_bottom, show);
+                set_show_jump_bottom(show_jump_bottom, st.show);
+                if let Some(active) = st.active {
+                    if chat_active_msg_idx() != Some(active) {
+                        chat_active_msg_idx.set(Some(active));
+                    }
+                }
             }
         });
     });
@@ -4146,13 +4297,19 @@ pub fn Console(
             } else {
                 chat_edit_pending()
             };
-            let snap = ce_serialize(root).await;
+            // 原子「读快照 + 清空」：发送一旦成立，输入框必然在同一次 JS 调用里清掉，
+            // 不再依赖后续的异步 clear（桌面端偶发 eval 丢失会残留旧内容）。
+            let Some(snap) = ce_take(root).await else {
+                return;
+            };
             let (mut send_text, pending, segs) = compose_user_payload(&snap, &registry);
             if send_text.trim().is_empty() && pending.is_empty() {
+                ce_restore_take(root);
                 return;
             }
             let model_for_turn = chat_model().trim().to_string();
             if model_for_turn.is_empty() {
+                ce_restore_take(root);
                 toast.warning("请先选择模型。");
                 return;
             }
@@ -4165,12 +4322,9 @@ pub fn Console(
                 .and_then(|m| m.source_credential_id.clone())
                 .filter(|s| !s.trim().is_empty())
                 .filter(|id| saved_llm_keys().iter().any(|k| k.id == *id));
-            if selected_model
-                .as_ref()
-                .map(|m| m.custom)
-                .unwrap_or(false)
-                && cred_for_turn.is_none()
+            if selected_model.as_ref().map(|m| m.custom).unwrap_or(false) && cred_for_turn.is_none()
             {
+                ce_restore_take(root);
                 toast.warning("请先编辑该自定义模型并绑定密钥");
                 return;
             }
@@ -4180,15 +4334,12 @@ pub fn Console(
             let conversation_id = active_conversation_id();
             chat_busy.set(true);
             if is_composer {
-                // 先等 DOM 清空，再 bump epoch 换新节点，避免残留正文 + 占位符叠字。
-                ce_clear(COMPOSER_ROOT_MAIN).await;
                 chat_pending.set(Vec::new());
                 chat_can_send.set(false);
                 chat_composer_seed.set(String::new());
                 chat_composer_epoch += 1;
             } else {
                 chat_editing_msg_idx.set(None);
-                ce_clear(COMPOSER_ROOT_EDIT).await;
                 chat_edit_pending.set(Vec::new());
                 chat_edit_can_send.set(false);
                 chat_edit_seed.set(String::new());
@@ -4448,7 +4599,9 @@ pub fn Console(
     }));
 
     // Enter 发送：composer 只 bump tick，避免 EventHandler 破坏 props memo。
-    // 不要在此读取 chat_busy：否则回合结束时 effect 会重跑，把草稿自动发出去。
+    // 注意 effect 会经 submit 的 busy 守卫间接读到 chat_busy 并订阅它：
+    // 若把 tick 留在非零状态，回合结束 chat_busy 变化会让 effect 重跑并自动发送草稿，
+    // 所以每次都必须先把 tick 消费掉（归零）。
     use_effect({
         let submit_chat = submit_chat.clone();
         move || {
@@ -4456,6 +4609,10 @@ pub fn Console(
             if tick == 0 {
                 return;
             }
+            // 先消费掉本次 Enter 再提交。submit 在 busy 时会被拦下（草稿保留），
+            // 若把 tick 留在非零状态，回合结束 chat_busy 变化让 effect 重跑时
+            // 会拿旧 tick 把草稿自动发出去。
+            chat_enter_tick.set(0);
             (*submit_chat.borrow_mut())(ChatSubmitFrom::Composer);
         }
     });
@@ -4468,6 +4625,7 @@ pub fn Console(
                 return;
             }
             let truncate_at = chat_edit_truncate_at();
+            chat_edit_enter_tick.set(0);
             (*submit_chat.borrow_mut())(ChatSubmitFrom::Edit { truncate_at });
         }
     });
@@ -4631,8 +4789,7 @@ pub fn Console(
     };
     let chat_history_is_rail = {
         let closed = chat_history_closed_width_px();
-        let w = chat_history_drag_width()
-            .unwrap_or_else(|| chat_history_width());
+        let w = chat_history_drag_width().unwrap_or_else(|| chat_history_width());
         w <= closed + 0.5
     };
     let chat_history_panel_class = if chat_history_is_rail {
@@ -4706,7 +4863,7 @@ pub fn Console(
                                 fs_create_mode,
                                 fs_create_name,
                                 fs_create_parent,
-                                fs_notice,
+
                                 recent_project_dirs,
                                 active_tab,
                                 center_tabs,
@@ -4715,7 +4872,7 @@ pub fn Console(
                             );
                         }
                         Ok(None) => {}
-                        Err(err) => fs_notice.set(Some(err)),
+                        Err(err) => toast.error(err),
                     }
                 } else if is_mod_char_shortcut(&e, "j") {
                     e.prevent_default();
@@ -5417,7 +5574,6 @@ pub fn Console(
                                 create_mode: fs_create_mode,
                                 create_name: fs_create_name,
                                 create_parent: fs_create_parent,
-                                notice: fs_notice,
                                 highlighted_paths: fs_just_written,
                                 on_open_file: move |path: String| {
                                     fs_selected_path.set(Some(path.clone()));
@@ -5599,7 +5755,7 @@ pub fn Console(
                                                 }
                                                 Err(e) => {
                                                     chat_history_error.set(Some(e.to_string()));
-                                                    fs_notice.set(Some(e.to_string()));
+                                                    toast.error(e.to_string());
                                                 }
                                             }
                                         });
@@ -6590,7 +6746,7 @@ pub fn Console(
                                                                 fs_create_mode,
                                                                 fs_create_name,
                                                                 fs_create_parent,
-                                                                fs_notice,
+
                                                                 recent_project_dirs,
                                                                 active_tab,
                                                                 center_tabs,
@@ -6599,7 +6755,7 @@ pub fn Console(
                                                             );
                                                         }
                                                         Ok(None) => {}
-                                                        Err(err) => fs_notice.set(Some(err)),
+                                                        Err(err) => toast.error(err),
                                                     }
                                                 } else if is_mod_char_shortcut(&e, "j") {
                                                     e.prevent_default();
@@ -6629,7 +6785,7 @@ pub fn Console(
                                                                 fs_create_mode,
                                                                 fs_create_name,
                                                                 fs_create_parent,
-                                                                fs_notice,
+
                                                                 recent_project_dirs,
                                                                 active_tab,
                                                                 center_tabs,
@@ -6638,7 +6794,7 @@ pub fn Console(
                                                             );
                                                         }
                                                         Ok(None) => {}
-                                                        Err(e) => fs_notice.set(Some(e)),
+                                                        Err(e) => toast.error(e),
                                                     }
                                                 },
                                                 span { class: "ac-center-empty-open-btn-label", "打开项目" }
@@ -6871,6 +7027,32 @@ pub fn Console(
                         }
                     },
                     div { class: "ac-chat-thread-pane",
+                    // 左侧短条导航：最多 10 条最近的提问，点击定位。
+                    if chat_nav_msg_idxs(&chat_messages.read()).len() >= 2 {
+                        div { class: "ac-chat-nav",
+                            for (nav_pos, anchor_idx) in chat_nav_msg_idxs(&chat_messages.read())
+                                .into_iter()
+                                .enumerate()
+                            {
+                                button {
+                                    key: "ac-chat-nav-{anchor_idx}",
+                                    class: if chat_active_msg_idx() == Some(anchor_idx) {
+                                        "ac-chat-nav-dot is-current"
+                                    } else {
+                                        "ac-chat-nav-dot"
+                                    },
+                                    title: "定位到第 {nav_pos + 1} 条提问",
+                                    aria_label: "定位到第 {nav_pos + 1} 条提问",
+                                    onclick: move |evt| {
+                                        evt.stop_propagation();
+                                        #[cfg(target_arch = "wasm32")]
+                                        chat_follow_bottom.set(false);
+                                        scroll_chat_thread_to_msg(anchor_idx);
+                                    },
+                                }
+                            }
+                        }
+                    }
                     div {
                         id: AC_CHAT_THREAD_DOM_ID,
                         class: "ac-chat-thread scrollbar-hide",
@@ -6887,6 +7069,18 @@ pub fn Console(
                                     chat_thread_show_jump_from_dom(show_jump_bottom())
                                 {
                                     set_show_jump_bottom(show_jump_bottom, show);
+                                }
+                                // 用户上翻超过阈值：切断流式自动吸底。
+                                if chat_thread_dist_from_dom()
+                                    .is_some_and(|d| d > CHAT_JUMP_BOTTOM_SHOW_PX)
+                                {
+                                    chat_follow_bottom.set(false);
+                                }
+                                // 左侧短条导航的当前项。
+                                if let Some(active) = chat_thread_active_msg_from_dom() {
+                                    if chat_active_msg_idx() != Some(active) {
+                                        chat_active_msg_idx.set(Some(active));
+                                    }
                                 }
                             }
                         },
@@ -6918,6 +7112,7 @@ pub fn Console(
                                     rsx! {
                                     div {
                                         class: "ac-chat-message ac-chat-message-user",
+                                        "data-ac-msg-idx": "{msg_idx}",
                                         onmousedown: move |evt| evt.stop_propagation(),
                                         onclick: move |evt| evt.stop_propagation(),
                                         if is_editing {
@@ -7337,10 +7532,13 @@ pub fn Console(
                                                                 chat_pending.set(attachments);
                                                                 chat_can_send.set(true);
                                                                 chat_composer_seed.set(seed_html.clone());
-                                                                chat_composer_epoch += 1;
                                                                 let submit_chat_run = submit_chat.clone();
                                                                 spawn(async move {
-                                                                    ce_set_html(COMPOSER_ROOT_MAIN, &seed_html);
+                                                                    ce_set_html_wait(
+                                                                            COMPOSER_ROOT_MAIN,
+                                                                            &seed_html,
+                                                                        )
+                                                                        .await;
                                                                     (*submit_chat_run.borrow_mut())(ChatSubmitFrom::Composer);
                                                                 });
                                                             }
@@ -7416,6 +7614,8 @@ pub fn Console(
                             onclick: move |evt| {
                                 evt.stop_propagation();
                                 show_jump_bottom.set(false);
+                                // 用户主动回到底部：恢复默认自动吸底。
+                                chat_follow_bottom.set(true);
                                 schedule_chat_thread_scroll_bottom();
                             },
                             Icon {
@@ -8775,7 +8975,7 @@ pub fn Console(
                                                     fs_create_mode,
                                                     fs_create_name,
                                                     fs_create_parent,
-                                                    fs_notice,
+
                                                     recent_project_dirs,
                                                     active_tab,
                                                     center_tabs,
@@ -8822,7 +9022,7 @@ pub fn Console(
                                                 fs_create_mode,
                                                 fs_create_name,
                                                 fs_create_parent,
-                                                fs_notice,
+
                                                 recent_project_dirs,
                                                 active_tab,
                                                 center_tabs,

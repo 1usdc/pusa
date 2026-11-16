@@ -687,10 +687,7 @@ pub struct StrategyRunDto {
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum StrategyEvent {
     /// 策略 CRUD（创建 / 更新 / 删除）发生。UI 应重新拉 `strategies`。
-    StrategyChanged {
-        strategy_id: i64,
-        ts: i64,
-    },
+    StrategyChanged { strategy_id: i64, ts: i64 },
     /// 调度器为某策略开了一次 run。UI 应重新拉 `strategies` 与 `strategy_runs`。
     RunStarted {
         strategy_id: i64,
@@ -705,9 +702,7 @@ pub enum StrategyEvent {
         ts: i64,
     },
     /// 订阅端检测到事件丢失（broadcast Lagged 等），通知 UI 做一次全量同步。
-    Resync {
-        ts: i64,
-    },
+    Resync { ts: i64 },
 }
 
 /// POST `/v1/strategies/semantic-parse`（SSE）：根据构建器配置与用户描述流式生成策略提示词。
