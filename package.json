@@ -1,0 +1,13 @@
+{
+  "name": "pusa-styles",
+  "private": true,
+  "description": "Tailwind v4 build for ui/assets/css/app.css -> ui/assets/css/styles.css",
+  "scripts": {
+    "build:css": "tailwindcss -i ui/assets/css/app.css -o ui/assets/css/styles.css --minify",
+    "watch:css": "tailwindcss -i ui/assets/css/app.css -o ui/assets/css/styles.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.1.5",
+    "tailwindcss": "4.1.5"
+  }
+}

@@ -49,12 +49,12 @@ pub fn WebSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
     });
 
     rsx! {
-        div { class: "ac-settings-card ac-settings-card--wide",
-            div { class: "ac-settings-head",
-                h1 { class: "ac-settings-title", "API 密钥" }
+        div { class: crate::shell::style::MODAL_CARD_WIDE,
+            div { class: crate::shell::style::MODAL_HEAD,
+                h1 { class: crate::shell::style::MODAL_TITLE, "API 密钥" }
                 button {
                     r#type: "button",
-                    class: "ac-settings-close",
+                    class: crate::shell::style::MODAL_CLOSE,
                     title: "关闭",
                     aria_label: "关闭",
                     onclick: move |_| show_settings_modal.set(false),
@@ -63,7 +63,7 @@ pub fn WebSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
                         width: 18,
                         height: 18,
                         fill: "currentColor",
-                        class: "ac-settings-close-icon",
+                        class: "shrink-0",
                     }
                 }
             }

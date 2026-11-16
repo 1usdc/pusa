@@ -286,7 +286,7 @@ CI：`.github/workflows/`（桌面打包已改为本机流程，不再走 Action
 | 聊天 Markdown / 思考轨迹 | `ui/src/chat/` |
 | 桌面窗口 / 终端 / 本机 FS | `ui/src/desktop/`、`desktop/src/main.rs` |
 | Web 设置 / 鉴权 | `ui/src/web/` |
-| 样式 | `ui/assets/css/main.css`、`colors.css` |
+| 样式（Tailwind v4） | 手写入口 `ui/assets/css/app.css`（生成产物 `styles.css`，勿手改）；设计令牌 `colors.css`；迁移中的旧样式 `main.css`（逐模块删除中） |
 | 技能包内容 | `skills/` |
 | 已安装外部应用 | `applications/` |
 

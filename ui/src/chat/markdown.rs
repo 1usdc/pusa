@@ -7,6 +7,20 @@ use dioxus_free_icons::icons::ld_icons::{LdCircleX, LdCopy};
 use dioxus_free_icons::Icon;
 use pulldown_cmark::html;
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
+use crate::shell::style::{
+    CHAT_CODE,
+    CHAT_CODE_ACTIONS,
+    CHAT_CODE_BTN,
+    CHAT_CODE_BTN_LABEL,
+    CHAT_CODE_META,
+    CHAT_CODE_PRE,
+    CHAT_CODE_TOOLBAR,
+    CHAT_ERROR_ICON,
+    CHAT_MD,
+    CHAT_MD_BODY,
+    CHAT_MD_CHUNK,
+    CHAT_MD_ERROR,
+};
 
 /// 剥离正文开头的错误标记（历史消息里的 ❌），改由 SVG 图标渲染。
 fn split_leading_error_mark(content: &str) -> (bool, String) {
@@ -349,10 +363,10 @@ pub fn ChatMarkdownBody(content: String) -> Element {
 
     rsx! {
         div {
-            class: if is_error { "ac-chat-md ac-chat-md--error" } else { "ac-chat-md" },
+            class: if is_error { "{CHAT_MD} {CHAT_MD_ERROR}" } else { "{CHAT_MD}" },
             if is_error {
                 span {
-                    class: "ac-chat-error-icon",
+                    class: CHAT_ERROR_ICON,
                     aria_hidden: "true",
                     title: "错误",
                     Icon {
@@ -363,13 +377,13 @@ pub fn ChatMarkdownBody(content: String) -> Element {
                     }
                 }
             }
-            div { class: "ac-chat-md-body",
+            div { class: CHAT_MD_BODY,
                 for (idx, part) in parts.into_iter().enumerate() {
                     match part {
                         ChatMdPart::Html(html) => rsx! {
                             div {
                                 key: "{idx}-html",
-                                class: "ac-chat-md-chunk",
+                                class: CHAT_MD_CHUNK,
                                 dangerous_inner_html: html,
                             }
                         },
@@ -402,19 +416,19 @@ fn ChatCodeBlock(lang: String, path_hint: Option<String>, code: String) -> Eleme
     };
 
     rsx! {
-        div { class: "ac-chat-code",
-            div { class: "ac-chat-code-toolbar",
-                span { class: "ac-chat-code-meta",
+        div { class: CHAT_CODE,
+            div { class: CHAT_CODE_TOOLBAR,
+                span { class: CHAT_CODE_META,
                     if header_right.is_empty() {
                         "代码"
                     } else {
                         "{header_right}"
                     }
                 }
-                div { class: "ac-chat-code-actions",
+                div { class: CHAT_CODE_ACTIONS,
                     button {
                         r#type: "button",
-                        class: "ac-chat-code-btn",
+                        class: CHAT_CODE_BTN,
                         title: "复制代码",
                         aria_label: "复制代码",
                         onclick: {
@@ -429,7 +443,7 @@ fn ChatCodeBlock(lang: String, path_hint: Option<String>, code: String) -> Eleme
                     }
                 }
             }
-            pre { class: "ac-chat-code-pre",
+            pre { class: CHAT_CODE_PRE,
                 code { "{code}" }
             }
         }

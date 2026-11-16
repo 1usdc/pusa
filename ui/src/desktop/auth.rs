@@ -47,12 +47,12 @@ fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
     });
 
     rsx! {
-        div { class: "ac-settings-card ac-settings-card--wide",
-            div { class: "ac-settings-head",
-                h1 { class: "ac-settings-title", "API 密钥" }
+        div { class: crate::shell::style::MODAL_CARD_WIDE,
+            div { class: crate::shell::style::MODAL_HEAD,
+                h1 { class: crate::shell::style::MODAL_TITLE, "API 密钥" }
                 button {
                     r#type: "button",
-                    class: "ac-settings-close",
+                    class: crate::shell::style::MODAL_CLOSE,
                     title: "关闭",
                     aria_label: "关闭设置",
                     onclick: move |_| show_settings_modal.set(false),
@@ -178,16 +178,18 @@ fn DesktopAboutModal(mut show_about_modal: Signal<bool>) -> Element {
     });
 
     rsx! {
-        div { class: "ac-settings-modal-root ac-about-modal-root",
+        div {
+            class: "fixed top-[var(--ac-chrome-top,0px)] right-0 bottom-[var(--ac-chrome-bottom,1.625rem)] left-0 z-[1260] flex items-center justify-center px-4 box-border",
             div {
-                class: "ac-settings-modal-backdrop",
+                class: "absolute inset-0 bg-[var(--shadow-color)] backdrop-blur-[10px] cursor-pointer",
                 onclick: move |_| show_about_modal.set(false),
             }
-            div { class: "ac-settings-modal-dialog",
-                div { class: "ac-settings-card ac-about-card",
-                    div { class: "ac-settings-head",
+            div {
+                class: "relative z-[1] w-full max-w-[32rem] h-auto max-h-[calc(100%-40px)] overflow-hidden flex flex-col min-h-0 box-border",
+                div { class: crate::shell::style::MODAL_CARD,
+                    div { class: crate::shell::style::MODAL_HEAD,
                         h1 {
-                            class: "ac-settings-title ac-about-title-tappable",
+                            class: "m-0 text-[1.25rem] font-extrabold text-secondary-1 cursor-default select-none",
                             role: "button",
                             tabindex: "0",
                             title: "连续点击三次可开关开发者模式",
@@ -200,21 +202,22 @@ fn DesktopAboutModal(mut show_about_modal: Signal<bool>) -> Element {
                         }
                         button {
                             r#type: "button",
-                            class: "ac-settings-close",
+                            class: crate::shell::style::MODAL_CLOSE,
                             title: "关闭",
                             aria_label: "关闭",
                             onclick: move |_| show_about_modal.set(false),
                             "×"
                         }
                     }
-                    dl { class: "ac-about-dl",
-                        div { class: "ac-about-row",
-                            dt { "版本号" }
-                            dd { "{dto.version}" }
+                    dl { class: "m-0 p-0 flex-[0_1_auto] min-h-0 overflow-x-hidden overflow-y-auto",
+                        div {
+                            class: "grid grid-cols-[5.5rem_1fr] gap-x-4 gap-y-[0.65rem] items-start m-0 mb-[0.85rem] text-[0.9rem] leading-[1.45]",
+                            dt { class: "m-0 font-bold", "版本号" }
+                            dd { class: "m-0 font-semibold [word-break:break-word]", "{dto.version}" }
                         }
                         if developer_mode() {
                             div {
-                                class: "ac-about-row ac-about-row-tappable",
+                                class: "grid grid-cols-[5.5rem_1fr] gap-x-4 gap-y-[0.65rem] items-start m-0 mb-[0.85rem] text-[0.9rem] leading-[1.45] w-full box-border p-0 bg-transparent text-left cursor-pointer rounded-[0.35rem] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ac-color-93c5fd)]",
                                 role: "button",
                                 tabindex: "0",
                                 onclick: move |_| {
@@ -222,17 +225,19 @@ fn DesktopAboutModal(mut show_about_modal: Signal<bool>) -> Element {
                                         crate::shell::dev_mode::apply(false, developer_mode);
                                     });
                                 },
-                                dt { "开发者模式" }
-                                dd { "true" }
+                                dt { class: "m-0 font-bold", "开发者模式" }
+                                dd { class: "m-0 font-semibold [word-break:break-word]", "true" }
                             }
                         }
-                        div { class: "ac-about-row",
-                            dt { "系统" }
-                            dd { "{dto.runtime_os}" }
+                        div {
+                            class: "grid grid-cols-[5.5rem_1fr] gap-x-4 gap-y-[0.65rem] items-start m-0 mb-[0.85rem] text-[0.9rem] leading-[1.45]",
+                            dt { class: "m-0 font-bold", "系统" }
+                            dd { class: "m-0 font-semibold [word-break:break-word]", "{dto.runtime_os}" }
                         }
-                        div { class: "ac-about-row",
-                            dt { "架构" }
-                            dd { "{dto.runtime_arch}" }
+                        div {
+                            class: "grid grid-cols-[5.5rem_1fr] gap-x-4 gap-y-[0.65rem] items-start m-0 mb-[0.85rem] text-[0.9rem] leading-[1.45]",
+                            dt { class: "m-0 font-bold", "架构" }
+                            dd { class: "m-0 font-semibold [word-break:break-word]", "{dto.runtime_arch}" }
                         }
                     }
                 }
@@ -347,9 +352,7 @@ pub fn DesktopAppShell() -> Element {
         }
         document::Link { rel: "icon", r#type: "image/x-icon", href: crate::FAVICON }
         document::Link { rel: "apple-touch-icon", sizes: "180x180", href: crate::APPLE_TOUCH_ICON }
-        document::Link { rel: "stylesheet", href: crate::COLORS_CSS }
-        document::Link { rel: "stylesheet", href: crate::MAIN_CSS }
-        document::Link { rel: "stylesheet", href: crate::TAILWIND_CSS }
+        document::Link { rel: "stylesheet", href: crate::STYLES_CSS }
         div {
             class: "app-shell app-shell-native-frame",
             // shell 已可挂载：淡出并移除冷启动 HTML 骨架
@@ -367,7 +370,7 @@ pub fn DesktopAppShell() -> Element {
   };
   const waitCss = () => new Promise((resolve) => {
     const ready = () => [...document.styleSheets].some((s) => {
-      try { return !!(s.href && /main|colors|tailwind/i.test(s.href)); }
+      try { return !!(s.href && /styles|main|colors|tailwind/i.test(s.href)); }
       catch (_) { return false; }
     });
     if (ready()) { resolve(); return; }
@@ -409,12 +412,14 @@ pub fn DesktopAppShell() -> Element {
             }
             crate::StatusBar { show_terminal, active_file_path, active_role_name }
             if show_settings_modal() {
-                div { class: "ac-settings-modal-root",
+                div {
+                    class: "fixed top-[var(--ac-chrome-top,0px)] right-0 bottom-[var(--ac-chrome-bottom,1.625rem)] left-0 z-[1250] flex items-center justify-center px-4 box-border",
                     div {
-                        class: "ac-settings-modal-backdrop",
+                        class: "absolute inset-0 bg-[var(--shadow-color)] backdrop-blur-[10px] cursor-pointer",
                         onclick: move |_| show_settings_modal.set(false),
                     }
-                    div { class: "ac-settings-modal-dialog",
+                    div {
+                        class: "relative z-[1] w-full max-w-[32rem] h-auto max-h-[calc(100%-40px)] overflow-hidden flex flex-col min-h-0 box-border",
                         DesktopSettingsPage { show_settings_modal }
                     }
                 }

@@ -7,8 +7,6 @@ pub mod shell;
 pub use shell::{Console, StatusBar};
 
 mod chat;
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
-pub mod components;
 mod custom_chat_models;
 mod icons;
 mod persona;
@@ -40,23 +38,12 @@ const FAVICON: Asset = asset!("/assets/icons/favicon.ico");
     all(not(target_arch = "wasm32"), feature = "native")
 ))]
 const APPLE_TOUCH_ICON: Asset = asset!("/assets/icons/apple-touch-icon-180x180.png");
+/// 唯一样式产物：`just tailwind` 由 `ui/assets/css/app.css` 生成，勿手改。
 #[cfg(any(
     all(target_arch = "wasm32", feature = "web"),
     all(not(target_arch = "wasm32"), feature = "native")
 ))]
-const COLORS_CSS: Asset = asset!("/assets/css/colors.css");
-#[cfg(any(
-    all(target_arch = "wasm32", feature = "web"),
-    all(not(target_arch = "wasm32"), feature = "native")
-))]
-const MAIN_CSS: Asset = asset!("/assets/css/main.css");
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
-const DX_COMPONENTS_THEME_CSS: Asset = asset!("/assets/css/dx-components-theme.css");
-#[cfg(any(
-    all(target_arch = "wasm32", feature = "web"),
-    all(not(target_arch = "wasm32"), feature = "native")
-))]
-const TAILWIND_CSS: Asset = asset!("/assets/css/tailwind.css");
+const STYLES_CSS: Asset = asset!("/assets/css/styles.css");
 
 /// 中文正文：Source Han Sans HW SC Regular。
 #[cfg(any(
@@ -182,10 +169,7 @@ fn WebAppShell() -> Element {
         document::Style { "{source_han_sans_hwsc_font_face_css()}" }
         document::Link { rel: "icon", r#type: "image/x-icon", href: FAVICON }
         document::Link { rel: "apple-touch-icon", sizes: "180x180", href: APPLE_TOUCH_ICON }
-        document::Link { rel: "stylesheet", href: COLORS_CSS }
-        document::Link { rel: "stylesheet", href: DX_COMPONENTS_THEME_CSS }
-        document::Link { rel: "stylesheet", href: MAIN_CSS }
-        document::Link { rel: "stylesheet", href: TAILWIND_CSS }
+        document::Link { rel: "stylesheet", href: STYLES_CSS }
         div {
             class: "app-shell",
             Console {
@@ -199,12 +183,14 @@ fn WebAppShell() -> Element {
             }
             StatusBar { show_terminal, active_file_path, active_role_name }
             if show_settings_modal() {
-                div { class: "ac-settings-modal-root",
+                div {
+                    class: "fixed top-[var(--ac-chrome-top,0px)] right-0 bottom-[var(--ac-chrome-bottom,1.625rem)] left-0 z-[1250] flex items-center justify-center px-4 box-border",
                     div {
-                        class: "ac-settings-modal-backdrop",
+                        class: "absolute inset-0 bg-[var(--shadow-color)] backdrop-blur-[10px] cursor-pointer",
                         onclick: move |_| show_settings_modal.set(false),
                     }
-                    div { class: "ac-settings-modal-dialog",
+                    div {
+                        class: "relative z-[1] w-full max-w-[32rem] h-auto max-h-[calc(100%-40px)] overflow-hidden flex flex-col min-h-0 box-border",
                         WebSettingsPage { show_settings_modal }
                     }
                 }

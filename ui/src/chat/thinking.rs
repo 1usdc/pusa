@@ -1,4 +1,33 @@
 //! 聊天区 Agent 思考 / 工具步骤（Cursor 式：步骤时间线在上，回答在下）。
+use crate::shell::style::{
+    CHAT_SUBTASK_BADGE,
+    CHAT_SUBTASK_CARD,
+    CHAT_SUBTASK_HEAD,
+    CHAT_SUBTASK_OPEN,
+    CHAT_SUBTASK_STATUS,
+    CHAT_SUBTASK_SUMMARY,
+    CHAT_SUBTASK_TEXT,
+    CHAT_SUBTASK_TITLE,
+    CHAT_TRACE,
+    CHAT_TRACE_ACTIVITY,
+    CHAT_TRACE_ACTIVITY_LABEL,
+    CHAT_TRACE_BODY,
+    CHAT_TRACE_CHEVRON,
+    CHAT_TRACE_LIST,
+    CHAT_TRACE_MINI_CHEVRON,
+    CHAT_TRACE_PRIMARY,
+    CHAT_TRACE_PRIMARY_LINK,
+    CHAT_TRACE_PULSE,
+    CHAT_TRACE_ROW,
+    CHAT_TRACE_SECONDARY,
+    CHAT_TRACE_SUMMARY,
+    CHAT_TRACE_SUMMARY_LABEL,
+    CHAT_TRACE_THOUGHT_BODY,
+    CHAT_TRACE_THOUGHT_BTN,
+    CHAT_TRACE_THOUGHT_HEAD,
+    CHAT_TRACE_VERB,
+    CHAT_TRACE_WAITING,
+};
 
 use super::facade::load_agent_run_detail;
 use super::ui::{
@@ -509,10 +538,10 @@ pub fn ChatThinkingPanel(
     let mut open_thoughts = use_signal(std::collections::HashSet::<String>::new);
 
     rsx! {
-        div { class: "ac-chat-trace",
+        div { class: CHAT_TRACE,
             button {
                 r#type: "button",
-                class: "ac-chat-trace-summary",
+                class: CHAT_TRACE_SUMMARY,
                 aria_expanded: expanded,
                 onclick: move |_| {
                     chat_messages.with_mut(|msgs| {
@@ -528,8 +557,8 @@ pub fn ChatThinkingPanel(
                         }
                     });
                 },
-                span { class: "ac-chat-trace-summary-label", "{summary}" }
-                span { class: "ac-chat-trace-chevron", aria_hidden: "true",
+                span { class: CHAT_TRACE_SUMMARY_LABEL, "{summary}" }
+                span { class: CHAT_TRACE_CHEVRON, aria_hidden: "true",
                     if expanded {
                         Icon { icon: LdChevronDown, width: 14, height: 14, fill: "currentColor" }
                     } else {
@@ -539,14 +568,14 @@ pub fn ChatThinkingPanel(
             }
 
             if expanded {
-                div { class: "ac-chat-trace-body",
+                div { class: CHAT_TRACE_BODY,
                     if let Some(act) = activity.clone() {
-                        div { class: "ac-chat-trace-activity",
-                            span { class: "ac-chat-trace-activity-label", "{act}" }
+                        div { class: CHAT_TRACE_ACTIVITY,
+                            span { class: CHAT_TRACE_ACTIVITY_LABEL, "{act}" }
                         }
                     }
                     if has_rows {
-                        div { class: "ac-chat-trace-list", role: "list",
+                        div { class: CHAT_TRACE_LIST, role: "list",
                             for row in rows.iter() {
                                 {
                                     let key = row.key.clone();
@@ -573,16 +602,14 @@ pub fn ChatThinkingPanel(
                                             rsx! {
                                                 div {
                                                     key: "{key}",
-                                                    class: if running {
-                                                        "ac-chat-trace-row is-thought is-running"
-                                                    } else {
-                                                        "ac-chat-trace-row is-thought"
-                                                    },
+                                                    class: CHAT_TRACE_ROW,
+                                                    "data-thought": true,
+                                                    "data-running": running,
                                                     role: "listitem",
                                                     if can_expand {
                                                         button {
                                                             r#type: "button",
-                                                            class: "ac-chat-trace-thought-btn",
+                                                            class: CHAT_TRACE_THOUGHT_BTN,
                                                             aria_expanded: is_open,
                                                             onclick: {
                                                                 let key = key.clone();
@@ -596,8 +623,8 @@ pub fn ChatThinkingPanel(
                                                                     });
                                                                 }
                                                             },
-                                                            span { class: "ac-chat-trace-verb is-muted", "{label}" }
-                                                            span { class: "ac-chat-trace-mini-chevron", aria_hidden: "true",
+                                                            span { class: CHAT_TRACE_VERB, "data-muted": true, "{label}" }
+                                                            span { class: CHAT_TRACE_MINI_CHEVRON, aria_hidden: "true",
                                                                 if is_open {
                                                                     Icon { icon: LdChevronDown, width: 12, height: 12, fill: "currentColor" }
                                                                 } else {
@@ -606,23 +633,25 @@ pub fn ChatThinkingPanel(
                                                             }
                                                         }
                                                         if is_open {
-                                                            pre { class: "ac-chat-trace-thought-body", "{full}" }
+                                                            pre { class: CHAT_TRACE_THOUGHT_BODY, "{full}" }
                                                         } else if !collapsed_snip.is_empty() {
                                                             pre {
-                                                                class: "ac-chat-trace-thought-body is-snip",
+                                                                class: CHAT_TRACE_THOUGHT_BODY,
+                                                                "data-snip": true,
                                                                 "{collapsed_snip}"
                                                             }
                                                         }
                                                     } else {
-                                                        div { class: "ac-chat-trace-thought-head",
-                                                            span { class: "ac-chat-trace-verb is-muted", "{label}" }
+                                                        div { class: CHAT_TRACE_THOUGHT_HEAD,
+                                                            span { class: CHAT_TRACE_VERB, "data-muted": true, "{label}" }
                                                             if running {
-                                                                span { class: "ac-chat-trace-pulse", aria_hidden: "true" }
+                                                                span { class: CHAT_TRACE_PULSE, aria_hidden: "true" }
                                                             }
                                                         }
                                                         if show_live {
                                                             pre {
-                                                                class: "ac-chat-trace-thought-body is-live",
+                                                                class: CHAT_TRACE_THOUGHT_BODY,
+                                                                "data-live": true,
                                                                 "{live_body}"
                                                             }
                                                         }
@@ -656,18 +685,15 @@ pub fn ChatThinkingPanel(
                                             rsx! {
                                                 div {
                                                     key: "{key}",
-                                                    class: if running {
-                                                        "ac-chat-trace-row is-tool is-running"
-                                                    } else {
-                                                        "ac-chat-trace-row is-tool"
-                                                    },
+                                                    class: CHAT_TRACE_ROW,
+                                                    "data-running": running,
                                                     role: "listitem",
-                                                    span { class: "ac-chat-trace-verb", "{verb}" }
+                                                    span { class: CHAT_TRACE_VERB, "{verb}" }
                                                     if !primary.is_empty() {
                                                         if let Some(action) = open.clone() {
                                                             button {
                                                                 r#type: "button",
-                                                                class: "ac-chat-trace-primary is-link",
+                                                                class: CHAT_TRACE_PRIMARY_LINK,
                                                                 title: "{tip}",
                                                                 onclick: move |_| {
                                                                     on_open_trace_file.call(action.clone());
@@ -675,14 +701,14 @@ pub fn ChatThinkingPanel(
                                                                 "{primary}"
                                                             }
                                                         } else {
-                                                            span { class: "ac-chat-trace-primary", "{primary}" }
+                                                            span { class: CHAT_TRACE_PRIMARY, "{primary}" }
                                                         }
                                                     }
                                                     if !secondary.is_empty() {
-                                                        span { class: "ac-chat-trace-secondary", "{secondary}" }
+                                                        span { class: CHAT_TRACE_SECONDARY, "{secondary}" }
                                                     }
                                                     if running {
-                                                        span { class: "ac-chat-trace-pulse", aria_hidden: "true" }
+                                                        span { class: CHAT_TRACE_PULSE, aria_hidden: "true" }
                                                     }
                                                 }
                                             }
@@ -704,32 +730,29 @@ pub fn ChatThinkingPanel(
                                             rsx! {
                                                 div {
                                                     key: "{key}",
-                                                    class: if running {
-                                                        "ac-chat-subtask-card is-running"
-                                                    } else {
-                                                        "ac-chat-subtask-card"
-                                                    },
+                                                    class: CHAT_SUBTASK_CARD,
+                                                    "data-running": running,
                                                     role: "listitem",
-                                                    div { class: "ac-chat-subtask-card-head",
-                                                        span { class: "ac-chat-subtask-card-badge", "子任务" }
-                                                        span { class: "ac-chat-subtask-card-title", "{title}" }
-                                                        span { class: "ac-chat-subtask-card-status",
+                                                    div { class: CHAT_SUBTASK_HEAD,
+                                                        span { class: CHAT_SUBTASK_BADGE, "子任务" }
+                                                        span { class: CHAT_SUBTASK_TITLE, "{title}" }
+                                                        span { class: CHAT_SUBTASK_STATUS,
                                                             if running { "运行中" } else { "已完成" }
                                                         }
                                                         if running {
-                                                            span { class: "ac-chat-trace-pulse", aria_hidden: "true" }
+                                                            span { class: CHAT_TRACE_PULSE, aria_hidden: "true" }
                                                         }
                                                     }
                                                     if !prompt.is_empty() {
-                                                        div { class: "ac-chat-subtask-card-prompt", "{prompt}" }
+                                                        div { class: CHAT_SUBTASK_TEXT, "{prompt}" }
                                                     }
                                                     if !worktree.is_empty() {
-                                                        div { class: "ac-chat-subtask-card-meta", "worktree · {worktree}" }
+                                                        div { class: CHAT_SUBTASK_TEXT, "worktree · {worktree}" }
                                                     }
                                                     if let Some(cid) = conversation_id.clone() {
                                                         button {
                                                             r#type: "button",
-                                                            class: "ac-chat-subtask-card-open",
+                                                            class: CHAT_SUBTASK_OPEN,
                                                             title: "打开独立会话 {cid}",
                                                             onclick: move |_| {
                                                                 on_open_trace_file.call(TraceFileOpen::Conversation {
@@ -740,7 +763,7 @@ pub fn ChatThinkingPanel(
                                                         }
                                                     }
                                                     if !summary.is_empty() {
-                                                        div { class: "ac-chat-subtask-card-summary", "{summary}" }
+                                                        div { class: CHAT_SUBTASK_SUMMARY, "{summary}" }
                                                     }
                                                 }
                                             }
@@ -750,9 +773,9 @@ pub fn ChatThinkingPanel(
                             }
                         }
                     } else if running {
-                        div { class: "ac-chat-trace-waiting",
-                            span { class: "ac-chat-trace-verb is-muted", "正在分析" }
-                            span { class: "ac-chat-trace-pulse", aria_hidden: "true" }
+                        div { class: CHAT_TRACE_WAITING,
+                            span { class: CHAT_TRACE_VERB, "data-muted": true, "正在分析" }
+                            span { class: CHAT_TRACE_PULSE, aria_hidden: "true" }
                         }
                     }
                 }

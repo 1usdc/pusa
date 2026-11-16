@@ -69,11 +69,11 @@ pub fn WebBrowserPane(url: String, on_navigate: EventHandler<String>) -> Element
 
     let url_is_empty = url.is_empty();
     rsx! {
-        section { class: "ac-web-browser-pane",
-            div { class: "ac-web-browser-bar",
+        section { class: crate::shell::style::WEB_BROWSER_PANE, "data-web-browser-pane": true,
+            div { class: crate::shell::style::WEB_BROWSER_BAR,
                 input {
                     r#type: "text",
-                    class: "ac-web-browser-input",
+                    class: crate::shell::style::WEB_BROWSER_INPUT,
                     placeholder: "输入网址后回车，例如 example.com",
                     autofocus: url_is_empty,
                     value: "{input_value()}",
@@ -87,18 +87,18 @@ pub fn WebBrowserPane(url: String, on_navigate: EventHandler<String>) -> Element
                 }
                 button {
                     r#type: "button",
-                    class: "ac-web-browser-go",
+                    class: crate::shell::style::WEB_BROWSER_GO,
                     onclick: move |_| navigate(),
                     "访问"
                 }
             }
             if url.is_empty() {
-                div { class: "ac-web-browser-empty",
+                div { class: crate::shell::style::WEB_BROWSER_EMPTY,
                     p { "在上方地址栏输入网址，回车后即可在 Pusa 内浏览网页。" }
                 }
             } else {
                 iframe {
-                    class: "ac-web-browser-frame",
+                    class: crate::shell::style::WEB_BROWSER_FRAME,
                     src: "{url}",
                     title: "Pusa 浏览器",
                 }

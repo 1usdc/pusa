@@ -8,6 +8,11 @@ use dioxus_free_icons::icons::ld_icons::{
 use dioxus_free_icons::Icon;
 use keyboard_types::Key;
 
+// rsx 字符串插值只支持简单标识符，组合类名时需先 `use` 进来。
+use crate::shell::style::{
+    SKILL_GLYPH_LIST_BLUE, SKILLS_ROW, SKILLS_ROW_SKELETON, SKILLS_SKEL_DESC, SKILLS_SKEL_TITLE,
+};
+
 /// 一级视图：我的扩展 | 扩展市场。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PluginView {
@@ -651,30 +656,35 @@ fn PluginGlyph(icon_url: ReadSignal<Option<String>>, name: String, large: bool) 
     let initial = plugin_initial(&name);
     let box_class = if large {
         if show_img {
-            "ac-skills-detail-icon ac-plugin-icon-has-img"
+            crate::shell::style::SKILL_GLYPH_DETAIL_IMG
         } else {
-            "ac-skills-detail-icon ac-skill-icon-blue"
+            crate::shell::style::SKILL_GLYPH_DETAIL_BLUE
         }
     } else if show_img {
-        "ac-skills-list-icon ac-plugin-icon-has-img"
+        crate::shell::style::SKILL_GLYPH_LIST_IMG
     } else {
-        "ac-skills-list-icon ac-skill-icon-blue"
+        crate::shell::style::SKILL_GLYPH_LIST_BLUE
+    };
+    let letter_class = if large {
+        crate::shell::style::SKILL_GLYPH_LETTER_LARGE
+    } else {
+        crate::shell::style::SKILL_GLYPH_LETTER
     };
     rsx! {
         div { class: "{box_class}",
             if let Some(src) = url.as_ref() {
                 if !broken() {
                     img {
-                        class: "ac-plugin-icon-img",
+                        class: crate::shell::style::SKILL_GLYPH_IMG,
                         src: "{src}",
                         alt: "",
                         onerror: move |_| broken.set(true),
                     }
                 } else {
-                    span { class: "ac-plugin-icon-letter", "{initial}" }
+                    span { class: "{letter_class}", "{initial}" }
                 }
             } else {
-                span { class: "ac-plugin-icon-letter", "{initial}" }
+                span { class: "{letter_class}", "{initial}" }
             }
         }
     }
@@ -742,7 +752,7 @@ pub fn PluginDetailPane(
     let card = catalog().into_iter().find(|c| c.install_key == plugin_key);
 
     rsx! {
-        section { class: "ac-skills-detail-pane",
+        section { class: crate::shell::style::SKILL_DETAIL_PANE,
             if let Some(card) = card {
                 {
                     let key = card.install_key.clone();
@@ -761,39 +771,39 @@ pub fn PluginDetailPane(
                     let installed = card.installed;
                     let available = plugin_available();
                     rsx! {
-                        div { class: "ac-skills-detail",
-                            div { class: "ac-skills-detail-head",
+                        div { class: crate::shell::style::SKILL_DETAIL,
+                            div { class: crate::shell::style::SKILL_DETAIL_HEAD,
                                 PluginGlyph {
                                     icon_url: card.icon_url.clone(),
                                     name: name.clone(),
                                     large: true,
                                 }
-                                div { class: "ac-skills-detail-titles",
-                                    h2 { "{name}" }
-                                    p { class: "ac-skills-detail-slug", "{path}" }
+                                div { class: crate::shell::style::SKILL_DETAIL_TITLES,
+                                    h2 { class: crate::shell::style::SKILL_DETAIL_TITLE, "{name}" }
+                                    p { class: crate::shell::style::SKILL_DETAIL_SLUG, "{path}" }
                                 }
                             }
                             if !desc.is_empty() {
-                                p { class: "ac-skills-detail-desc", "{desc}" }
+                                p { class: crate::shell::style::SKILL_DETAIL_DESC, "{desc}" }
                             }
                             if !meta.is_empty() {
-                                div { class: "ac-skill-market-meta",
-                                    span { "{meta}" }
+                                div { class: "flex flex-wrap gap-[0.45rem] mt-4",
+                                    span { class: "px-2 py-[0.22rem] rounded-full text-secondary-3 bg-primary-1 text-[0.68rem] font-[850]", "{meta}" }
                                 }
                             }
                             if installed && smart_ui_visible() {
                                 if let Some(ui) = smart_ui() {
-                                    div { class: "ac-smart-ui-panel",
-                                        div { class: "ac-smart-ui-head",
-                                            div { class: "ac-smart-ui-titles",
-                                                h3 { "{ui.title}" }
+                                    div { class: crate::shell::style::SMART_UI_PANEL,
+                                        div { class: crate::shell::style::SMART_UI_HEAD,
+                                            div {
+                                                h3 { class: crate::shell::style::SMART_UI_TITLE, "{ui.title}" }
                                                 if !ui.summary.is_empty() {
-                                                    p { "{ui.summary}" }
+                                                    p { class: crate::shell::style::SMART_UI_SUMMARY, "{ui.summary}" }
                                                 }
                                             }
                                             button {
                                                 r#type: "button",
-                                                class: "ac-smart-ui-regen",
+                                                class: crate::shell::style::SMART_UI_REGEN,
                                                 title: "重新扫描并生成",
                                                 disabled: smart_ui_busy() || smart_ui_running().is_some(),
                                                 onclick: {
@@ -826,12 +836,12 @@ pub fn PluginDetailPane(
                                                     width: 14,
                                                     height: 14,
                                                     fill: "currentColor",
-                                                    class: "ac-skill-action-icon",
+                                                    class: "shrink-0",
                                                 }
                                                 if smart_ui_busy() { "生成中" } else { "重新生成" }
                                             }
                                         }
-                                        div { class: "ac-smart-ui-actions",
+                                        div { class: crate::shell::style::SMART_UI_ACTIONS,
                                             for action in ui.actions.iter() {
                                                 {
                                                     let action_id = action.id.clone();
@@ -848,7 +858,7 @@ pub fn PluginDetailPane(
                                                     rsx! {
                                                         button {
                                                             r#type: "button",
-                                                            class: "ac-smart-ui-action",
+                                                            class: crate::shell::style::SMART_UI_ACTION,
                                                             title: "{title}",
                                                             disabled: smart_ui_busy() || smart_ui_running().is_some(),
                                                             onclick: move |_| {
@@ -864,7 +874,7 @@ pub fn PluginDetailPane(
                                                                 width: 14,
                                                                 height: 14,
                                                                 fill: "currentColor",
-                                                                class: "ac-skill-action-icon",
+                                                                class: "shrink-0",
                                                             }
                                                             if smart_ui_running() == Some(action_id.clone()) {
                                                                 "执行中"
@@ -878,17 +888,17 @@ pub fn PluginDetailPane(
                                         }
                                     }
                                 } else if smart_ui_busy() {
-                                    div { class: "ac-smart-ui-panel ac-smart-ui-loading",
-                                        p { "正在扫描项目并生成智能 UI…" }
+                                    div { class: crate::shell::style::SMART_UI_PANEL,
+                                        p { class: crate::shell::style::SMART_UI_LOADING_TEXT, "正在扫描项目并生成智能 UI…" }
                                     }
                                 }
                             }
-                            div { class: "ac-skills-detail-actions",
+                            div { class: crate::shell::style::SKILL_DETAIL_ACTIONS,
                                 if installed {
                                     if available {
                                         button {
                                             r#type: "button",
-                                            class: "ac-installed-equip",
+                                            class: crate::shell::style::BTN_SKILL_EQUIP,
                                             title: "打开安装目录",
                                             onclick: move |_| {
                                                 let card = card_open.clone();
@@ -904,13 +914,13 @@ pub fn PluginDetailPane(
                                                 width: 15,
                                                 height: 15,
                                                 fill: "currentColor",
-                                                class: "ac-skill-action-icon",
+                                                class: "shrink-0",
                                             }
                                             "打开目录"
                                         }
                                         button {
                                             r#type: "button",
-                                            class: "ac-installed-equip",
+                                            class: crate::shell::style::BTN_SKILL_EQUIP,
                                             title: "复制安装目录绝对路径",
                                             onclick: move |_| {
                                                 let card = card_copy.clone();
@@ -926,13 +936,13 @@ pub fn PluginDetailPane(
                                                 width: 15,
                                                 height: 15,
                                                 fill: "currentColor",
-                                                class: "ac-skill-action-icon",
+                                                class: "shrink-0",
                                             }
                                             "复制路径"
                                         }
                                         button {
                                             r#type: "button",
-                                            class: "ac-installed-action",
+                                            class: crate::shell::style::BTN_SKILL_REMOVE,
                                             title: "卸载",
                                             disabled: uninstalling().is_some() || installing().is_some() || smart_ui_busy(),
                                             onclick: move |_| {
@@ -959,7 +969,7 @@ pub fn PluginDetailPane(
                                                 width: 15,
                                                 height: 15,
                                                 fill: "currentColor",
-                                                class: "ac-skill-action-icon",
+                                                class: "shrink-0",
                                             }
                                             if uninstalling() == Some(key.clone()) {
                                                 "卸载中"
@@ -969,7 +979,7 @@ pub fn PluginDetailPane(
                                         }
                                         button {
                                             r#type: "button",
-                                            class: "ac-installed-equip",
+                                            class: crate::shell::style::BTN_SKILL_EQUIP,
                                             title: "AI 扫描项目并生成可执行脚本面板",
                                             disabled: smart_ui_busy() || uninstalling().is_some(),
                                             onclick: {
@@ -1024,7 +1034,7 @@ pub fn PluginDetailPane(
                                                 width: 15,
                                                 height: 15,
                                                 fill: "currentColor",
-                                                class: "ac-skill-action-icon",
+                                                class: "shrink-0",
                                             }
                                             if smart_ui_busy() {
                                                 "生成中"
@@ -1036,7 +1046,7 @@ pub fn PluginDetailPane(
                                 } else if available {
                                     button {
                                         r#type: "button",
-                                        class: "ac-skill-install-btn",
+                                        class: crate::shell::style::BTN_SKILL_INSTALL,
                                         disabled: installing().is_some(),
                                         onclick: move |_| {
                                             let card = card_install.clone();
@@ -1073,7 +1083,7 @@ pub fn PluginDetailPane(
                                             width: 15,
                                             height: 15,
                                             fill: "currentColor",
-                                            class: "ac-skill-action-icon",
+                                            class: "shrink-0",
                                         }
                                         if installing() == Some(key.clone()) {
                                             "安装中"
@@ -1083,7 +1093,7 @@ pub fn PluginDetailPane(
                                     }
                                 } else if !homepage.is_empty() {
                                     a {
-                                        class: "ac-skill-install-btn",
+                                        class: crate::shell::style::BTN_SKILL_INSTALL,
                                         href: "{homepage}",
                                         target: "_blank",
                                         rel: "noopener noreferrer",
@@ -1092,14 +1102,14 @@ pub fn PluginDetailPane(
                                             width: 15,
                                             height: 15,
                                             fill: "currentColor",
-                                            class: "ac-skill-action-icon",
+                                            class: "shrink-0",
                                         }
                                         "在浏览器打开"
                                     }
                                 } else {
                                     button {
                                         r#type: "button",
-                                        class: "ac-skill-installed-btn",
+                                        class: crate::shell::style::BTN_SKILL_INSTALLED,
                                         disabled: true,
                                         "请使用桌面版安装"
                                     }
@@ -1109,16 +1119,16 @@ pub fn PluginDetailPane(
                     }
                 }
             } else {
-                div { class: "ac-skills-detail-empty",
+                div { class: crate::shell::style::SKILL_DETAIL_EMPTY,
                     Icon {
                         icon: LdDownload,
                         width: 40,
                         height: 40,
                         fill: "currentColor",
-                        class: "ac-installed-empty-icon",
+                        class: crate::shell::style::SKILL_EMPTY_ICON,
                     }
-                    h3 { "扩展" }
-                    p { "该扩展已不在当前列表中，可重新搜索后打开。" }
+                    h3 { class: crate::shell::style::SKILL_DETAIL_EMPTY_H3, "扩展" }
+                    p { class: crate::shell::style::SKILL_DETAIL_EMPTY_P, "该扩展已不在当前列表中，可重新搜索后打开。" }
                 }
             }
         }
@@ -1290,17 +1300,18 @@ pub fn SidebarPluginMarket(
     let has_list_error = list_error.is_some();
 
     rsx! {
-        div { class: "ac-sidebar-skills ac-sidebar-plugins",
-            div { class: "ac-sidebar-skills-search",
+        div { class: crate::shell::style::SKILLS_PANEL,
+            div { class: crate::shell::style::SKILLS_SEARCH,
                 Icon {
                     icon: LdSearch,
                     width: 14,
                     height: 14,
                     fill: "currentColor",
-                    class: "ac-sidebar-skills-search-icon",
+                    class: "shrink-0 text-secondary-3 opacity-75",
                 }
                 input {
                     r#type: "search",
+                    class: crate::shell::style::SKILLS_SEARCH_INPUT,
                     value: "{search()}",
                     placeholder: if on_installed() {
                         "筛选已安装扩展"
@@ -1339,14 +1350,11 @@ pub fn SidebarPluginMarket(
                     },
                 }
             }
-            div { class: "ac-sidebar-skills-toggle",
+            div { class: crate::shell::style::SKILLS_TOGGLE,
                 button {
                     r#type: "button",
-                    class: if on_installed() {
-                        "ac-sidebar-skills-toggle-btn is-active"
-                    } else {
-                        "ac-sidebar-skills-toggle-btn"
-                    },
+                    class: crate::shell::style::SKILLS_TOGGLE_BTN,
+                    "data-active": on_installed(),
                     onclick: move |_| {
                         if plugin_view() == PluginView::Installed {
                             return;
@@ -1360,11 +1368,8 @@ pub fn SidebarPluginMarket(
                 }
                 button {
                     r#type: "button",
-                    class: if on_market() {
-                        "ac-sidebar-skills-toggle-btn is-active"
-                    } else {
-                        "ac-sidebar-skills-toggle-btn"
-                    },
+                    class: crate::shell::style::SKILLS_TOGGLE_BTN,
+                    "data-active": on_market(),
                     onclick: move |_| {
                         if plugin_view() == PluginView::Market {
                             return;
@@ -1378,28 +1383,28 @@ pub fn SidebarPluginMarket(
                 }
             }
             if !plugin_available() {
-                div { class: "ac-sidebar-skills-banner is-warn",
+                div { class: crate::shell::style::SKILLS_BANNER_WARN,
                     "桌面端可从 Open VSX 安装 .vsix 到工作区 extensions/；Web 可浏览与搜索，安装请用桌面版。"
                 }
             }
             if list_loading {
-                div { class: "ac-skills-list",
+                div { class: crate::shell::style::SKILLS_LIST,
                     for _ in 0..4 {
-                        div { class: "ac-skills-list-row ac-skills-list-row-skeleton",
-                            div { class: "ac-skills-list-icon ac-skeleton-base" }
-                            div { class: "ac-skills-list-body",
-                                div { class: "ac-skills-list-skel-title ac-skeleton-base" }
-                                div { class: "ac-skills-list-skel-desc ac-skeleton-base" }
+                        div { class: "{SKILLS_ROW} {SKILLS_ROW_SKELETON}",
+                            div { class: "{SKILL_GLYPH_LIST_BLUE} ac-skeleton-base" }
+                            div { class: crate::shell::style::SKILLS_LIST_BODY,
+                                div { class: "{SKILLS_SKEL_TITLE} ac-skeleton-base" }
+                                div { class: "{SKILLS_SKEL_DESC} ac-skeleton-base" }
                             }
                         }
                     }
                 }
             } else {
                 if let Some(err) = list_error.as_ref() {
-                    div { class: "ac-sidebar-skills-banner is-error", "{err}" }
+                    div { class: crate::shell::style::SKILLS_BANNER_ERROR, "{err}" }
                 }
                 if filtered().is_empty() && !has_list_error {
-                    div { class: "ac-sidebar-skills-empty",
+                    div { class: crate::shell::style::SKILLS_EMPTY,
                         if on_installed() {
                             if search().trim().is_empty() {
                                 "暂无已安装扩展，去「扩展市场」浏览。"
@@ -1413,7 +1418,7 @@ pub fn SidebarPluginMarket(
                         }
                     }
                 } else if !filtered().is_empty() {
-                    div { class: "ac-skills-section-header",
+                    div { class: crate::shell::style::SKILLS_SECTION_HEADER,
                         span {
                             if on_installed() {
                                 "我的扩展"
@@ -1424,7 +1429,7 @@ pub fn SidebarPluginMarket(
                             }
                         }
                     }
-                    div { class: "ac-skills-list",
+                    div { class: crate::shell::style::SKILLS_LIST,
                         for card in filtered() {
                             {
                                 let meta = format_meta(&card);
@@ -1435,11 +1440,8 @@ pub fn SidebarPluginMarket(
                                 let is_selected = selected_key() == Some(key.clone());
                                 rsx! {
                                     div {
-                                        class: if is_selected {
-                                            "ac-skills-list-row is-selected"
-                                        } else {
-                                            "ac-skills-list-row"
-                                        },
+                                        class: crate::shell::style::SKILLS_ROW,
+                                        "data-selected": is_selected,
                                         onclick: move |_| {
                                             catalog.with_mut(|cat| {
                                                 upsert_catalog(cat, card_open.clone());
@@ -1451,10 +1453,10 @@ pub fn SidebarPluginMarket(
                                             name: card.name.clone(),
                                             large: false,
                                         }
-                                        div { class: "ac-skills-list-body",
-                                            div { class: "ac-skills-list-title", "{card.name}" }
-                                            div { class: "ac-skills-list-desc", "{card.description}" }
-                                            div { class: "ac-skills-list-meta", "{meta}" }
+                                        div { class: crate::shell::style::SKILLS_LIST_BODY,
+                                            div { class: crate::shell::style::SKILLS_LIST_TITLE, "{card.name}" }
+                                            div { class: crate::shell::style::SKILLS_LIST_DESC, "{card.description}" }
+                                            div { class: crate::shell::style::SKILLS_LIST_META, "{meta}" }
                                         }
                                     }
                                 }

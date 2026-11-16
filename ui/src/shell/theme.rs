@@ -2,6 +2,9 @@
 //! 字体大小：持久化 + 写入 `html[data-font-size]`。
 
 use dioxus::prelude::*;
+use crate::shell::style::{
+    WEB_TITLEBAR_MENU_ITEM,
+};
 
 /// UI 主题。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -238,7 +241,7 @@ pub fn TitlebarThemeToggle(
         button {
             r#type: "button",
             role: "menuitem",
-            class: "ac-web-titlebar-menu__item",
+            class: WEB_TITLEBAR_MENU_ITEM,
             onclick: move |_| {
                 set(next);
                 ui_theme.set(next);
@@ -254,32 +257,31 @@ pub fn TitlebarThemeToggle(
 pub fn FontSizeModal(mut show_font_size_modal: Signal<bool>) -> Element {
     let mut font_size = use_signal(load_font_size);
     rsx! {
-        div { class: "ac-settings-modal-root",
+        div {
+            class: "fixed top-[var(--ac-chrome-top,0px)] right-0 bottom-[var(--ac-chrome-bottom,1.625rem)] left-0 z-[1250] flex items-center justify-center px-4 box-border",
             div {
-                class: "ac-settings-modal-backdrop",
+                class: "absolute inset-0 bg-[var(--shadow-color)] backdrop-blur-[10px] cursor-pointer",
                 onclick: move |_| show_font_size_modal.set(false),
             }
-            div { class: "ac-settings-modal-dialog",
-                div { class: "ac-settings-card",
-                    div { class: "ac-settings-head",
-                        h1 { class: "ac-settings-title", "字体大小" }
+            div {
+                class: "relative z-[1] w-full max-w-[32rem] h-auto max-h-[calc(100%-40px)] overflow-hidden flex flex-col min-h-0 box-border",
+                div { class: crate::shell::style::MODAL_CARD,
+                    div { class: crate::shell::style::MODAL_HEAD,
+                        h1 { class: crate::shell::style::MODAL_TITLE, "字体大小" }
                         button {
                             r#type: "button",
-                            class: "ac-settings-close",
+                            class: crate::shell::style::MODAL_CLOSE,
                             title: "关闭",
                             aria_label: "关闭",
                             onclick: move |_| show_font_size_modal.set(false),
                             "×"
                         }
                     }
-                    div { class: "ac-font-size-options",
+                    div { class: crate::shell::style::MODAL_BODY_FLEX_ROW,
                         button {
                             r#type: "button",
-                            class: if font_size() == FontSize::Small {
-                                "ac-font-size-option ac-font-size-option--active"
-                            } else {
-                                "ac-font-size-option"
-                            },
+                            class: "flex-1 px-4 py-3 rounded-[0.5rem] text-[1rem] font-medium cursor-pointer bg-transparent border-0 transition-all duration-150 ease-[ease] data-[active=true]:bg-primary-2 data-[active=true]:font-semibold data-[active=true]:text-black dark:data-[active=true]:text-white",
+                            "data-active": font_size() == FontSize::Small,
                             onclick: move |_| {
                                 set_font_size(FontSize::Small);
                                 font_size.set(FontSize::Small);
@@ -288,11 +290,8 @@ pub fn FontSizeModal(mut show_font_size_modal: Signal<bool>) -> Element {
                         }
                         button {
                             r#type: "button",
-                            class: if font_size() == FontSize::Medium {
-                                "ac-font-size-option ac-font-size-option--active"
-                            } else {
-                                "ac-font-size-option"
-                            },
+                            class: "flex-1 px-4 py-3 rounded-[0.5rem] text-[1rem] font-medium cursor-pointer bg-transparent border-0 transition-all duration-150 ease-[ease] data-[active=true]:bg-primary-2 data-[active=true]:font-semibold data-[active=true]:text-black dark:data-[active=true]:text-white",
+                            "data-active": font_size() == FontSize::Medium,
                             onclick: move |_| {
                                 set_font_size(FontSize::Medium);
                                 font_size.set(FontSize::Medium);
@@ -301,11 +300,8 @@ pub fn FontSizeModal(mut show_font_size_modal: Signal<bool>) -> Element {
                         }
                         button {
                             r#type: "button",
-                            class: if font_size() == FontSize::Large {
-                                "ac-font-size-option ac-font-size-option--active"
-                            } else {
-                                "ac-font-size-option"
-                            },
+                            class: "flex-1 px-4 py-3 rounded-[0.5rem] text-[1rem] font-medium cursor-pointer bg-transparent border-0 transition-all duration-150 ease-[ease] data-[active=true]:bg-primary-2 data-[active=true]:font-semibold data-[active=true]:text-black dark:data-[active=true]:text-white",
+                            "data-active": font_size() == FontSize::Large,
                             onclick: move |_| {
                                 set_font_size(FontSize::Large);
                                 font_size.set(FontSize::Large);

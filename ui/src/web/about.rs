@@ -54,16 +54,18 @@ pub fn WebAboutModal(mut show_about_modal: Signal<bool>) -> Element {
     });
 
     rsx! {
-        div { class: "ac-settings-modal-root ac-about-modal-root",
+        div {
+            class: "fixed top-[var(--ac-chrome-top,0px)] right-0 bottom-[var(--ac-chrome-bottom,1.625rem)] left-0 z-[1260] flex items-center justify-center px-4 box-border",
             div {
-                class: "ac-settings-modal-backdrop",
+                class: "absolute inset-0 bg-[var(--shadow-color)] backdrop-blur-[10px] cursor-pointer",
                 onclick: move |_| show_about_modal.set(false),
             }
-            div { class: "ac-settings-modal-dialog",
-                div { class: "ac-settings-card ac-about-card",
-                    div { class: "ac-settings-head",
+            div {
+                class: "relative z-[1] w-full max-w-[32rem] h-auto max-h-[calc(100%-40px)] overflow-hidden flex flex-col min-h-0 box-border",
+                div { class: crate::shell::style::MODAL_CARD,
+                    div { class: crate::shell::style::MODAL_HEAD,
                         h1 {
-                            class: "ac-settings-title ac-about-title-tappable",
+                            class: "cursor-default select-none m-0 text-[1.25rem] font-extrabold text-secondary-1",
                             role: "button",
                             tabindex: "0",
                             title: "连续点击三次可开关开发者模式",
@@ -76,7 +78,7 @@ pub fn WebAboutModal(mut show_about_modal: Signal<bool>) -> Element {
                         }
                         button {
                             r#type: "button",
-                            class: "ac-settings-close",
+                            class: crate::shell::style::MODAL_CLOSE,
                             title: "关闭",
                             aria_label: "关闭",
                             onclick: move |_| show_about_modal.set(false),
@@ -85,23 +87,30 @@ pub fn WebAboutModal(mut show_about_modal: Signal<bool>) -> Element {
                                 width: 18,
                                 height: 18,
                                 fill: "currentColor",
-                                class: "ac-settings-close-icon",
+                                class: "shrink-0",
                             }
                         }
                     }
                     if loading() {
-                        p { class: "ac-about-row ac-about-muted", "加载中…" }
+                        p {
+                            class: "grid grid-cols-[5.5rem_1fr] gap-x-4 gap-y-[0.65rem] items-start m-0 mb-[0.85rem] text-[0.9rem] leading-[1.45] flex-[0_1_auto] min-h-0 overflow-x-hidden overflow-y-auto",
+                            "加载中…"
+                        }
                     } else if let Some(err) = load_error() {
-                        p { class: "ac-about-row ac-about-error", "无法获取版本信息：{err}" }
+                        p {
+                            class: "grid grid-cols-[5.5rem_1fr] gap-x-4 gap-y-[0.65rem] items-start m-0 mb-[0.85rem] text-[0.9rem] leading-[1.45] flex-[0_1_auto] min-h-0 overflow-x-hidden overflow-y-auto",
+                            "无法获取版本信息：{err}"
+                        }
                     } else if let Some(dto) = info() {
-                        dl { class: "ac-about-dl",
-                            div { class: "ac-about-row",
-                                dt { "版本号" }
-                                dd { "{dto.version}" }
+                        dl { class: "m-0 p-0 flex-[0_1_auto] min-h-0 overflow-x-hidden overflow-y-auto",
+                            div {
+                                class: "grid grid-cols-[5.5rem_1fr] gap-x-4 gap-y-[0.65rem] items-start m-0 mb-[0.85rem] text-[0.9rem] leading-[1.45]",
+                                dt { class: "m-0 font-bold", "版本号" }
+                                dd { class: "m-0 font-semibold [word-break:break-word]", "{dto.version}" }
                             }
                             if developer_mode() {
                                 div {
-                                    class: "ac-about-row ac-about-row-tappable",
+                                    class: "grid grid-cols-[5.5rem_1fr] gap-x-4 gap-y-[0.65rem] items-start m-0 mb-[0.85rem] text-[0.9rem] leading-[1.45] w-full box-border p-0 bg-transparent text-left cursor-pointer rounded-[0.35rem] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ac-color-93c5fd)]",
                                     role: "button",
                                     tabindex: "0",
                                     onclick: move |_| {
@@ -109,21 +118,24 @@ pub fn WebAboutModal(mut show_about_modal: Signal<bool>) -> Element {
                                             dev_mode::apply(false, developer_mode);
                                         });
                                     },
-                                    dt { "开发者模式" }
-                                    dd { "true" }
+                                    dt { class: "m-0 font-bold", "开发者模式" }
+                                    dd { class: "m-0 font-semibold [word-break:break-word]", "true" }
                                 }
                             }
-                            div { class: "ac-about-row",
-                                dt { "系统" }
-                                dd { "{dto.runtime_os}" }
+                            div {
+                                class: "grid grid-cols-[5.5rem_1fr] gap-x-4 gap-y-[0.65rem] items-start m-0 mb-[0.85rem] text-[0.9rem] leading-[1.45]",
+                                dt { class: "m-0 font-bold", "系统" }
+                                dd { class: "m-0 font-semibold [word-break:break-word]", "{dto.runtime_os}" }
                             }
-                            div { class: "ac-about-row",
-                                dt { "架构" }
-                                dd { "{dto.runtime_arch}" }
+                            div {
+                                class: "grid grid-cols-[5.5rem_1fr] gap-x-4 gap-y-[0.65rem] items-start m-0 mb-[0.85rem] text-[0.9rem] leading-[1.45]",
+                                dt { class: "m-0 font-bold", "架构" }
+                                dd { class: "m-0 font-semibold [word-break:break-word]", "{dto.runtime_arch}" }
                             }
-                            div { class: "ac-about-row",
-                                dt { "浏览器" }
-                                dd { class: "ac-about-mono ac-about-ua", "{browser_user_agent()}" }
+                            div {
+                                class: "grid grid-cols-[5.5rem_1fr] gap-x-4 gap-y-[0.65rem] items-start m-0 mb-[0.85rem] text-[0.9rem] leading-[1.45]",
+                                dt { class: "m-0 font-bold", "浏览器" }
+                                dd { class: "m-0 font-semibold [word-break:break-word] font-mono text-[0.76rem] max-h-[4.5rem] overflow-auto", "{browser_user_agent()}" }
                             }
                         }
                     }

@@ -59,6 +59,31 @@ print(f"version {major}.{minor}.{patch} → {new}")
 PY
 fi
 
+echo "== 0b) 同步 README 里 macOS 安装包的版本号 =="
+python3 - "${ROOT}" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+m = re.search(r'(?m)^version = "(\d+\.\d+\.\d+)"', (root / "desktop" / "Cargo.toml").read_text())
+if not m:
+    sys.exit("desktop/Cargo.toml 没有 version")
+ver = m.group(1)
+
+readme = root / "README.md"
+text = readme.read_text()
+text, n = re.subn(
+    r"Pusa-(?:<版本>|\d+\.\d+\.\d+)-macos-arm64\.dmg",
+    f"Pusa-{ver}-macos-arm64.dmg",
+    text,
+    count=1,
+)
+if n == 1:
+    readme.write_text(text)
+print(f"README: Pusa-{ver}-macos-arm64.dmg")
+PY
+
 echo "== 1) 清空 desktop/dist =="
 rm -rf "${ROOT}/desktop/dist"
 mkdir -p "${ROOT}/desktop/dist"

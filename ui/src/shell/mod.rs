@@ -8,6 +8,7 @@ mod llm_settings;
 mod plugins;
 mod search;
 mod status_bar;
+pub(crate) mod style;
 pub(crate) mod syntax;
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 mod textmate;

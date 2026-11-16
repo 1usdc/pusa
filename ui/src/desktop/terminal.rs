@@ -13,6 +13,23 @@ use dioxus_free_icons::icons::ld_icons::{
 use dioxus_free_icons::Icon;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use serde::Deserialize;
+use crate::shell::style::{
+    TERMINAL_ADD_PUSA_BTN,
+    TERMINAL_BODY_XTERM,
+    TERMINAL_ERROR,
+    TERMINAL_MAIN,
+    TERMINAL_PANEL,
+    TERMINAL_RESIZER,
+    TERMINAL_SESSION_BTN,
+    TERMINAL_SESSION_CLOSE,
+    TERMINAL_SESSION_RAIL,
+    TERMINAL_TOOLBAR,
+    TERMINAL_TOOLBAR_ACTIONS,
+    TERMINAL_TOOLBAR_ADD,
+    TERMINAL_TOOLBAR_BTN,
+    TERMINAL_TOOLBAR_TITLE,
+    TERMINAL_XTERM_HOST,
+};
 
 const MAX_SCROLLBACK_BYTES: usize = 400_000;
 ///  bump 后强制重装 xterm 桥（选区 / Add to Pusa / 主题等）。
@@ -1108,19 +1125,19 @@ pub fn DesktopTerminal(
     });
 
     rsx! {
-        div { class: "ac-terminal-panel",
+        div { class: TERMINAL_PANEL,
             div {
-                class: "ac-terminal-resizer",
+                class: TERMINAL_RESIZER,
                 title: "拖动调整终端高度",
                 onmousedown: move |event| on_resize_start.call(event),
             }
-            div { class: "ac-terminal-toolbar",
-                span { class: "ac-terminal-toolbar-title", "终端" }
-                div { class: "ac-terminal-toolbar-actions",
+            div { class: TERMINAL_TOOLBAR,
+                span { class: TERMINAL_TOOLBAR_TITLE, "终端" }
+                div { class: TERMINAL_TOOLBAR_ACTIONS,
                     if !selection_text().trim().is_empty() {
                         button {
                             r#type: "button",
-                            class: "ac-terminal-add-pusa-btn",
+                            class: TERMINAL_ADD_PUSA_BTN,
                             title: "Add to Pusa",
                             aria_label: "Add to Pusa",
                             onclick: move |_| {
@@ -1147,7 +1164,7 @@ pub fn DesktopTerminal(
                     if is_maximized {
                         button {
                             r#type: "button",
-                            class: "ac-terminal-toolbar-btn",
+                            class: TERMINAL_TOOLBAR_BTN,
                             title: "最小化终端",
                             aria_label: "最小化终端",
                             onclick: move |_| {
@@ -1167,7 +1184,7 @@ pub fn DesktopTerminal(
                     } else {
                         button {
                             r#type: "button",
-                            class: "ac-terminal-toolbar-btn",
+                            class: TERMINAL_TOOLBAR_BTN,
                             title: "最大化终端",
                             aria_label: "最大化终端",
                             onclick: move |_| {
@@ -1187,7 +1204,7 @@ pub fn DesktopTerminal(
                     }
                     button {
                         r#type: "button",
-                        class: "ac-terminal-toolbar-btn",
+                        class: TERMINAL_TOOLBAR_BTN,
                         title: "关闭终端",
                         aria_label: "关闭终端",
                         onclick: move |_| show_terminal.set(false),
@@ -1200,14 +1217,14 @@ pub fn DesktopTerminal(
                     }
                 }
             }
-            div { class: "ac-terminal-main",
-                div { class: "ac-terminal-body ac-terminal-body--xterm",
+            div { class: TERMINAL_MAIN,
+                div { class: TERMINAL_BODY_XTERM,
                     if let Some(err) = active_err {
-                        div { class: "ac-terminal-error", "{err}" }
+                        div { class: TERMINAL_ERROR, "data-err": true, "{err}" }
                     }
                     div {
                         id: "ac-xterm-host",
-                        class: "ac-xterm-host",
+                        class: TERMINAL_XTERM_HOST,
                         onmounted: move |_| {
                             xterm_ensure();
                             xterm_fit();
@@ -1218,7 +1235,7 @@ pub fn DesktopTerminal(
                         },
                     }
                 }
-                div { class: "ac-terminal-session-rail",
+                div { class: TERMINAL_SESSION_RAIL,
                     {
                         let list = sessions();
                         rsx! {
@@ -1234,16 +1251,13 @@ pub fn DesktopTerminal(
                                         }
                                     };
                                     let is_active = active_id() == Some(id);
-                                    let btn_class = if is_active {
-                                        "ac-terminal-session-btn is-active"
-                                    } else {
-                                        "ac-terminal-session-btn"
-                                    };
+                                    let btn_class = TERMINAL_SESSION_BTN;
                                     rsx! {
                                         button {
                                             key: "{id}",
                                             r#type: "button",
                                             class: "{btn_class}",
+                                            "data-active": is_active,
                                             title: "{label}",
                                             aria_label: "切换到 {label}",
                                             aria_current: if is_active { "true" } else { "false" },
@@ -1262,7 +1276,7 @@ pub fn DesktopTerminal(
                     }
                     button {
                         r#type: "button",
-                        class: "ac-terminal-session-btn ac-terminal-session-add",
+                        class: "{TERMINAL_SESSION_BTN} text-secondary-2",
                         title: "添加终端",
                         aria_label: "添加终端",
                         onclick: move |_| {
@@ -1283,7 +1297,7 @@ pub fn DesktopTerminal(
                                 rsx! {
                                     button {
                                         r#type: "button",
-                                        class: "ac-terminal-session-btn",
+                                        class: "{TERMINAL_SESSION_BTN} {TERMINAL_SESSION_CLOSE}",
                                         title: "关闭当前终端",
                                         aria_label: "关闭当前终端",
                                         onclick: move |_| {

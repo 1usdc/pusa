@@ -4,6 +4,7 @@
 # just release-mac # 发布 macOS 版本（发布前需要推送到仓库）
 # just desktop-windows # 打包 Windows 桌面应用
 # just release-windows # 发布 Windows 版本
+# just release-notes # 更新 Release 说明里的下载按钮
 # just version # 查看当前版本号和仓库打包版本号
 
 # 从 docker/.env 注入环境（compose / just server 共用）
@@ -15,6 +16,18 @@ set windows-shell := ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypas
 
 default:
     @just --list
+
+# —— 样式（Tailwind v4）——
+# 唯一手写入口 ui/assets/css/app.css → 生成 ui/assets/css/styles.css（Rust 侧只挂这个产物）。
+# 改了 rsx 类名 / css 后必须重新生成并提交产物。
+tailwind:
+    npm install --no-audit --no-fund --silent
+    npx tailwindcss -i ui/assets/css/app.css -o ui/assets/css/styles.css --minify
+
+# 开发时并行监听：一个终端 just tailwind-watch，另一个 just desktop / just web
+tailwind-watch:
+    npm install --no-audit --no-fund --silent
+    npx tailwindcss -i ui/assets/css/app.css -o ui/assets/css/styles.css --watch
 
 # LAN=1 just web 局域网访问（依赖 bash；Windows 需 Git Bash 在 PATH）
 [unix]

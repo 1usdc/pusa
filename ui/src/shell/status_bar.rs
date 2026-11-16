@@ -453,14 +453,16 @@ pub fn StatusBar(
     let role_name = active_role_name();
 
     rsx! {
-        footer { class: "ac-status-bar", role: "contentinfo",
-            div { class: "ac-status-bar-left",
+        footer {
+            class: "relative z-20 grid shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1fr)] items-center gap-2 min-h-[1.625rem] px-[0.65rem] box-border border-t border-primary-2 bg-primary-1 text-[0.6875rem] leading-none text-text-secondary select-none dark:border-t-transparent dark:before:content-[''] dark:before:absolute dark:before:inset-x-0 dark:before:top-0 dark:before:h-px dark:before:z-[6] dark:before:pointer-events-none dark:before:opacity-[var(--ac-sand-opacity)] dark:before:bg-[image:var(--ac-sand-grad-x)]",
+            role: "contentinfo",
+            div { class: "flex items-center gap-[0.45rem] min-w-0 justify-self-start",
                 if !role_name.is_empty() {
                     span {
-                        class: "ac-status-bar-role",
+                        class: "inline-flex items-center gap-[0.28rem] max-w-[9.5rem] min-w-0 shrink tracking-[-0.01em] text-secondary-1",
                         title: "当前角色：{role_name}",
                         span {
-                            class: "ac-status-bar-role-icon",
+                            class: "inline-flex items-center justify-center shrink-0 opacity-90",
                             aria_hidden: "true",
                             Icon {
                                 icon: RiBearSmileLine,
@@ -469,23 +471,20 @@ pub fn StatusBar(
                                 fill: "currentColor",
                             }
                         }
-                        span { class: "ac-status-bar-role-name", "{role_name}" }
+                        span { class: "inline-block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-normal", "{role_name}" }
                     }
                 }
                 if !dir_name.is_empty() {
                     button {
                         r#type: "button",
-                        class: if show_terminal() {
-                            "ac-status-bar-workspace is-active"
-                        } else {
-                            "ac-status-bar-workspace"
-                        },
+                        class: "inline-flex items-center gap-[0.35rem] min-w-0 max-w-[min(28rem,55vw)] h-5 px-1 m-0 border border-transparent rounded-[0.35rem] bg-transparent text-text-secondary font-[inherit] cursor-pointer hover:border-primary-2 hover:bg-primary-3 data-[active=true]:border-primary-2 data-[active=true]:bg-primary-3",
+                        "data-active": show_terminal(),
                         title: "{workspace_click_title}",
                         aria_label: "{terminal_title}",
                         aria_expanded: show_terminal(),
                         onclick: move |_| show_terminal.toggle(),
                         span {
-                            class: "ac-status-bar-dir-icon",
+                            class: "shrink-0 inline-flex items-center justify-center leading-[0] text-secondary-1 opacity-90",
                             aria_hidden: "true",
                             Icon {
                                 icon: GoFileDirectory,
@@ -494,11 +493,12 @@ pub fn StatusBar(
                                 fill: "currentColor",
                             }
                         }
-                        span { class: "ac-status-bar-dir", "{dir_name}" }
+                        span { class: "overflow-hidden text-ellipsis whitespace-nowrap max-w-[12rem] text-secondary-1 font-medium", "{dir_name}" }
                         if let Some(label) = branch_label.as_ref() {
-                            span { class: "ac-status-bar-branch",
+                            span {
+                                class: "inline-flex items-center gap-[0.2rem] min-w-0 text-text-secondary",
                                 span {
-                                    class: "ac-status-bar-branch-icon",
+                                    class: "shrink-0 inline-flex items-center justify-center leading-[0] opacity-85",
                                     aria_hidden: "true",
                                     Icon {
                                         icon: LdGitBranch,
@@ -507,30 +507,26 @@ pub fn StatusBar(
                                         fill: "currentColor",
                                     }
                                 }
-                                span { class: "ac-status-bar-branch-name", "{label}" }
+                                span { class: "overflow-hidden text-ellipsis whitespace-nowrap max-w-[10rem]", "{label}" }
                             }
                         }
                     }
                 }
             }
-            div { class: "ac-status-bar-center",
+            div { class: "flex items-center justify-center justify-self-center min-w-0 max-w-full overflow-hidden",
                 if let Some(path) = file_path.as_ref() {
                     span {
-                        class: "ac-status-bar-file-path",
+                        class: "block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-secondary-3 font-medium",
                         title: "{path}",
                         "{path}"
                     }
                 }
             }
-            div { class: "ac-status-bar-right",
+            div { class: "flex items-center justify-end justify-self-end min-w-0",
                 if update_clickable {
                     button {
                         r#type: "button",
-                        class: if update_is_restart {
-                            "ac-status-bar-version is-update is-restart"
-                        } else {
-                            "ac-status-bar-version is-update"
-                        },
+                        class: "group inline-flex items-baseline gap-[0.1rem] max-w-full px-[0.2rem] py-[0.1rem] rounded-[0.25rem] bg-transparent text-text-secondary whitespace-nowrap cursor-pointer hover:text-secondary-1 hover:bg-primary-3",
                         title: "{update_title}",
                         onclick: move |_| {
                             match update_action.clone() {
@@ -540,15 +536,23 @@ pub fn StatusBar(
                             }
                         },
                         span { "v{ver} " }
-                        span { class: "ac-status-bar-update", "{update_label}" }
+                        // 可重启：更新标签做成蓝底胶囊提示点击；普通可用态：蓝色加粗文字
+                        span {
+                            class: if update_is_restart {
+                                "px-[0.35rem] rounded-full bg-ac-blue text-white group-hover:brightness-110"
+                            } else {
+                                "text-ac-blue font-semibold"
+                            },
+                            "{update_label}"
+                        }
                     }
                 } else {
                     span {
-                        class: "ac-status-bar-version",
+                        class: "inline-flex items-baseline gap-[0.1rem] max-w-full px-[0.2rem] py-[0.1rem] rounded-[0.25rem] bg-transparent text-text-secondary whitespace-nowrap",
                         title: "{update_title}",
                         span { "v{ver}" }
                         if !update_label.is_empty() {
-                            span { class: "ac-status-bar-update-muted", " · {update_label}" }
+                            span { class: "text-text-tertiary", " · {update_label}" }
                         }
                     }
                 }

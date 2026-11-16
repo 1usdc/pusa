@@ -46,6 +46,236 @@ use crate::chat::{
     ThinkingStatus, ToolStatus, TraceFileOpen, UiAgentThinking, UiChatMessage, UiThinkingStep,
     UiThinkingTool, COMPOSER_ROOT_EDIT, COMPOSER_ROOT_MAIN, INSTALL_BRIDGE_JS,
 };
+use crate::shell::style::{
+    AGENT_CARD, AGENT_CARD_ACTIVE, AGENT_CARD_IDLE, CENTER, CENTER_HIDDEN, CENTER_SHUTTING,
+    AGENT_DETAIL_BACKDROP,
+    AGENT_DETAIL_BLOCK_TITLE,
+    AGENT_DETAIL_BODY,
+    AGENT_DETAIL_CLOSE,
+    AGENT_DETAIL_COPY,
+    AGENT_DETAIL_ERROR,
+    AGENT_DETAIL_HEAD,
+    AGENT_DETAIL_META,
+    AGENT_DETAIL_MODAL,
+    AGENT_DETAIL_PRE,
+    AGENT_DETAIL_SKEL_BODY,
+    AGENT_DETAIL_SKEL_CHIP,
+    AGENT_DETAIL_SKEL_LINE,
+    AGENT_DETAIL_SKEL_LINE_SHORT,
+    AGENT_DETAIL_SKEL_META,
+    AGENT_DETAIL_SKEL_WRAP,
+    AGENT_DETAIL_STEP,
+    AGENT_DETAIL_STEP_HEAD,
+    AGENT_DETAIL_SUBTITLE,
+    AGENT_DETAIL_TIMING,
+    AGENT_DETAIL_TITLE,
+    AGENT_DETAIL_TOOL,
+    API_MODAL,
+    API_MODAL_ACTIONS,
+    API_MODAL_BACKDROP,
+    API_MODAL_CANCEL,
+    API_MODAL_DESC,
+    API_MODAL_FIELD,
+    API_MODAL_HELP,
+    API_MODAL_INPUT,
+    API_MODAL_SUBMIT,
+    API_MODAL_TITLE,
+    AUTH_LABEL,
+    CHAT,
+    CHAT_AGENT_MODE_BTN,
+    CHAT_AGENT_MODE_BTN_ICON,
+    CHAT_AGENT_MODE_BTN_LABEL,
+    CHAT_AGENT_MODE_OPT,
+    CHAT_AGENT_MODE_OPT_CHECK,
+    CHAT_AGENT_MODE_OPT_ICON,
+    CHAT_AGENT_MODE_OPT_LABEL,
+    CHAT_AGENT_MODE_SHEET,
+    CHAT_AI_ACTIONS,
+    CHAT_AI_ACTION_BTN,
+    CHAT_AI_ACTION_ICON,
+    CHAT_AI_ACTION_TEXT,
+    CHAT_AI_STACK,
+    CHAT_BODY,
+    CHAT_BUBBLE,
+    CHAT_BUBBLE_AI,
+    CHAT_BUBBLE_EDIT,
+    CHAT_BUBBLE_EDIT_ACTIONS,
+    CHAT_BUBBLE_EDIT_SEND,
+    CHAT_BUBBLE_EDIT_UPLOAD,
+    CHAT_BUBBLE_USER,
+    CHAT_BUBBLE_USER_EDITING,
+    CHAT_BUBBLE_USER_TEXT,
+    CHAT_COMPOSER_CE,
+    CHAT_COMPOSER_STACK,
+    CHAT_COMPOSER_TOOLBAR,
+    CHAT_FILE_INPUT,
+    CHAT_HEADER,
+    CHAT_HEADER_ICON,
+    CHAT_HIDDEN,
+    CHAT_HISTORY_CREATE,
+    CHAT_HISTORY_CREATE_ICON,
+    CHAT_HISTORY_EDIT_ACTION,
+    CHAT_HISTORY_EDIT_ACTIONS,
+    CHAT_HISTORY_EDIT_WRAP,
+    CHAT_HISTORY_ERROR,
+    CHAT_HISTORY_ITEM,
+    CHAT_HISTORY_ITEM_BODY,
+    CHAT_HISTORY_ITEM_PREVIEW,
+    CHAT_HISTORY_ITEM_PREVIEW_ROW,
+    CHAT_HISTORY_ITEM_RUNNING,
+    CHAT_HISTORY_PANEL,
+    CHAT_HISTORY_RAIL_ICON,
+    CHAT_HISTORY_RESIZER,
+    CHAT_HISTORY_ROW,
+    CHAT_HISTORY_TITLE_INPUT,
+    CHAT_INPUT_SHELL,
+    CHAT_INPUT_WRAP,
+    CHAT_JUMP_BOTTOM,
+    CHAT_JUMP_HOST,
+    CHAT_MAIN,
+    CHAT_MESSAGE,
+    CHAT_MESSAGE_AI,
+    CHAT_MESSAGE_USER,
+    CHAT_MODE_SHEET,
+    CHAT_MODE_SHEET_BACKDROP,
+    CHAT_MODE_TRIGGER,
+    CHAT_MODE_TRIGGER_CHEVRON,
+    CHAT_MODE_TRIGGER_LABEL,
+    CHAT_MODE_WRAP,
+    CHAT_NAV,
+    CHAT_NAV_DOT,
+    CHAT_RESIZER,
+    CHAT_SEND_BTN,
+    CHAT_SEND_ICON,
+    CHAT_SEND_PAUSE,
+    CHAT_SEND_READY,
+    CHAT_SHEET_CHECK,
+    CHAT_SHEET_CUSTOM,
+    CHAT_SHEET_CUSTOM_ACTIONS,
+    CHAT_SHEET_CUSTOM_ICON_BTN,
+    CHAT_SHEET_CUSTOM_INPUT,
+    CHAT_SHEET_CUSTOM_KEY,
+    CHAT_SHEET_EDIT,
+    CHAT_SHEET_EDIT_ACTIONS,
+    CHAT_SHEET_EDIT_CANCEL,
+    CHAT_SHEET_EDIT_PANEL,
+    CHAT_SHEET_EDIT_SAVE,
+    CHAT_SHEET_GROUP,
+    CHAT_SHEET_GROUP_BODY,
+    CHAT_SHEET_GROUP_CHEVRON,
+    CHAT_SHEET_GROUP_COUNT,
+    CHAT_SHEET_GROUP_HEAD,
+    CHAT_SHEET_GROUP_TITLE,
+    CHAT_SHEET_NET_DOT,
+    CHAT_SHEET_OPT,
+    CHAT_SHEET_OPT_MAIN,
+    CHAT_SHEET_OPT_ROW,
+    CHAT_SHEET_SPIN,
+    CHAT_SHEET_SUB,
+    CHAT_SHEET_TITLE,
+    CHAT_SHEET_TITLE_ROW,
+    CHAT_THREAD,
+    CHAT_THREAD_PANE,
+    CHAT_TOOLBAR_PILL,
+    CHAT_UPLOAD_BTN,
+    CHAT_USER_ACTIONS,
+    CHAT_USER_STACK,
+    CHAT_WORKSPACE,
+    CONSOLE_ROOT, CTX_BACKDROP, CTX_ITEM, CTX_ITEM_DANGER, CTX_MENU,
+    DELETE_ROLE_MODAL_BACKDROP,
+    FS_CTX_SEP, SIDEBAR, SIDEBAR_HIDDEN, SIDEBAR_SCROLL, SIDEBAR_SHUTTING,
+    INSTALLED_BTN,
+    INSTALLED_BTN_LEARN,
+    INSTALLED_BTN_ON,
+    INSTALLED_BTN_REMOVE,
+    INSTALLED_EMPTY_ICON,
+    MAIN_BODY,
+    PERSONA_PROMPT_CARD,
+    PERSONA_PROMPT_HEADER,
+    PERSONA_PROMPT_ICON,
+    PERSONA_PROMPT_TITLE,
+    PERSONA_TEXTAREA,
+    ROLE_ACTIONS,
+    ROLE_AVATAR,
+    ROLE_AVATAR_IMG,
+    ROLE_BTN,
+    ROLE_BTN_ICON,
+    ROLE_BTN_PRIMARY,
+    ROLE_BTN_SECONDARY,
+    ROLE_DIVIDER,
+    ROLE_HEADER,
+    ROLE_HEADING,
+    ROLE_HEADING_TEXT,
+    ROLE_NAME_INPUT,
+    ROLE_PANEL,
+    ROLE_SUBTITLE,
+    SETTINGS_SAVED,
+    SKILLS,
+    SKILLS_ACTION,
+    SKILLS_ACTIONS,
+    SKILLS_BADGE,
+    SKILLS_BANNER,
+    SKILLS_BODY,
+    SKILLS_DESC,
+    SKILLS_DETAIL,
+    SKILLS_DETAIL_ACTIONS,
+    SKILLS_DETAIL_DESC,
+    SKILLS_DETAIL_EMPTY,
+    SKILLS_DETAIL_EMPTY_H3,
+    SKILLS_DETAIL_EMPTY_P,
+    SKILLS_DETAIL_H2,
+    SKILLS_DETAIL_HEAD,
+    SKILLS_DETAIL_ICON,
+    SKILLS_DETAIL_PANE,
+    SKILLS_DETAIL_SLUG,
+    SKILLS_DETAIL_TITLES,
+    SKILLS_EMPTY,
+    SKILLS_HEADER,
+    SKILLS_HOT,
+    SKILLS_ICON,
+    SKILLS_LIST,
+    SKILLS_META,
+    SKILLS_ROW,
+    SKILLS_SEARCH,
+    SKILLS_SEARCH_ICON,
+    SKILLS_SEARCH_INPUT,
+    SKILLS_SKEL_DESC,
+    SKILLS_SKEL_TITLE,
+    SKILLS_STATE,
+    SKILLS_STATIONS,
+    SKILLS_STATION_BTN,
+    SKILLS_TITLE,
+    SKILLS_TOGGLE,
+    SKILLS_TOGGLE_BTN,
+    SKILL_CARD_ICON,
+    SKILL_INSTALLED_BTN,
+    SKILL_INSTALL_BTN,
+    SKILL_MARKET_META,
+    SKILL_SOURCE,
+    TERMINAL_PANEL,
+    TERMINAL_PANEL_HOST,
+    TERMINAL_TOOLBAR,
+    TERMINAL_TOOLBAR_ACTIONS,
+    TERMINAL_TOOLBAR_BTN,
+    TERMINAL_TOOLBAR_TITLE,
+    TERMINAL_UNAVAILABLE,
+    TERMINAL_UNAVAILABLE_HINT,
+    WEB_TITLEBAR,
+    WEB_TITLEBAR_ACTIONS,
+    WEB_TITLEBAR_ACTIONS_END,
+    WEB_TITLEBAR_BTN,
+    WEB_TITLEBAR_DOCK,
+    WEB_TITLEBAR_FLOATING,
+    WEB_TITLEBAR_ICON,
+    WEB_TITLEBAR_MENU,
+    WEB_TITLEBAR_MENU_BACKDROP,
+    WEB_TITLEBAR_MENU_ITEM,
+    WEB_TITLEBAR_REVEAL,
+    WEB_TITLEBAR_SETTINGS_WRAP,
+    WEB_TITLEBAR_SPACER,
+    WEB_TITLEBAR_SWITCH_ICON_OUTSIDE,
+    WEB_TITLEBAR_SWITCH_WRAP,
+};
 use crate::custom_chat_models::CustomChatModelPref;
 use crate::persona;
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
@@ -1549,7 +1779,7 @@ fn is_mod_char_shortcut(e: &KeyboardEvent, ch: &str) -> bool {
 /// 读取中间栏文本编辑器当前选区（无选中则 `None`）。
 async fn read_file_editor_selection() -> Option<String> {
     let script = r#"return (() => {
-  const ta = document.querySelector('textarea.ac-file-editor-textarea');
+  const ta = document.querySelector('textarea[data-editor-textarea]');
   if (!ta || typeof ta.selectionStart !== 'number') return '';
   if (ta.selectionStart === ta.selectionEnd) return '';
   return ta.value.slice(ta.selectionStart, ta.selectionEnd);
@@ -2482,14 +2712,15 @@ fn OpenAiSetupModal(
 ) -> Element {
     rsx! {
         if modal_visible() {
-            div { class: "ac-api-modal-backdrop",
-                div { class: "ac-api-modal",
-                    h2 { class: "ac-api-modal-title", "配置 API Key" }
-                    p { class: "ac-api-modal-desc",
+            div { class: API_MODAL_BACKDROP,
+                div { class: API_MODAL,
+                    h2 { class: API_MODAL_TITLE, "配置 API Key" }
+                    p { class: API_MODAL_DESC,
+                    "data-desc": true,
                         "服务端未设置模型配置。请填写 OpenAI（sk-…）或 Anthropic（sk-ant-…）格式的 API Key，以及兼容端点的 Base URL（以 /v1 结尾）；配置将保存到服务端数据库。"
                     }
-                    div { class: "ac-api-modal-field",
-                        label { class: "ac-auth-label", "API Key"
+                    div { class: API_MODAL_FIELD,
+                        label { class: AUTH_LABEL, "API Key"
                             AcPasswordInput {
                                 placeholder: "sk-… 或 sk-ant-…",
                                 value: api_key,
@@ -2497,28 +2728,28 @@ fn OpenAiSetupModal(
                             }
                         }
                     }
-                    div { class: "ac-api-modal-field",
-                        label { class: "ac-auth-label", "Base URL"
+                    div { class: API_MODAL_FIELD,
+                        label { class: AUTH_LABEL, "Base URL"
                             input {
                                 r#type: "text",
-                                class: "ac-api-modal-input",
+                                class: API_MODAL_INPUT,
                                 placeholder: "https://api.openai.com/v1",
                                 value: "{base()}",
                                 oninput: move |e| base.set(e.value()),
                             }
                         }
-                        p { class: "ac-api-modal-help", "留空 Base 则使用官方 https://api.openai.com/v1" }
+                        p { class: API_MODAL_HELP, "留空 Base 则使用官方 https://api.openai.com/v1" }
                     }
-                    div { class: "ac-api-modal-actions",
+                    div { class: API_MODAL_ACTIONS,
                         button {
                             r#type: "button",
-                            class: "ac-api-modal-cancel",
+                            class: API_MODAL_CANCEL,
                             onclick: move |_| modal_visible.set(false),
                             "取消"
                         }
                         button {
                             r#type: "button",
-                            class: "ac-api-modal-submit",
+                            class: API_MODAL_SUBMIT,
                             onclick: move |_| {
                                 let k = api_key().trim().to_string();
                                 if k.is_empty() {
@@ -3115,7 +3346,7 @@ fn ChatComposerCe(
         div {
             // epoch 放进 key，发送后强制换新节点，避免 CE 复用旧 DOM 残留。
             key: "ce-{root_id}-{epoch}",
-            class: "ac-chat-composer-ce ac-chat-input-field",
+            class: CHAT_COMPOSER_CE,
             "data-ac-composer": "{root_id}",
             "data-placeholder": "向它下达指令…",
             contenteditable: if disabled { "false" } else { "true" },
@@ -3182,7 +3413,7 @@ fn ChatUserMessageEdit(
 ) -> Element {
     let can_resend = can_send();
     rsx! {
-        div { class: "ac-chat-bubble-edit",
+        div { class: CHAT_BUBBLE_EDIT,
             ChatComposerCe {
                 root_id,
                 epoch,
@@ -3193,11 +3424,11 @@ fn ChatUserMessageEdit(
                 enter_tick,
                 paste_tick,
             }
-            div { class: "ac-chat-bubble-edit-actions",
-                label { class: "ac-chat-bubble-edit-upload",
+            div { class: CHAT_BUBBLE_EDIT_ACTIONS,
+                label { class: CHAT_BUBBLE_EDIT_UPLOAD,
                     input {
                         r#type: "file",
-                        class: "ac-chat-file-input",
+                        class: CHAT_FILE_INPUT,
                         accept: "image/*,*/*",
                         multiple: true,
                         disabled: if disabled { true },
@@ -3227,15 +3458,15 @@ fn ChatUserMessageEdit(
                         width: 13,
                         height: 13,
                         fill: "currentColor",
-                        class: "ac-chat-upload-icon",
+                        
                     }
                 }
                 button {
                     r#type: "button",
                     class: if can_resend && !disabled {
-                        "ac-chat-send-btn ac-chat-bubble-edit-send ac-chat-send-btn--ready"
+                        "{CHAT_SEND_BTN} {CHAT_BUBBLE_EDIT_SEND} {CHAT_SEND_READY}"
                     } else {
-                        "ac-chat-send-btn ac-chat-bubble-edit-send"
+                        "{CHAT_SEND_BTN} {CHAT_BUBBLE_EDIT_SEND}"
                     },
                     disabled: disabled || !can_resend,
                     title: "重新发送",
@@ -3246,7 +3477,7 @@ fn ChatUserMessageEdit(
                         width: 14,
                         height: 14,
                         fill: "currentColor",
-                        class: "ac-chat-send-icon",
+                        class: CHAT_SEND_ICON,
                     }
                 }
             }
@@ -3297,21 +3528,19 @@ fn WebShellTitlebar(
     } else {
         "显示右边聊天栏"
     };
-    let titlebar_reveal_class = if !sidebar_switch_on && !chat_switch_on {
-        "ac-web-titlebar-reveal ac-web-titlebar-reveal--dock is-pinned"
-    } else {
-        "ac-web-titlebar-reveal ac-web-titlebar-reveal--dock"
-    };
+    let titlebar_reveal_class = format!("{WEB_TITLEBAR_REVEAL} {WEB_TITLEBAR_DOCK}");
     let open_browser = try_use_context::<super::browser::OpenBrowserTick>();
 
     rsx! {
         div { class: "{titlebar_reveal_class}",
-            div { class: "ac-web-titlebar",
-                div { class: "ac-web-titlebar-actions",
-                    div { class: "ac-web-titlebar-switch-wrap",
+            "data-pinned": !(sidebar_switch_on && chat_switch_on),
+            "data-dock": true,
+            div { class: WEB_TITLEBAR,
+                div { class: WEB_TITLEBAR_ACTIONS,
+                    div { class: WEB_TITLEBAR_SWITCH_WRAP,
                         button {
                             r#type: "button",
-                            class: "ac-web-titlebar-switch-icon-outside",
+                            class: WEB_TITLEBAR_SWITCH_ICON_OUTSIDE,
                             title: "{sidebar_title}",
                             aria_label: "{sidebar_title}",
                             aria_expanded: sidebar_switch_on,
@@ -3334,16 +3563,16 @@ fn WebShellTitlebar(
                                 }
                             },
                             if sidebar_switch_on {
-                                Icon { icon: BsLayoutSidebar, width: 14, height: 14, fill: "currentColor", class: "ac-web-titlebar-icon" }
+                                Icon { icon: BsLayoutSidebar, width: 14, height: 14, fill: "currentColor", class: WEB_TITLEBAR_ICON }
                             } else {
-                                Icon { icon: BsLayoutSidebarInset, width: 14, height: 14, fill: "currentColor", class: "ac-web-titlebar-icon" }
+                                Icon { icon: BsLayoutSidebarInset, width: 14, height: 14, fill: "currentColor", class: WEB_TITLEBAR_ICON }
                             }
                         }
                     }
-                    div { class: "ac-web-titlebar-switch-wrap",
+                    div { class: WEB_TITLEBAR_SWITCH_WRAP,
                         button {
                             r#type: "button",
-                            class: "ac-web-titlebar-switch-icon-outside",
+                            class: WEB_TITLEBAR_SWITCH_ICON_OUTSIDE,
                             title: "{center_title}",
                             aria_label: "{center_title}",
                             aria_expanded: center_switch_on,
@@ -3354,47 +3583,47 @@ fn WebShellTitlebar(
                                 }
                             },
                             if center_switch_on {
-                                Icon { icon: VscLayoutSidebarLeftDock, width: 14, height: 14, fill: "currentColor", class: "ac-web-titlebar-icon" }
+                                Icon { icon: VscLayoutSidebarLeftDock, width: 14, height: 14, fill: "currentColor", class: WEB_TITLEBAR_ICON }
                             } else {
-                                Icon { icon: VscLayoutSidebarRightDock, width: 14, height: 14, fill: "currentColor", class: "ac-web-titlebar-icon" }
+                                Icon { icon: VscLayoutSidebarRightDock, width: 14, height: 14, fill: "currentColor", class: WEB_TITLEBAR_ICON }
                             }
                         }
                     }
                     if let Some(open_browser) = open_browser {
-                        div { class: "ac-web-titlebar-switch-wrap",
+                        div { class: WEB_TITLEBAR_SWITCH_WRAP,
                             button {
                                 r#type: "button",
-                                class: "ac-web-titlebar-switch-icon-outside",
+                                class: WEB_TITLEBAR_SWITCH_ICON_OUTSIDE,
                                 title: "打开 Pusa 浏览器",
                                 aria_label: "打开 Pusa 浏览器",
                                 onclick: move |_| open_browser.request(),
-                                Icon { icon: LdGlobe, width: 14, height: 14, fill: "currentColor", class: "ac-web-titlebar-icon" }
+                                Icon { icon: LdGlobe, width: 14, height: 14, fill: "currentColor", class: WEB_TITLEBAR_ICON }
                             }
                         }
                     }
                 }
-                div { class: "ac-web-titlebar-spacer" }
+                div { class: WEB_TITLEBAR_SPACER }
                 // 右侧：终端 → 右边聊天栏显隐 → 设置（会话历史靠拖宽手柄）
-                div { class: "ac-web-titlebar-actions ac-web-titlebar-actions-end",
-                    div { class: "ac-web-titlebar-switch-wrap",
+                div { class: WEB_TITLEBAR_ACTIONS_END,
+                    div { class: WEB_TITLEBAR_SWITCH_WRAP,
                         button {
                             r#type: "button",
-                            class: "ac-web-titlebar-switch-icon-outside",
+                            class: WEB_TITLEBAR_SWITCH_ICON_OUTSIDE,
                             title: "{terminal_title}",
                             aria_label: "{terminal_title}",
                             aria_expanded: show_terminal(),
                             onclick: move |_| show_terminal.toggle(),
                             if show_terminal() {
-                                Icon { icon: VscLayoutPanelOff, width: 14, height: 14, fill: "currentColor", class: "ac-web-titlebar-icon" }
+                                Icon { icon: VscLayoutPanelOff, width: 14, height: 14, fill: "currentColor", class: WEB_TITLEBAR_ICON }
                             } else {
-                                Icon { icon: VscLayoutPanel, width: 14, height: 14, fill: "currentColor", class: "ac-web-titlebar-icon" }
+                                Icon { icon: VscLayoutPanel, width: 14, height: 14, fill: "currentColor", class: WEB_TITLEBAR_ICON }
                             }
                         }
                     }
-                    div { class: "ac-web-titlebar-switch-wrap",
+                    div { class: WEB_TITLEBAR_SWITCH_WRAP,
                         button {
                             r#type: "button",
-                            class: "ac-web-titlebar-switch-icon-outside",
+                            class: WEB_TITLEBAR_SWITCH_ICON_OUTSIDE,
                             title: "{chat_title}",
                             aria_label: "{chat_title}",
                             aria_expanded: chat_switch_on,
@@ -3406,36 +3635,33 @@ fn WebShellTitlebar(
                                 }
                             },
                             if chat_switch_on {
-                                Icon { icon: BsLayoutSidebarReverse, width: 14, height: 14, fill: "currentColor", class: "ac-web-titlebar-icon" }
+                                Icon { icon: BsLayoutSidebarReverse, width: 14, height: 14, fill: "currentColor", class: WEB_TITLEBAR_ICON }
                             } else {
-                                Icon { icon: BsLayoutSidebarInsetReverse, width: 14, height: 14, fill: "currentColor", class: "ac-web-titlebar-icon" }
+                                Icon { icon: BsLayoutSidebarInsetReverse, width: 14, height: 14, fill: "currentColor", class: WEB_TITLEBAR_ICON }
                             }
                         }
                     }
-                    div { class: "ac-web-titlebar-settings-wrap",
+                    div { class: WEB_TITLEBAR_SETTINGS_WRAP,
                         button {
                             r#type: "button",
-                            class: if show_titlebar_settings_menu() {
-                                "ac-web-titlebar-btn is-menu-open"
-                            } else {
-                                "ac-web-titlebar-btn"
-                            },
+                            class: WEB_TITLEBAR_BTN,
+                                "data-menu-open": show_titlebar_settings_menu(),
                             title: "设置",
                             aria_expanded: show_titlebar_settings_menu(),
                             aria_haspopup: "menu",
                             onclick: move |_| show_titlebar_settings_menu.toggle(),
-                            Icon { icon: BsGear, width: 16, height: 16, fill: "currentColor", class: "ac-web-titlebar-icon" }
+                            Icon { icon: BsGear, width: 16, height: 16, fill: "currentColor", class: WEB_TITLEBAR_ICON }
                         }
                         if show_titlebar_settings_menu() {
                             div {
-                                class: "ac-web-titlebar-menu-backdrop",
+                                class: WEB_TITLEBAR_MENU_BACKDROP,
                                 onclick: move |_| show_titlebar_settings_menu.set(false),
                             }
-                            div { class: "ac-web-titlebar-menu", role: "menu",
+                            div { class: WEB_TITLEBAR_MENU, role: "menu",
                                 button {
                                     r#type: "button",
                                     role: "menuitem",
-                                    class: "ac-web-titlebar-menu__item",
+                                    class: WEB_TITLEBAR_MENU_ITEM,
                                     onclick: move |_| {
                                         show_titlebar_settings_menu.set(false);
                                         show_settings_modal.set(true);
@@ -3449,7 +3675,7 @@ fn WebShellTitlebar(
                                 button {
                                     r#type: "button",
                                     role: "menuitem",
-                                    class: "ac-web-titlebar-menu__item",
+                                    class: WEB_TITLEBAR_MENU_ITEM,
                                     onclick: move |_| {
                                         show_titlebar_settings_menu.set(false);
                                         show_font_size_modal.set(true);
@@ -3459,7 +3685,7 @@ fn WebShellTitlebar(
                                 button {
                                     r#type: "button",
                                     role: "menuitem",
-                                    class: "ac-web-titlebar-menu__item",
+                                    class: WEB_TITLEBAR_MENU_ITEM,
                                     onclick: move |_| {
                                         show_titlebar_settings_menu.set(false);
                                         show_about_modal.set(true);
@@ -4729,42 +4955,31 @@ pub fn Console(
         }
     };
 
-    let console_class = if active_resize().is_some() {
-        "ac-console-root ac-console-root-resizing"
-    } else {
-        "ac-console-root"
-    };
     let sidebar_class = if !show_sidebar() {
-        "ac-sidebar premium-sidebar ac-sidebar-hidden".to_string()
+        format!("{SIDEBAR} {SIDEBAR_HIDDEN}")
     } else if sidebar_shutting_down() {
-        "ac-sidebar premium-sidebar ac-sidebar-shutting".to_string()
+        format!("{SIDEBAR} {SIDEBAR_SHUTTING}")
     } else {
-        "ac-sidebar premium-sidebar".to_string()
+        SIDEBAR.to_string()
     };
     let center_class = if show_center() && center_shutting_down() {
-        "ac-center premium-panel ac-center-shutting"
+        format!("{CENTER} {CENTER_SHUTTING}")
     } else if show_center() {
-        "ac-center premium-panel"
+        CENTER.to_string()
     } else {
-        "ac-center premium-panel ac-center-hidden"
+        format!("{CENTER} {CENTER_HIDDEN}")
     };
     // 收起动画期间即让对话区撑满，避免中间栏缩小时右侧仍固定宽度留下空白。
     let center_panel_open = show_center() && !center_shutting_down();
+    let chat_expanded = show_chat() && !center_panel_open;
+    #[cfg(all(target_arch = "wasm32", feature = "web"))]
+    let chat_titlebar_spaced = false;
+    #[cfg(not(all(target_arch = "wasm32", feature = "web")))]
+    let chat_titlebar_spaced = !show_sidebar() && chat_expanded;
     let chat_class = if !show_chat() {
-        "ac-chat premium-chat ac-chat-hidden".to_string()
-    } else if !show_sidebar() && !center_panel_open {
-        #[cfg(all(target_arch = "wasm32", feature = "web"))]
-        {
-            "ac-chat premium-chat ac-chat-expanded".to_string()
-        }
-        #[cfg(not(all(target_arch = "wasm32", feature = "web")))]
-        {
-            "ac-chat premium-chat ac-chat-expanded ac-chat-titlebar-spaced".to_string()
-        }
-    } else if center_panel_open {
-        "ac-chat premium-chat".to_string()
+        format!("{CHAT} {CHAT_HIDDEN}")
     } else {
-        "ac-chat premium-chat ac-chat-expanded".to_string()
+        CHAT.to_string()
     };
     let chat_width_style = if !show_chat() {
         String::new()
@@ -4792,11 +5007,7 @@ pub fn Console(
         let w = chat_history_drag_width().unwrap_or_else(|| chat_history_width());
         w <= closed + 0.5
     };
-    let chat_history_panel_class = if chat_history_is_rail {
-        "ac-chat-history-panel scrollbar-hide is-rail"
-    } else {
-        "ac-chat-history-panel scrollbar-hide"
-    };
+    let chat_history_panel_class = format!("{CHAT_HISTORY_PANEL} scrollbar-hide");
     let sidebar_width_style = if show_sidebar() {
         let w = sidebar_width();
         format!("width: {w:.0}px; flex: 0 0 {w:.0}px;")
@@ -4808,20 +5019,12 @@ pub fn Console(
     } else {
         String::new()
     };
-    // 模型 / Agent 模式 sheet 打开时在侧栏加类，配合 CSS 解除 overflow 裁切
-    let chat_aside_class = format!(
-        "{}{}",
-        chat_class,
-        if chat_model_sheet_open() || chat_agent_mode_sheet_open() {
-            " ac-chat-menus-open"
-        } else {
-            ""
-        }
-    );
+
 
     rsx! {
         div {
-            class: "{console_class}",
+            class: CONSOLE_ROOT,
+            "data-resizing": active_resize().is_some(),
             onkeydown: move |e: KeyboardEvent| {
                 if is_mod_char_shortcut(&e, "l") {
                     e.prevent_default();
@@ -5022,7 +5225,7 @@ pub fn Console(
             },
             // Web：聊天栏收起后栏内标题栏不可点，在顶层放一条固定恢复条。
             if !show_chat() {
-                div { class: "ac-web-titlebar-floating",
+                div { class: WEB_TITLEBAR_FLOATING,
                     WebShellTitlebar {
                         show_sidebar,
                         sidebar_width,
@@ -5035,33 +5238,27 @@ pub fn Console(
                 }
             }
             aside { class: "{sidebar_class}", style: "{sidebar_width_style}",
-                    div { class: "ac-sidebar-scroll scrollbar-hide",
-                        nav { class: "ac-sidebar-nav",
+                    div { class: "{SIDEBAR_SCROLL} scrollbar-hide",
+                        nav { class: crate::shell::style::SIDEBAR_NAV,
                             button {
                                 r#type: "button",
-                                class: if active_tab() == "files" {
-                                    "ac-sidebar-nav-item is-active"
-                                } else {
-                                    "ac-sidebar-nav-item"
-                                },
+                                class: crate::shell::style::SIDEBAR_NAV_ITEM,
+                                "data-active": active_tab() == "files",
                                 title: "文件",
                                 aria_label: "文件",
                                 onclick: move |_| {
                                     active_tab.set("files");
                                 },
                                 if active_tab() == "files" {
-                                    Icon { icon: TbFileFilled, width: 16, height: 16, fill: "currentColor", class: "ac-sidebar-nav-icon" }
+                                    Icon { icon: TbFileFilled, width: 16, height: 16, fill: "currentColor", class: crate::shell::style::SIDEBAR_NAV_ICON }
                                 } else {
-                                    Icon { icon: TbFile, width: 16, height: 16, fill: "currentColor", class: "ac-sidebar-nav-icon" }
+                                    Icon { icon: TbFile, width: 16, height: 16, fill: "currentColor", class: crate::shell::style::SIDEBAR_NAV_ICON }
                                 }
                             }
                             button {
                                 r#type: "button",
-                                class: if active_tab() == "search" {
-                                    "ac-sidebar-nav-item is-active"
-                                } else {
-                                    "ac-sidebar-nav-item"
-                                },
+                                class: crate::shell::style::SIDEBAR_NAV_ITEM,
+                                "data-active": active_tab() == "search",
                                 title: "搜索",
                                 aria_label: "搜索",
                                 onclick: move |_| {
@@ -5075,52 +5272,43 @@ pub fn Console(
                                     width: 16,
                                     height: 16,
                                     fill: "currentColor",
-                                    class: "ac-sidebar-nav-icon",
+                                    class: crate::shell::style::SIDEBAR_NAV_ICON,
                                 }
                             }
                             button {
                                 r#type: "button",
-                                class: if active_tab() == "skills" {
-                                    "ac-sidebar-nav-item is-active"
-                                } else {
-                                    "ac-sidebar-nav-item"
-                                },
+                                class: crate::shell::style::SIDEBAR_NAV_ITEM,
+                                "data-active": active_tab() == "skills",
                                 title: "技能库",
                                 aria_label: "技能库",
                                 onclick: move |_| {
                                     active_tab.set("skills");
                                 },
                                 if active_tab() == "skills" {
-                                    Icon { icon: PiMagicWandFill, width: 16, height: 16, fill: "currentColor", class: "ac-sidebar-nav-icon" }
+                                    Icon { icon: PiMagicWandFill, width: 16, height: 16, fill: "currentColor", class: crate::shell::style::SIDEBAR_NAV_ICON }
                                 } else {
-                                    Icon { icon: PiMagicWandBold, width: 16, height: 16, fill: "currentColor", class: "ac-sidebar-nav-icon" }
+                                    Icon { icon: PiMagicWandBold, width: 16, height: 16, fill: "currentColor", class: crate::shell::style::SIDEBAR_NAV_ICON }
                                 }
                             }
                             button {
                                 r#type: "button",
-                                class: if active_tab() == "plugins" {
-                                    "ac-sidebar-nav-item is-active"
-                                } else {
-                                    "ac-sidebar-nav-item"
-                                },
+                                class: crate::shell::style::SIDEBAR_NAV_ITEM,
+                                "data-active": active_tab() == "plugins",
                                 title: "插件市场",
                                 aria_label: "插件市场",
                                 onclick: move |_| {
                                     active_tab.set("plugins");
                                 },
                                 if active_tab() == "plugins" {
-                                    Icon { icon: RiApps2Fill, width: 16, height: 16, fill: "currentColor", class: "ac-sidebar-nav-icon" }
+                                    Icon { icon: RiApps2Fill, width: 16, height: 16, fill: "currentColor", class: crate::shell::style::SIDEBAR_NAV_ICON }
                                 } else {
-                                    Icon { icon: RiApps2Line, width: 16, height: 16, fill: "currentColor", class: "ac-sidebar-nav-icon" }
+                                    Icon { icon: RiApps2Line, width: 16, height: 16, fill: "currentColor", class: crate::shell::style::SIDEBAR_NAV_ICON }
                                 }
                             }
                             button {
                                 r#type: "button",
-                                class: if active_tab() == "role" {
-                                    "ac-sidebar-nav-item is-active"
-                                } else {
-                                    "ac-sidebar-nav-item"
-                                },
+                                class: crate::shell::style::SIDEBAR_NAV_ITEM,
+                                "data-active": active_tab() == "role",
                                 title: "角色设定",
                                 aria_label: "角色设定",
                                 onclick: move |_| {
@@ -5132,24 +5320,25 @@ pub fn Console(
                                     });
                                 },
                                 if active_tab() == "role" {
-                                    Icon { icon: RiBearSmileFill, width: 16, height: 16, fill: "currentColor", class: "ac-sidebar-nav-icon" }
+                                    Icon { icon: RiBearSmileFill, width: 16, height: 16, fill: "currentColor", class: crate::shell::style::SIDEBAR_NAV_ICON }
                                 } else {
-                                    Icon { icon: RiBearSmileLine, width: 16, height: 16, fill: "currentColor", class: "ac-sidebar-nav-icon" }
+                                    Icon { icon: RiBearSmileLine, width: 16, height: 16, fill: "currentColor", class: crate::shell::style::SIDEBAR_NAV_ICON }
                                 }
                             }
                         }
                         if active_tab() == "skills" {
-                            div { class: "ac-sidebar-skills",
-                                div { class: "ac-sidebar-skills-search",
+                            div { class: SKILLS,
+                                div { class: SKILLS_SEARCH,
                                     Icon {
                                         icon: LdSearch,
                                         width: 14,
                                         height: 14,
                                         fill: "currentColor",
-                                        class: "ac-sidebar-skills-search-icon",
+                                        class: SKILLS_SEARCH_ICON,
                                     }
                                     input {
                                         r#type: "search",
+                                        class: SKILLS_SEARCH_INPUT,
                                         value: "{skill_search()}",
                                         placeholder: "搜索技能...",
                                         oninput: move |e| skill_search.set(e.value()),
@@ -5166,14 +5355,11 @@ pub fn Console(
                                         },
                                     }
                                 }
-                                div { class: "ac-sidebar-skills-toggle",
+                                div { class: SKILLS_TOGGLE,
                                     button {
                                         r#type: "button",
-                                        class: if skill_view() == "installed" {
-                                            "ac-sidebar-skills-toggle-btn is-active"
-                                        } else {
-                                            "ac-sidebar-skills-toggle-btn"
-                                        },
+                                        class: SKILLS_TOGGLE_BTN,
+                                            "data-active": skill_view() == "installed",
                                         onclick: move |_| {
                                             skill_view.set("installed");
                                             selected_skill_key.set(None);
@@ -5182,21 +5368,18 @@ pub fn Console(
                                     }
                                     button {
                                         r#type: "button",
-                                        class: if skill_view() == "market" {
-                                            "ac-sidebar-skills-toggle-btn is-active"
-                                        } else {
-                                            "ac-sidebar-skills-toggle-btn"
-                                        },
+                                        class: SKILLS_TOGGLE_BTN,
+                                            "data-active": skill_view() == "market",
                                         onclick: move |_| {
                                             skill_view.set("market");
                                             selected_skill_key.set(None);
                                         },
                                         "技能市场"
-                                        span { class: "ac-skills-hot", "HOT" }
+                                        span { class: SKILLS_HOT, "HOT" }
                                     }
                                 }
                                 if skill_view() == "market" {
-                                    div { class: "ac-sidebar-skills-stations",
+                                    div { class: SKILLS_STATIONS,
                                         for station in skill_market_stations() {
                                             {
                                                 let station_id = station.id.clone();
@@ -5206,11 +5389,8 @@ pub fn Console(
                                                 rsx! {
                                                     button {
                                                         r#type: "button",
-                                                        class: if is_active {
-                                                            "ac-sidebar-skills-station-btn is-active"
-                                                        } else {
-                                                            "ac-sidebar-skills-station-btn"
-                                                        },
+                                                        class: SKILLS_STATION_BTN,
+                                                        "data-active": is_active,
                                                         title: "{station_name}",
                                                         onclick: move |_| {
                                                             skill_market_station.set(station_id_click.clone());
@@ -5225,21 +5405,21 @@ pub fn Console(
                                 }
                                 if skill_view() == "installed" {
                                     if skill_installed_loading() {
-                                        div { class: "ac-skills-list",
+                                        div { class: SKILLS_LIST,
                                             for _ in 0..4 {
-                                                div { class: "ac-skills-list-row ac-skills-list-row-skeleton",
-                                                    div { class: "ac-skills-list-icon ac-skeleton-base" }
-                                                    div { class: "ac-skills-list-body",
-                                                        div { class: "ac-skills-list-skel-title ac-skeleton-base" }
-                                                        div { class: "ac-skills-list-skel-desc ac-skeleton-base" }
+                                                div { class: "{SKILLS_ROW} pointer-events-none",
+                                                    div { class: "{SKILLS_ICON} ac-skeleton-base" }
+                                                    div { class: SKILLS_BODY,
+                                                        div { class: "{SKILLS_SKEL_TITLE} ac-skeleton-base" }
+                                                        div { class: "{SKILLS_SKEL_DESC} ac-skeleton-base" }
                                                     }
                                                 }
                                             }
                                         }
                                     } else if let Some(err) = skill_installed_error() {
-                                        div { class: "ac-sidebar-skills-banner is-error", "{err}" }
+                                        div { class: SKILLS_BANNER, "data-error": true, "{err}" }
                                     } else if skill_installed_filtered().is_empty() {
-                                        div { class: "ac-sidebar-skills-empty",
+                                        div { class: SKILLS_EMPTY,
                                             if skill_installed_list().is_empty() {
                                                 "暂无已学习技能，去「技能市场」安装。"
                                             } else {
@@ -5247,10 +5427,10 @@ pub fn Console(
                                             }
                                         }
                                     } else {
-                                        div { class: "ac-skills-section-header",
+                                        div { class: SKILLS_HEADER,
                                             span { "我的技能" }
                                         }
-                                        div { class: "ac-skills-list",
+                                        div { class: SKILLS_LIST,
                                             for inst in skill_installed_filtered() {
                                                 {
                                                     let slug = inst.slug.clone();
@@ -5267,11 +5447,8 @@ pub fn Console(
                                                     let is_selected = selected_skill_key() == Some(key.clone());
                                                     rsx! {
                                                         div {
-                                                            class: if is_selected {
-                                                                "ac-skills-list-row is-selected"
-                                                            } else {
-                                                                "ac-skills-list-row"
-                                                            },
+                                                            class: SKILLS_ROW,
+                                                            "data-selected": is_selected,
                                                             onclick: move |_| {
                                                                 selected_skill_key.set(Some(key_select.clone()));
                                                                 let tab = CenterTab::skill_installed(
@@ -5284,22 +5461,19 @@ pub fn Console(
                                                                     });
                                                                 });
                                                             },
-                                                            div { class: "ac-skills-list-icon ac-skill-icon-blue",
-                                                                Icon { icon: LdGlobe, width: 16, height: 16, fill: "currentColor", class: "ac-skill-card-icon" }
+                                                            div { class: "{SKILLS_ICON} ac-skill-icon-blue",
+                                                                Icon { icon: LdGlobe, width: 16, height: 16, fill: "currentColor", class: SKILL_CARD_ICON }
                                                             }
-                                                            div { class: "ac-skills-list-body",
-                                                                div { class: "ac-skills-list-title", "{title}" }
-                                                                div { class: "ac-skills-list-desc", "{desc}" }
-                                                                div { class: "ac-skills-list-meta", "{slug}" }
+                                                            div { class: SKILLS_BODY,
+                                                                div { class: SKILLS_TITLE, "{title}" }
+                                                                div { class: SKILLS_DESC, "{desc}" }
+                                                                div { class: SKILLS_META, "{slug}" }
                                                             }
-                                                            div { class: "ac-skills-list-actions",
+                                                            div { class: SKILLS_ACTIONS,
                                                                 button {
                                                                     r#type: "button",
-                                                                    class: if skill_slug_equipped(&skill_equipped_slugs(), slug.as_str()) {
-                                                                        "ac-skills-list-action is-on"
-                                                                    } else {
-                                                                        "ac-skills-list-action"
-                                                                    },
+                                                                    class: SKILLS_ACTION,
+                                                                    "data-on": skill_slug_equipped(&skill_equipped_slugs(), slug.as_str()),
                                                                     title: "{skill_equip_button_label(&skill_equipped_slugs(), slug.as_str())}",
                                                                     disabled: skill_equip_busy() == Some(slug.clone()),
                                                                     onclick: move |evt| {
@@ -5318,11 +5492,12 @@ pub fn Console(
                                                                             skill_equip_busy.set(None);
                                                                         });
                                                                     },
-                                                                    Icon { icon: LdShieldCheck, width: 13, height: 13, fill: "currentColor", class: "ac-skill-action-icon" }
+                                                                    Icon { icon: LdShieldCheck, width: 13, height: 13, fill: "currentColor", class: SKILL_CARD_ICON }
                                                                 }
                                                                 button {
                                                                     r#type: "button",
-                                                                    class: "ac-skills-list-action is-danger",
+                                                                    class: SKILLS_ACTION,
+                                                                    "data-danger": true,
                                                                     disabled: equipped
                                                                         || skill_uninstall_busy() == Some(slug.clone()),
                                                                     title: if !equipped {
@@ -5372,7 +5547,7 @@ pub fn Console(
                                                                             skill_uninstall_busy.set(None);
                                                                         });
                                                                     },
-                                                                    Icon { icon: LdTrash2, width: 13, height: 13, fill: "currentColor", class: "ac-skill-action-icon" }
+                                                                    Icon { icon: LdTrash2, width: 13, height: 13, fill: "currentColor", class: SKILL_CARD_ICON }
                                                                 }
                                                             }
                                                         }
@@ -5383,30 +5558,30 @@ pub fn Console(
                                     }
                                 } else {
                                     if skill_market_loading() {
-                                        div { class: "ac-skills-list",
+                                        div { class: SKILLS_LIST,
                                             for _ in 0..5 {
-                                                div { class: "ac-skills-list-row ac-skills-list-row-skeleton",
-                                                    div { class: "ac-skills-list-icon ac-skeleton-base" }
-                                                    div { class: "ac-skills-list-body",
-                                                        div { class: "ac-skills-list-skel-title ac-skeleton-base" }
-                                                        div { class: "ac-skills-list-skel-desc ac-skeleton-base" }
+                                                div { class: "{SKILLS_ROW} pointer-events-none",
+                                                    div { class: "{SKILLS_ICON} ac-skeleton-base" }
+                                                    div { class: SKILLS_BODY,
+                                                        div { class: "{SKILLS_SKEL_TITLE} ac-skeleton-base" }
+                                                        div { class: "{SKILLS_SKEL_DESC} ac-skeleton-base" }
                                                     }
                                                 }
                                             }
                                         }
                                     } else {
                                         if let Some(err) = skill_market_error() {
-                                            div { class: "ac-sidebar-skills-banner is-error", "{err}" }
+                                            div { class: SKILLS_BANNER, "data-error": true, "{err}" }
                                         }
                                         if !skill_market_station_warnings().is_empty() {
-                                            div { class: "ac-sidebar-skills-banner is-warn",
+                                            div { class: SKILLS_BANNER, "data-warn": true,
                                                 for warning in skill_market_station_warnings() {
                                                     span { "{warning}" }
                                                 }
                                             }
                                         }
                                         if skill_market_station_cards().is_empty() && skill_market_error().is_none() {
-                                            div { class: "ac-sidebar-skills-empty",
+                                            div { class: SKILLS_EMPTY,
                                                 if skill_market_items().is_empty() {
                                                     "输入关键词搜索技能市场"
                                                 } else {
@@ -5414,10 +5589,10 @@ pub fn Console(
                                                 }
                                             }
                                         } else if !skill_market_station_cards().is_empty() {
-                                            div { class: "ac-skills-section-header",
+                                            div { class: SKILLS_HEADER,
                                                 span { "{skill_source_label(&skill_market_station())}" }
                                             }
-                                            div { class: "ac-skills-list",
+                                            div { class: SKILLS_LIST,
                                                 for card in skill_market_station_cards() {
                                                     {
                                                         let item = card.item.clone();
@@ -5432,11 +5607,8 @@ pub fn Console(
                                                         let is_selected = selected_skill_key() == Some(install_key.clone());
                                                         rsx! {
                                                             div {
-                                                                class: if is_selected {
-                                                                    "ac-skills-list-row is-selected"
-                                                                } else {
-                                                                    "ac-skills-list-row"
-                                                                },
+                                                                class: SKILLS_ROW,
+                                                            "data-selected": is_selected,
                                                                 onclick: move |_| {
                                                                     selected_skill_key.set(Some(key_select.clone()));
                                                                     let tab = CenterTab::skill_market(
@@ -5449,23 +5621,23 @@ pub fn Console(
                                                                         });
                                                                     });
                                                                 },
-                                                                div { class: "ac-skills-list-icon ac-skill-icon-blue",
-                                                                    Icon { icon: LdGlobe, width: 16, height: 16, fill: "currentColor", class: "ac-skill-card-icon" }
+                                                                div { class: "{SKILLS_ICON} ac-skill-icon-blue",
+                                                                    Icon { icon: LdGlobe, width: 16, height: 16, fill: "currentColor", class: SKILL_CARD_ICON }
                                                                 }
-                                                                div { class: "ac-skills-list-body",
-                                                                    div { class: "ac-skills-list-title", "{item.name}" }
-                                                                    div { class: "ac-skills-list-desc", "{item.description}" }
-                                                                    div { class: "ac-skills-list-meta", "{source_label} · {item.author} · ↓{downloads} · ★{stars}" }
+                                                                div { class: SKILLS_BODY,
+                                                                    div { class: SKILLS_TITLE, "{item.name}" }
+                                                                    div { class: SKILLS_DESC, "{item.description}" }
+                                                                    div { class: SKILLS_META, "{source_label} · {item.author} · ↓{downloads} · ★{stars}" }
                                                                 }
-                                                                div { class: "ac-skills-list-actions",
+                                                                div { class: SKILLS_ACTIONS,
                                                                     if item.installed {
-                                                                        span { class: "ac-skills-list-badge", "已装" }
+                                                                        span { class: SKILLS_BADGE, "已装" }
                                                                     } else if !item.installable {
-                                                                        span { class: "ac-skills-list-badge is-muted", "不可用" }
+                                                                        span { class: SKILLS_BADGE, "data-muted": true, "不可用" }
                                                                     } else {
                                                                         button {
                                                                             r#type: "button",
-                                                                            class: "ac-skills-list-action",
+                                                                            class: SKILLS_ACTION,
                                                                             title: if skill_installing() == Some(install_key.clone()) {
                                                                                 "安装中"
                                                                             } else {
@@ -5496,7 +5668,7 @@ pub fn Console(
                                                                                     skill_installing.set(None);
                                                                                 });
                                                                             },
-                                                                            Icon { icon: LdDownload, width: 13, height: 13, fill: "currentColor", class: "ac-skill-action-icon" }
+                                                                            Icon { icon: LdDownload, width: 13, height: 13, fill: "currentColor", class: SKILL_CARD_ICON }
                                                                         }
                                                                     }
                                                                 }
@@ -5764,9 +5936,9 @@ pub fn Console(
                             }
                         } else {
                             if role_loading() {
-                                div { class: "ac-skills-state", "正在加载角色..." }
+                                div { class: SKILLS_STATE, "正在加载角色..." }
                             } else if let Some(err) = role_error() {
-                                div { class: "ac-skills-state ac-skills-state-error", "{err}" }
+                                div { class: SKILLS_STATE, "data-error": true, "{err}" }
                             } else {
                                 for role in role_list() {
                                     {
@@ -5777,11 +5949,11 @@ pub fn Console(
                                         let can_delete_this_role = role_list().len() > 1;
                                         rsx! {
                                             div {
-                                                class: if role.is_active { "sidebar-agent is-active ac-agent-card" } else { "sidebar-agent ac-agent-card" },
-                                                div { class: "ac-agent-card-toolbar",
+                                                class: if role.is_active { "{AGENT_CARD} {AGENT_CARD_ACTIVE}" } else { "{AGENT_CARD} {AGENT_CARD_IDLE}" },
+                                                div { class: crate::shell::style::AGENT_CARD_TOOLBAR,
                                                     button {
                                                         r#type: "button",
-                                                        class: "ac-agent-select-hit",
+                                                        class: crate::shell::style::AGENT_SELECT_HIT,
                                                         onclick: move |_| {
                                                             if role.is_active {
                                                                 editing_role_id.set(Some(role_id));
@@ -5831,22 +6003,22 @@ pub fn Console(
                                                                 role_loading.set(false);
                                                             });
                                                         },
-                                                        div { class: "ac-agent-row",
-                                                            div { class: "ac-agent-avatar",
+                                                        div { class: crate::shell::style::AGENT_ROW,
+                                                            div { class: crate::shell::style::AGENT_AVATAR,
                                                                 img {
                                                                     src: PET_PNG,
                                                                     alt: "",
-                                                                    class: "ac-agent-avatar-img",
+                                                                    class: crate::shell::style::AGENT_AVATAR_IMG,
                                                                 }
                                                             }
-                                                            div { class: "ac-agent-meta",
-                                                                h4 { class: "ac-agent-name", "{role.name}" }
+                                                            div { class: crate::shell::style::AGENT_META,
+                                                                h4 { class: crate::shell::style::AGENT_NAME, "{role.name}" }
                                                             }
                                                         }
                                                     }
                                                     button {
                                                         r#type: "button",
-                                                        class: "ac-agent-delete",
+                                                        class: crate::shell::style::AGENT_DELETE,
                                                         title: if can_delete_this_role { "删除角色" } else { "至少保留一个角色" },
                                                         disabled: !can_delete_this_role,
                                                         onclick: move |evt| {
@@ -5862,7 +6034,7 @@ pub fn Console(
                                                             width: 15,
                                                             height: 15,
                                                             fill: "currentColor",
-                                                            class: "ac-agent-delete-icon",
+                                                            class: crate::shell::style::AGENT_DELETE_ICON,
                                                         }
                                                     }
                                                 }
@@ -5873,7 +6045,7 @@ pub fn Console(
                             }
                             button {
                                 r#type: "button",
-                                class: "ac-btn-new-agent",
+                                class: crate::shell::style::BTN_NEW_AGENT,
                                 onclick: move |_| {
                                     role_loading.set(true);
                                     let default_name = next_new_role_display_name(&role_list());
@@ -5934,7 +6106,7 @@ pub fn Console(
                     }
                     if show_sidebar() {
                         div {
-                            class: "ac-sidebar-resizer",
+                            class: crate::shell::style::SIDEBAR_RESIZER,
                             title: "拖动调整侧栏宽度；缩小过多将收起侧栏",
                             onmousedown: move |event| {
                                 active_resize.set(Some(ConsoleResizeKind::Sidebar));
@@ -5957,7 +6129,7 @@ pub fn Console(
                         });
                         rsx! {
                             div {
-                                class: "ac-center-tabs",
+                                class: crate::shell::style::CENTER_TABS,
                                 role: "tablist",
                                 oncontextmenu: move |evt| {
                                     evt.prevent_default();
@@ -5968,7 +6140,7 @@ pub fn Console(
                                         tab_id: None,
                                     }));
                                 },
-                                div { class: "ac-center-tabs-scroll",
+                                div { class: crate::shell::style::CENTER_TABS_SCROLL,
                                     for tab in center_tabs() {
                                         {
                                             let tab_id = tab.id.clone();
@@ -5981,16 +6153,12 @@ pub fn Console(
                                             let kind_focus = tab.kind.clone();
                                             let file_dirty = center_tab_file_path(&tab.kind)
                                                 .is_some_and(|p| fs_dirty().contains(p));
-                                            let tab_class = match (is_active, is_preview) {
-                                                (true, true) => "ac-center-tab is-active is-preview",
-                                                (true, false) => "ac-center-tab is-active",
-                                                (false, true) => "ac-center-tab is-preview",
-                                                (false, false) => "ac-center-tab",
-                                            };
                                             rsx! {
                                                 div {
                                                     key: "{tab_id}",
-                                                    class: "{tab_class}",
+                                                    class: crate::shell::style::CENTER_TAB,
+                                                    "data-active": is_active,
+                                                    "data-preview": is_preview,
                                                     role: "tab",
                                                     aria_selected: is_active,
                                                     title: "{title}",
@@ -6062,12 +6230,12 @@ pub fn Console(
                                                         }
                                                     },
                                                     if file_dirty {
-                                                        span { class: "ac-center-tab-dirty", title: "未保存", "●" }
+                                                        span { class: crate::shell::style::CENTER_TAB_DIRTY, title: "未保存", "●" }
                                                     }
-                                                    span { class: "ac-center-tab-title", "{title}" }
+                                                    span { class: crate::shell::style::CENTER_TAB_TITLE, "{title}" }
                                                     button {
                                                         r#type: "button",
-                                                        class: "ac-center-tab-close",
+                                                        class: crate::shell::style::CENTER_TAB_CLOSE,
                                                         title: "关闭标签页",
                                                         aria_label: "关闭标签页",
                                                         onclick: move |e| {
@@ -6116,7 +6284,7 @@ pub fn Console(
                                                             width: 12,
                                                             height: 12,
                                                             fill: "currentColor",
-                                                            class: "ac-center-tab-close-icon",
+                                                            class: crate::shell::style::CENTER_TAB_CLOSE_ICON,
                                                         }
                                                     }
                                                 }
@@ -6127,7 +6295,7 @@ pub fn Console(
                                 if let Some(preview_path) = active_md_preview_path {
                                     button {
                                         r#type: "button",
-                                        class: "ac-center-tabs-md-preview",
+                                        class: crate::shell::style::CENTER_TABS_MD_PREVIEW,
                                         title: "预览 Markdown",
                                         aria_label: "预览 Markdown",
                                         onclick: move |_| {
@@ -6148,7 +6316,7 @@ pub fn Console(
                                             width: 15,
                                             height: 15,
                                             fill: "currentColor",
-                                            class: "ac-center-tabs-md-preview-icon",
+                                            class: crate::shell::style::CENTER_TABS_MD_PREVIEW,
                                         }
                                     }
                                 }
@@ -6156,12 +6324,12 @@ pub fn Console(
                         }
                     }
                 }
-                div { class: "ac-main-body premium-card",
+                div { class: "{MAIN_BODY} premium-card",
                     {
                         let active_kind = center_active_kind(&center_tabs(), &active_center_id());
                         match active_kind {
                             Some(CenterTabKind::SkillInstalled { slug: key }) => rsx! {
-                        section { class: "ac-skills-detail-pane",
+                        section { class: SKILLS_DETAIL_PANE,
                             {
                                         if let Some(inst) = skill_installed_list()
                                             .into_iter()
@@ -6177,24 +6345,24 @@ pub fn Console(
                                                 slug.as_str(),
                                             );
                                             rsx! {
-                                                div { class: "ac-skills-detail",
-                                                    div { class: "ac-skills-detail-head",
-                                                        div { class: "ac-skills-detail-icon ac-skill-icon-blue",
-                                                            Icon { icon: LdGlobe, width: 28, height: 28, fill: "currentColor", class: "ac-skill-card-icon" }
+                                                div { class: SKILLS_DETAIL,
+                                                    div { class: SKILLS_DETAIL_HEAD,
+                                                        div { class: "{SKILLS_DETAIL_ICON} ac-skill-icon-blue",
+                                                            Icon { icon: LdGlobe, width: 28, height: 28, fill: "currentColor", class: SKILL_CARD_ICON }
                                                         }
-                                                        div { class: "ac-skills-detail-titles",
-                                                            h2 { "{title}" }
-                                                            p { class: "ac-skills-detail-slug", "{slug}" }
+                                                        div { class: SKILLS_DETAIL_TITLES,
+                                                            h2 { class: SKILLS_DETAIL_H2, "{title}" }
+                                                            p { class: SKILLS_DETAIL_SLUG, "{slug}" }
                                                         }
                                                     }
-                                                    p { class: "ac-skills-detail-desc", "{desc}" }
-                                                    div { class: "ac-skills-detail-actions",
+                                                    p { class: SKILLS_DETAIL_DESC, "{desc}" }
+                                                    div { class: SKILLS_DETAIL_ACTIONS,
                                                         button {
                                                             r#type: "button",
                                                             class: if skill_slug_equipped(&skill_equipped_slugs(), slug.as_str()) {
-                                                                "ac-installed-equip is-on"
+                                                                "{INSTALLED_BTN} {INSTALLED_BTN_LEARN} {INSTALLED_BTN_ON}"
                                                             } else {
-                                                                "ac-installed-equip"
+                                                                "{INSTALLED_BTN} {INSTALLED_BTN_LEARN}"
                                                             },
                                                             disabled: skill_equip_busy() == Some(slug.clone()),
                                                             onclick: move |_| {
@@ -6212,12 +6380,12 @@ pub fn Console(
                                                                     skill_equip_busy.set(None);
                                                                 });
                                                             },
-                                                            Icon { icon: LdShieldCheck, width: 15, height: 15, fill: "currentColor", class: "ac-skill-action-icon" }
+                                                            Icon { icon: LdShieldCheck, width: 15, height: 15, fill: "currentColor", class: SKILL_CARD_ICON }
                                                             "{skill_equip_button_label(&skill_equipped_slugs(), slug.as_str())}"
                                                         }
                                                         button {
                                                             r#type: "button",
-                                                            class: "ac-installed-action",
+                                                            class: INSTALLED_BTN_REMOVE,
                                                             disabled: equipped
                                                                 || skill_uninstall_busy() == Some(slug.clone()),
                                                             title: if !equipped {
@@ -6264,7 +6432,7 @@ pub fn Console(
                                                                     skill_uninstall_busy.set(None);
                                                                 });
                                                             },
-                                                            Icon { icon: LdTrash2, width: 15, height: 15, fill: "currentColor", class: "ac-skill-action-icon" }
+                                                            Icon { icon: LdTrash2, width: 15, height: 15, fill: "currentColor", class: SKILL_CARD_ICON }
                                                             "移除"
                                                         }
                                                     }
@@ -6272,10 +6440,10 @@ pub fn Console(
                                             }
                                         } else {
                                             rsx! {
-                                                div { class: "ac-skills-detail-empty",
-                                                    Icon { icon: LdWandSparkles, width: 40, height: 40, fill: "currentColor", class: "ac-installed-empty-icon" }
-                                                    h3 { "技能库" }
-                                                    p { "该技能已不存在或已卸载。" }
+                                                div { class: SKILLS_DETAIL_EMPTY,
+                                                    Icon { icon: LdWandSparkles, width: 40, height: 40, fill: "currentColor", class: INSTALLED_EMPTY_ICON }
+                                                    h3 { class: SKILLS_DETAIL_EMPTY_H3, "技能库" }
+                                                    p { class: SKILLS_DETAIL_EMPTY_P, "该技能已不存在或已卸载。" }
                                                 }
                                             }
                                         }
@@ -6283,7 +6451,7 @@ pub fn Console(
                         }
                             },
                             Some(CenterTabKind::SkillMarket { key }) => rsx! {
-                        section { class: "ac-skills-detail-pane",
+                        section { class: SKILLS_DETAIL_PANE,
                             {
                                     if let Some(card) = skill_market_cards()
                                         .into_iter()
@@ -6296,32 +6464,32 @@ pub fn Console(
                                         let install_key = card.install_key.clone();
                                         let button_install_key = install_key.clone();
                                         rsx! {
-                                            div { class: "ac-skills-detail",
-                                                div { class: "ac-skills-detail-head",
-                                                    div { class: "ac-skills-detail-icon ac-skill-icon-blue",
-                                                        Icon { icon: LdGlobe, width: 28, height: 28, fill: "currentColor", class: "ac-skill-card-icon" }
+                                            div { class: SKILLS_DETAIL,
+                                                div { class: SKILLS_DETAIL_HEAD,
+                                                    div { class: "{SKILLS_DETAIL_ICON} ac-skill-icon-blue",
+                                                        Icon { icon: LdGlobe, width: 28, height: 28, fill: "currentColor", class: SKILL_CARD_ICON }
                                                     }
-                                                    div { class: "ac-skills-detail-titles",
-                                                        span { class: "ac-skill-source", "{source_label}" }
-                                                        h2 { "{item.name}" }
+                                                    div { class: SKILLS_DETAIL_TITLES,
+                                                        span { class: SKILL_SOURCE, "{source_label}" }
+                                                        h2 { class: SKILLS_DETAIL_H2, "{item.name}" }
                                                     }
                                                 }
-                                                p { class: "ac-skills-detail-desc", "{item.description}" }
-                                                div { class: "ac-skill-market-meta",
+                                                p { class: SKILLS_DETAIL_DESC, "{item.description}" }
+                                                div { class: SKILL_MARKET_META,
                                                     span { "作者 {item.author}" }
                                                     span { "下载 {downloads}" }
                                                     span { "星标 {stars}" }
                                                     span { "版本 {item.version}" }
                                                 }
-                                                div { class: "ac-skills-detail-actions",
+                                                div { class: SKILLS_DETAIL_ACTIONS,
                                                     if item.installed {
-                                                        button { r#type: "button", class: "ac-skill-installed-btn", disabled: true, "已安装" }
+                                                        button { r#type: "button", class: SKILL_INSTALLED_BTN, disabled: true, "已安装" }
                                                     } else if !item.installable {
-                                                        button { r#type: "button", class: "ac-skill-installed-btn", disabled: true, "暂不支持下载" }
+                                                        button { r#type: "button", class: SKILL_INSTALLED_BTN, disabled: true, "暂不支持下载" }
                                                     } else {
                                                         button {
                                                             r#type: "button",
-                                                            class: "ac-skill-install-btn",
+                                                            class: SKILL_INSTALL_BTN,
                                                             disabled: skill_installing().is_some(),
                                                             onclick: move |_| {
                                                                 let source = item.source.clone();
@@ -6346,7 +6514,7 @@ pub fn Console(
                                                                     skill_installing.set(None);
                                                                 });
                                                             },
-                                                            Icon { icon: LdDownload, width: 15, height: 15, fill: "currentColor", class: "ac-skill-action-icon" }
+                                                            Icon { icon: LdDownload, width: 15, height: 15, fill: "currentColor", class: SKILL_CARD_ICON }
                                                             if skill_installing() == Some(install_key) {
                                                                 "安装中"
                                                             } else {
@@ -6359,10 +6527,10 @@ pub fn Console(
                                         }
                                     } else {
                                         rsx! {
-                                            div { class: "ac-skills-detail-empty",
-                                                Icon { icon: LdWandSparkles, width: 40, height: 40, fill: "currentColor", class: "ac-installed-empty-icon" }
-                                                h3 { "技能市场" }
-                                                p { "该技能已不在当前搜索结果中，可重新搜索后打开。" }
+                                            div { class: SKILLS_DETAIL_EMPTY,
+                                                Icon { icon: LdWandSparkles, width: 40, height: 40, fill: "currentColor", class: INSTALLED_EMPTY_ICON }
+                                                h3 { class: SKILLS_DETAIL_EMPTY_H3, "技能市场" }
+                                                p { class: SKILLS_DETAIL_EMPTY_P, "该技能已不在当前搜索结果中，可重新搜索后打开。" }
                                             }
                                         }
                                     }
@@ -6532,38 +6700,38 @@ pub fn Console(
                                 }
                             },
                             Some(CenterTabKind::Role) => rsx! {
-                        section { class: "ac-role-panel",
-                            div { class: "ac-role-header",
-                                div { class: "ac-role-heading",
-                                    div { class: "ac-role-avatar",
+                        section { class: ROLE_PANEL,
+                            div { class: ROLE_HEADER,
+                                div { class: ROLE_HEADING,
+                                    div { class: ROLE_AVATAR,
                                         img {
                                             src: PET_PNG,
                                             alt: "",
-                                            class: "ac-role-avatar-img",
+                                            class: ROLE_AVATAR_IMG,
                                         }
                                     }
-                                    div { class: "ac-role-heading-text",
+                                    div { class: ROLE_HEADING_TEXT,
                                         input {
-                                            class: "ac-role-name-input",
+                                            class: ROLE_NAME_INPUT,
                                             r#type: "text",
                                             placeholder: "角色名称",
                                             value: "{editing_role_name()}",
                                             oninput: move |e| editing_role_name.set(e.value()),
                                         }
-                                        p { class: "ac-role-subtitle", "正在严格遵循以下人格提示词为您工作。" }
+                                        p { class: ROLE_SUBTITLE, "正在严格遵循以下人格提示词为您工作。" }
                                     }
                                 }
                             }
-                            div { class: "ac-role-divider" }
-                            div { class: "ac-persona-prompt-card",
-                                div { class: "ac-persona-prompt-header",
-                                    div { class: "ac-persona-prompt-title",
+                            div { class: ROLE_DIVIDER }
+                            div { class: PERSONA_PROMPT_CARD,
+                                div { class: PERSONA_PROMPT_HEADER,
+                                    div { class: PERSONA_PROMPT_TITLE,
                                         Icon {
                                             icon: LdScrollText,
                                             width: 18,
                                             height: 18,
                                             fill: "currentColor",
-                                            class: "ac-persona-prompt-icon",
+                                            class: PERSONA_PROMPT_ICON,
                                         }
                                         "人格提示词"
                                     }
@@ -6571,27 +6739,23 @@ pub fn Console(
                                 // 受控 `value`：与聊天输入框一致，确保「AI 魔法润色」读到的是当前输入，而非脱节的 initial_value。
                                 textarea {
                                     key: "persona-prompt-{persona_textarea_epoch()}",
-                                    class: "ac-persona-textarea",
+                                    class: PERSONA_TEXTAREA,
                                     value: "{persona_prompt()}",
                                     oninput: move |e| persona_prompt.set(e.value()),
                                 }
                                 if let Some(hint) = persona_polish_hint() {
                                     p {
-                                        class: if hint == "AI 润色完成，可继续调整后保存人格。"
-                                            || hint == "人格设定已保存。"
-                                        {
-                                            "ac-settings-saved ac-settings-saved--ok"
-                                        } else {
-                                            "ac-settings-saved"
-                                        },
+                                        class: SETTINGS_SAVED,
+                                            "data-ok": hint == "AI 润色完成，可继续调整后保存人格。"
+                                                || hint == "人格设定已保存。",
                                         "{hint}"
                                     }
                                 }
                             }
-                            div { class: "ac-role-actions",
+                            div { class: ROLE_ACTIONS,
                                 button {
                                     r#type: "button",
-                                    class: "ac-role-btn ac-role-btn-secondary",
+                                    class: "{ROLE_BTN} {ROLE_BTN_SECONDARY}",
                                     disabled: persona_polishing(),
                                     onclick: move |_| {
                                         if persona_polishing() {
@@ -6653,7 +6817,7 @@ pub fn Console(
                                         width: 18,
                                         height: 18,
                                         fill: "currentColor",
-                                        class: "ac-role-btn-icon",
+                                        class: ROLE_BTN_ICON,
                                     }
                                     if persona_polishing() {
                                         "润色中..."
@@ -6663,7 +6827,8 @@ pub fn Console(
                                 }
                                 button {
                                     r#type: "button",
-                                    class: "ac-role-btn ac-role-btn-primary ac-persona-save-btn",
+                                    class: "{ROLE_BTN} {ROLE_BTN_PRIMARY}",
+                                                    "data-save": true,
                                     onclick: move |_| {
                                         let text = persona_prompt();
                                         let role_name = editing_role_name();
@@ -6707,7 +6872,7 @@ pub fn Console(
                                         width: 18,
                                         height: 18,
                                         fill: "currentColor",
-                                        class: "ac-role-btn-icon",
+                                        class: ROLE_BTN_ICON,
                                     }
                                     "保存人格"
                                 }
@@ -6716,18 +6881,18 @@ pub fn Console(
                             },
                             None => rsx! {
                                 div {
-                                    class: "ac-center-empty",
-                                    div { class: "ac-center-empty-logo-wrap",
+                                    class: crate::shell::style::CENTER_EMPTY,
+                                    div { class: crate::shell::style::CENTER_EMPTY_LOGO_WRAP,
                                         img {
                                             src: LOGO_PNG,
                                             alt: "Pusa",
-                                            class: "ac-center-empty-logo",
+                                            class: crate::shell::style::CENTER_EMPTY_LOGO,
                                         }
                                     }
-                                    p { class: "ac-center-empty-intro", "万千世界，皆为梦幻泡影" }
+                                    p { class: crate::shell::style::CENTER_EMPTY_INTRO, "万千世界，皆为梦幻泡影" }
                                     if super::files::fs_available() {
                                         div {
-                                            class: "ac-center-empty-actions",
+                                            class: crate::shell::style::CENTER_EMPTY_ACTIONS,
                                             tabindex: "0",
                                             onkeydown: move |e: KeyboardEvent| {
                                                 if create_plugin_open() || create_app_open() {
@@ -6771,7 +6936,7 @@ pub fn Console(
                                             },
                                             button {
                                                 r#type: "button",
-                                                class: "ac-center-empty-open-btn",
+                                                class: crate::shell::style::CENTER_EMPTY_OPEN_BTN,
                                                 title: "打开项目（⌘O）",
                                                 onclick: move |_| {
                                                     match super::files::fs_open_project_directory_dialog() {
@@ -6797,40 +6962,40 @@ pub fn Console(
                                                         Err(e) => toast.error(e),
                                                     }
                                                 },
-                                                span { class: "ac-center-empty-open-btn-label", "打开项目" }
-                                                span { class: "ac-center-empty-open-btn-keys", aria_hidden: "true",
-                                                    kbd { "⌘" }
-                                                    kbd { "O" }
+                                                span { class: crate::shell::style::CENTER_EMPTY_OPEN_BTN_LABEL, "打开项目" }
+                                                span { class: crate::shell::style::CENTER_EMPTY_OPEN_BTN_KEYS, aria_hidden: "true",
+                                                    kbd { class: crate::shell::style::CENTER_EMPTY_KBD, "⌘" }
+                                                    kbd { class: crate::shell::style::CENTER_EMPTY_KBD, "O" }
                                                 }
                                             }
                                             button {
                                                 r#type: "button",
-                                                class: "ac-center-empty-open-btn",
+                                                class: crate::shell::style::CENTER_EMPTY_OPEN_BTN,
                                                 title: "创建应用（⌘J）",
                                                 onclick: move |_| {
                                                     create_app_name.set(String::new());
                                                     create_app_error.set(None);
                                                     create_app_open.set(true);
                                                 },
-                                                span { class: "ac-center-empty-open-btn-label", "创建应用" }
-                                                span { class: "ac-center-empty-open-btn-keys", aria_hidden: "true",
-                                                    kbd { "⌘" }
-                                                    kbd { "J" }
+                                                span { class: crate::shell::style::CENTER_EMPTY_OPEN_BTN_LABEL, "创建应用" }
+                                                span { class: crate::shell::style::CENTER_EMPTY_OPEN_BTN_KEYS, aria_hidden: "true",
+                                                    kbd { class: crate::shell::style::CENTER_EMPTY_KBD, "⌘" }
+                                                    kbd { class: crate::shell::style::CENTER_EMPTY_KBD, "J" }
                                                 }
                                             }
                                             button {
                                                 r#type: "button",
-                                                class: "ac-center-empty-open-btn",
+                                                class: crate::shell::style::CENTER_EMPTY_OPEN_BTN,
                                                 title: "创建插件（⌘E）",
                                                 onclick: move |_| {
                                                     create_plugin_name.set(String::new());
                                                     create_plugin_error.set(None);
                                                     create_plugin_open.set(true);
                                                 },
-                                                span { class: "ac-center-empty-open-btn-label", "创建插件" }
-                                                span { class: "ac-center-empty-open-btn-keys", aria_hidden: "true",
-                                                    kbd { "⌘" }
-                                                    kbd { "E" }
+                                                span { class: crate::shell::style::CENTER_EMPTY_OPEN_BTN_LABEL, "创建插件" }
+                                                span { class: crate::shell::style::CENTER_EMPTY_OPEN_BTN_KEYS, aria_hidden: "true",
+                                                    kbd { class: crate::shell::style::CENTER_EMPTY_KBD, "⌘" }
+                                                    kbd { class: crate::shell::style::CENTER_EMPTY_KBD, "E" }
                                                 }
                                             }
                                         }
@@ -6843,7 +7008,7 @@ pub fn Console(
                 if show_terminal() {
                     div {
                         style: "{terminal_height_style}",
-                        class: "ac-terminal-panel-host",
+                        class: TERMINAL_PANEL_HOST,
                         {
                             #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
                             {
@@ -6904,14 +7069,14 @@ pub fn Console(
                                 let terminal_is_max =
                                     (terminal_height() - AC_TERMINAL_MAX_HEIGHT_PX).abs() < 0.5;
                                 rsx! {
-                                    div { class: "ac-terminal-panel",
-                                        div { class: "ac-terminal-toolbar",
-                                            span { class: "ac-terminal-toolbar-title", "终端" }
-                                            div { class: "ac-terminal-toolbar-actions",
+                                    div { class: TERMINAL_PANEL,
+                                        div { class: TERMINAL_TOOLBAR,
+                                            span { class: TERMINAL_TOOLBAR_TITLE, "终端" }
+                                            div { class: TERMINAL_TOOLBAR_ACTIONS,
                                                 if terminal_is_max {
                                                     button {
                                                         r#type: "button",
-                                                        class: "ac-terminal-toolbar-btn",
+                                                        class: TERMINAL_TOOLBAR_BTN,
                                                         title: "最小化终端",
                                                         aria_label: "最小化终端",
                                                         onclick: move |_| {
@@ -6934,7 +7099,7 @@ pub fn Console(
                                                 } else {
                                                     button {
                                                         r#type: "button",
-                                                        class: "ac-terminal-toolbar-btn",
+                                                        class: TERMINAL_TOOLBAR_BTN,
                                                         title: "最大化终端",
                                                         aria_label: "最大化终端",
                                                         onclick: move |_| {
@@ -6954,7 +7119,7 @@ pub fn Console(
                                                 }
                                                 button {
                                                     r#type: "button",
-                                                    class: "ac-terminal-toolbar-btn",
+                                                    class: TERMINAL_TOOLBAR_BTN,
                                                     title: "关闭终端",
                                                     aria_label: "关闭终端",
                                                     onclick: move |_| show_terminal.set(false),
@@ -6967,9 +7132,9 @@ pub fn Console(
                                                 }
                                             }
                                         }
-                                        div { class: "ac-terminal-unavailable",
+                                        div { class: TERMINAL_UNAVAILABLE,
                                             p { "Web 端不提供本机终端。" }
-                                            p { class: "ac-terminal-unavailable-hint",
+                                            p { class: TERMINAL_UNAVAILABLE_HINT,
                                                 "请使用桌面应用打开交互式 shell。"
                                             }
                                         }
@@ -6982,11 +7147,14 @@ pub fn Console(
             }
 
             aside {
-                class: "{chat_aside_class}",
+                class: chat_class,
+            "data-exp": chat_expanded,
+            "data-tbsp": chat_titlebar_spaced,
+            "data-menus": chat_model_sheet_open() || chat_agent_mode_sheet_open(),
                 style: "{chat_width_style}",
                 if show_center() && show_chat() {
                     div {
-                        class: "ac-chat-resizer",
+                        class: CHAT_RESIZER,
                         title: "拖动调整对话区域宽度",
                         onmousedown: move |event| {
                             active_resize.set(Some(ConsoleResizeKind::Chat));
@@ -7006,15 +7174,15 @@ pub fn Console(
                         sidebar_shutting_down,
                     }
                 }
-                div { class: "ac-chat-workspace",
-                    div { class: "ac-chat-main",
+                div { class: CHAT_WORKSPACE,
+                    div { class: CHAT_MAIN,
                         if let Some(err) = chat_history_error() {
-                            div { class: "ac-chat-header",
-                                div { class: "ac-chat-history-error", "{err}" }
+                            div { class: CHAT_HEADER,
+                                div { class: CHAT_HISTORY_ERROR, "{err}" }
                             }
                         }
                         div {
-                            class: "ac-chat-body scrollbar-hide",
+                            class: "{CHAT_BODY} scrollbar-hide",
                     onclick: move |_| {
                         if chat_editing_msg_idx().is_some() {
                             clear_chat_message_edit(
@@ -7026,21 +7194,18 @@ pub fn Console(
                             );
                         }
                     },
-                    div { class: "ac-chat-thread-pane",
+                    div { class: CHAT_THREAD_PANE,
                     // 左侧短条导航：最多 10 条最近的提问，点击定位。
                     if chat_nav_msg_idxs(&chat_messages.read()).len() >= 2 {
-                        div { class: "ac-chat-nav",
+                        div { class: CHAT_NAV,
                             for (nav_pos, anchor_idx) in chat_nav_msg_idxs(&chat_messages.read())
                                 .into_iter()
                                 .enumerate()
                             {
                                 button {
                                     key: "ac-chat-nav-{anchor_idx}",
-                                    class: if chat_active_msg_idx() == Some(anchor_idx) {
-                                        "ac-chat-nav-dot is-current"
-                                    } else {
-                                        "ac-chat-nav-dot"
-                                    },
+                                    class: CHAT_NAV_DOT,
+                                        "data-current": chat_active_msg_idx() == Some(anchor_idx),
                                     title: "定位到第 {nav_pos + 1} 条提问",
                                     aria_label: "定位到第 {nav_pos + 1} 条提问",
                                     onclick: move |evt| {
@@ -7055,7 +7220,7 @@ pub fn Console(
                     }
                     div {
                         id: AC_CHAT_THREAD_DOM_ID,
-                        class: "ac-chat-thread scrollbar-hide",
+                        class: "{CHAT_THREAD} scrollbar-hide",
                         onscroll: move |evt| {
                             // Native：可见性只由长期 JS 监听驱动，避免 onscroll eval 与之抢写。
                             #[cfg(not(target_arch = "wasm32"))]
@@ -7111,13 +7276,13 @@ pub fn Console(
                                     let segs_for_edit = display_segs.clone();
                                     rsx! {
                                     div {
-                                        class: "ac-chat-message ac-chat-message-user",
+                                        class: "{CHAT_MESSAGE} {CHAT_MESSAGE_USER}",
                                         "data-ac-msg-idx": "{msg_idx}",
                                         onmousedown: move |evt| evt.stop_propagation(),
                                         onclick: move |evt| evt.stop_propagation(),
                                         if is_editing {
                                             div {
-                                                class: "ac-chat-bubble ac-chat-bubble-user ac-chat-bubble-user-editing",
+                                                class: "{CHAT_BUBBLE} {CHAT_BUBBLE_USER} {CHAT_BUBBLE_USER_EDITING}",
                                                 onmousedown: move |evt| evt.stop_propagation(),
                                                 onclick: move |evt| evt.stop_propagation(),
                                                 ChatUserMessageEdit {
@@ -7142,9 +7307,9 @@ pub fn Console(
                                                 }
                                             }
                                         } else {
-                                            div { class: "ac-chat-user-stack",
+                                            div { class: CHAT_USER_STACK,
                                                 div {
-                                                    class: "ac-chat-bubble ac-chat-bubble-user",
+                                                    class: "{CHAT_BUBBLE} {CHAT_BUBBLE_USER}",
                                                     onmousedown: move |evt| evt.stop_propagation(),
                                                     onclick: move |evt| evt.stop_propagation(),
                                                     for (seg_i, seg) in display_segs.into_iter().enumerate() {
@@ -7154,7 +7319,7 @@ pub fn Console(
                                                                     rsx! {
                                                                         span {
                                                                             key: "t-{seg_i}",
-                                                                            class: "ac-chat-bubble-user-text",
+                                                                            class: CHAT_BUBBLE_USER_TEXT,
                                                                             "{text}"
                                                                         }
                                                                     }
@@ -7271,10 +7436,10 @@ pub fn Console(
                                                     }
                                                 }
                                                 if !chat_busy() {
-                                                    div { class: "ac-chat-user-actions",
+                                                    div { class: CHAT_USER_ACTIONS,
                                                         button {
                                                             r#type: "button",
-                                                            class: "ac-chat-ai-action-btn",
+                                                            class: CHAT_AI_ACTION_BTN,
                                                             title: "复制",
                                                             aria_label: "复制我的消息",
                                                             onclick: {
@@ -7289,12 +7454,12 @@ pub fn Console(
                                                                 width: 14,
                                                                 height: 14,
                                                                 fill: "currentColor",
-                                                                class: "ac-chat-ai-action-icon",
+                                                                class: CHAT_AI_ACTION_ICON,
                                                             }
                                                         }
                                                         button {
                                                             r#type: "button",
-                                                            class: "ac-chat-ai-action-btn",
+                                                            class: CHAT_AI_ACTION_BTN,
                                                             title: "编辑",
                                                             aria_label: "编辑我的消息",
                                                             onclick: move |evt: MouseEvent| {
@@ -7316,7 +7481,7 @@ pub fn Console(
                                                                 width: 14,
                                                                 height: 14,
                                                                 fill: "currentColor",
-                                                                class: "ac-chat-ai-action-icon",
+                                                                class: CHAT_AI_ACTION_ICON,
                                                             }
                                                         }
                                                     }
@@ -7343,12 +7508,12 @@ pub fn Console(
                                         || (chat_busy() && !show_bubble);
                                     let thinking_busy = running;
                                     rsx! {
-                                    div { class: "ac-chat-message ac-chat-message-ai",
+                                    div { class: "{CHAT_MESSAGE} {CHAT_MESSAGE_AI}",
                                         ChatThinkingHydrator {
                                             msg_index: msg_idx,
                                             chat_messages,
                                         }
-                                        div { class: "ac-chat-ai-stack",
+                                        div { class: CHAT_AI_STACK,
                                             if show_thinking {
                                                 ChatThinkingPanel {
                                                     msg_index: msg_idx,
@@ -7474,21 +7639,19 @@ pub fn Console(
                                                 }
                                             }
                                             if show_bubble {
-                                                div { class: "ac-chat-bubble ac-chat-bubble-ai is-visible",
+                                                div { class: "{CHAT_BUBBLE} {CHAT_BUBBLE_AI}",
                                                     ChatMarkdownBody {
                                                         content: content.clone(),
                                                     }
                                                 }
                                             }
                                             if show_bubble {
-                                            div { class: if is_error {
-                                                    "ac-chat-ai-actions is-error"
-                                                } else {
-                                                    "ac-chat-ai-actions"
-                                                },
+                                            div {
+                                                    class: CHAT_AI_ACTIONS,
+                                                    "data-error": is_error,
                                                 button {
                                                     r#type: "button",
-                                                    class: "ac-chat-ai-action-btn",
+                                                    class: CHAT_AI_ACTION_BTN,
                                                     title: "复制",
                                                     aria_label: "复制助手回复",
                                                     onclick: {
@@ -7500,16 +7663,16 @@ pub fn Console(
                                                         width: 14,
                                                         height: 14,
                                                         fill: "currentColor",
-                                                        class: "ac-chat-ai-action-icon",
+                                                        class: CHAT_AI_ACTION_ICON,
                                                     }
                                                     if is_error {
-                                                        span { class: "ac-chat-ai-action-text", "复制" }
+                                                        span { class: CHAT_AI_ACTION_TEXT, "复制" }
                                                     }
                                                 }
                                                 if is_error {
                                                     button {
                                                         r#type: "button",
-                                                        class: "ac-chat-ai-action-btn",
+                                                        class: CHAT_AI_ACTION_BTN,
                                                         title: "重试",
                                                         aria_label: "重试上一轮请求",
                                                         onclick: {
@@ -7548,16 +7711,16 @@ pub fn Console(
                                                             width: 14,
                                                             height: 14,
                                                             fill: "currentColor",
-                                                            class: "ac-chat-ai-action-icon",
+                                                            class: CHAT_AI_ACTION_ICON,
                                                         }
-                                                        span { class: "ac-chat-ai-action-text", "重试" }
+                                                        span { class: CHAT_AI_ACTION_TEXT, "重试" }
                                                     }
                                                 }
                                                 if developer_mode() {
                                                     if let Some(run_id) = agent_run_id {
                                                         button {
                                                             r#type: "button",
-                                                            class: "ac-chat-ai-action-btn",
+                                                            class: CHAT_AI_ACTION_BTN,
                                                             title: "查看详情",
                                                             aria_label: "查看助手回复详情",
                                                             onclick: move |_| {
@@ -7582,7 +7745,7 @@ pub fn Console(
                                                                 width: 14,
                                                                 height: 14,
                                                                 fill: "currentColor",
-                                                                class: "ac-chat-ai-action-icon",
+                                                                class: CHAT_AI_ACTION_ICON,
                                                             }
                                                         }
                                                     }
@@ -7599,15 +7762,12 @@ pub fn Console(
                         }
                     }
                     div {
-                        class: if show_jump_bottom() {
-                            "ac-chat-jump-bottom-host"
-                        } else {
-                            "ac-chat-jump-bottom-host is-hidden"
-                        },
+                        class: CHAT_JUMP_HOST,
+                            "data-hidden": !(show_jump_bottom()),
                         aria_hidden: if show_jump_bottom() { "false" } else { "true" },
                         button {
                             r#type: "button",
-                            class: "ac-chat-jump-bottom",
+                            class: CHAT_JUMP_BOTTOM,
                             title: "回到底部",
                             aria_label: "回到底部",
                             tabindex: if show_jump_bottom() { "0" } else { "-1" },
@@ -7627,7 +7787,7 @@ pub fn Console(
                         }
                     }
                         div {
-                            class: "ac-chat-input-wrap",
+                            class: CHAT_INPUT_WRAP,
                             onclick: move |_| {
                                 if chat_editing_msg_idx().is_some() {
                                     clear_chat_message_edit(
@@ -7639,8 +7799,8 @@ pub fn Console(
                                     );
                                 }
                             },
-                            div { class: "ac-chat-input-shell",
-                        div { class: "ac-chat-composer-stack",
+                            div { class: CHAT_INPUT_SHELL,
+                        div { class: CHAT_COMPOSER_STACK,
                             ChatComposerCe {
                                 root_id: COMPOSER_ROOT_MAIN.to_string(),
                                 epoch: chat_composer_epoch(),
@@ -7651,15 +7811,12 @@ pub fn Console(
                                 enter_tick: chat_enter_tick,
                                 paste_tick: chat_paste_tick,
                             }
-                            div { class: "ac-chat-composer-toolbar",
-                                div { class: "ac-chat-mode-wrap",
+                            div { class: CHAT_COMPOSER_TOOLBAR,
+                                div { class: CHAT_MODE_WRAP,
                                     button {
                                         r#type: "button",
-                                        class: if chat_agent_mode_sheet_open() {
-                                            "ac-chat-agent-mode-btn ac-chat-toolbar-pill is-open"
-                                        } else {
-                                            "ac-chat-agent-mode-btn ac-chat-toolbar-pill"
-                                        },
+                                        class: "{CHAT_TOOLBAR_PILL} {CHAT_AGENT_MODE_BTN}",
+                                            "data-open": chat_agent_mode_sheet_open(),
                                         title: "{chat_agent_mode().label()} 模式",
                                         aria_label: "切换 Agent 模式",
                                         aria_expanded: chat_agent_mode_sheet_open(),
@@ -7679,7 +7836,7 @@ pub fn Console(
                                                     width: 15,
                                                     height: 15,
                                                     fill: "currentColor",
-                                                    class: "ac-chat-agent-mode-btn-icon",
+                                                    class: CHAT_AGENT_MODE_BTN_ICON,
                                                 }
                                             },
                                             ChatAgentMode::Plan => rsx! {
@@ -7688,7 +7845,7 @@ pub fn Console(
                                                     width: 15,
                                                     height: 15,
                                                     fill: "currentColor",
-                                                    class: "ac-chat-agent-mode-btn-icon",
+                                                    class: CHAT_AGENT_MODE_BTN_ICON,
                                                 }
                                             },
                                             ChatAgentMode::Debug => rsx! {
@@ -7697,7 +7854,7 @@ pub fn Console(
                                                     width: 15,
                                                     height: 15,
                                                     fill: "currentColor",
-                                                    class: "ac-chat-agent-mode-btn-icon",
+                                                    class: CHAT_AGENT_MODE_BTN_ICON,
                                                 }
                                             },
                                             ChatAgentMode::Multitask => rsx! {
@@ -7706,7 +7863,7 @@ pub fn Console(
                                                     width: 15,
                                                     height: 15,
                                                     fill: "currentColor",
-                                                    class: "ac-chat-agent-mode-btn-icon",
+                                                    class: CHAT_AGENT_MODE_BTN_ICON,
                                                 }
                                             },
                                             ChatAgentMode::Ask => rsx! {
@@ -7715,21 +7872,21 @@ pub fn Console(
                                                     width: 15,
                                                     height: 15,
                                                     fill: "currentColor",
-                                                    class: "ac-chat-agent-mode-btn-icon",
+                                                    class: CHAT_AGENT_MODE_BTN_ICON,
                                                 }
                                             },
                                         }
-                                        span { class: "ac-chat-agent-mode-btn-label",
+                                        span { class: CHAT_AGENT_MODE_BTN_LABEL,
                                             "{chat_agent_mode().label()}"
                                         }
                                     }
                                     if chat_agent_mode_sheet_open() {
                                         div {
-                                            class: "ac-chat-mode-sheet-backdrop",
+                                            class: CHAT_MODE_SHEET_BACKDROP,
                                             onclick: move |_| chat_agent_mode_sheet_open.set(false),
                                         }
                                         div {
-                                            class: "ac-chat-mode-sheet ac-chat-agent-mode-sheet",
+                                            class: "{CHAT_MODE_SHEET} {CHAT_AGENT_MODE_SHEET}",
                                             role: "menu",
                                             for mode in ChatAgentMode::VISIBLE {
                                                 {
@@ -7740,17 +7897,14 @@ pub fn Console(
                                                             key: "{label}",
                                                             r#type: "button",
                                                             role: "menuitem",
-                                                            class: if is_active {
-                                                                "ac-chat-agent-mode-opt is-active"
-                                                            } else {
-                                                                "ac-chat-agent-mode-opt"
-                                                            },
+                                                            class: CHAT_AGENT_MODE_OPT,
+                                                    "data-active": is_active,
                                                             onclick: move |_| {
                                                                 persist_chat_agent_mode(mode);
                                                                 chat_agent_mode.set(mode);
                                                                 chat_agent_mode_sheet_open.set(false);
                                                             },
-                                                            span { class: "ac-chat-agent-mode-opt-icon",
+                                                            span { class: CHAT_AGENT_MODE_OPT_ICON,
                                                                 match mode {
                                                                     ChatAgentMode::Agent => rsx! {
                                                                         Icon {
@@ -7794,14 +7948,14 @@ pub fn Console(
                                                                     },
                                                                 }
                                                             }
-                                                            span { class: "ac-chat-agent-mode-opt-label", "{label}" }
+                                                            span { class: CHAT_AGENT_MODE_OPT_LABEL, "{label}" }
                                                             if is_active {
                                                                 Icon {
                                                                     icon: LdCheck,
                                                                     width: 16,
                                                                     height: 16,
                                                                     fill: "currentColor",
-                                                                    class: "ac-chat-agent-mode-opt-check",
+                                                                    class: CHAT_AGENT_MODE_OPT_CHECK,
                                                                 }
                                                             }
                                                         }
@@ -7811,21 +7965,20 @@ pub fn Console(
                                         }
                                     }
                                 }
-                                div { class: "ac-chat-model-wrap",
+                                div {
+                                                class: CHAT_MODE_WRAP,
+                                                "data-model": true,
                                     button {
                                         r#type: "button",
-                                        class: if chat_model_sheet_open() {
-                                            "ac-chat-model-trigger ac-chat-toolbar-pill is-open"
-                                        } else {
-                                            "ac-chat-model-trigger ac-chat-toolbar-pill"
-                                        },
+                                        class: "{CHAT_TOOLBAR_PILL} {CHAT_MODE_TRIGGER}",
+                                            "data-open": chat_model_sheet_open(),
                                         aria_expanded: chat_model_sheet_open(),
                                         aria_haspopup: "menu",
                                         onclick: move |_| {
                                             chat_agent_mode_sheet_open.set(false);
                                             chat_model_sheet_open.toggle();
                                         },
-                                        span { class: "ac-chat-mode-trigger-label",
+                                        span { class: CHAT_MODE_TRIGGER_LABEL,
                                             // 触发器主标题：优先用列表里命中行的 id（大写化展示），
                                             // 没命中则保留当前 chat_model 原值（已自动回落，理论上
                                             // 不会到这里）。display_name 不放进 trigger，避免按钮太宽。
@@ -7846,7 +7999,7 @@ pub fn Console(
                                                 width: 14,
                                                 height: 14,
                                                 fill: "currentColor",
-                                                class: "ac-chat-mode-trigger-chevron",
+                                                class: CHAT_MODE_TRIGGER_CHEVRON,
                                             }
                                         } else {
                                             Icon {
@@ -7854,7 +8007,7 @@ pub fn Console(
                                                 width: 14,
                                                 height: 14,
                                                 fill: "currentColor",
-                                                class: "ac-chat-mode-trigger-chevron",
+                                                class: CHAT_MODE_TRIGGER_CHEVRON,
                                             }
                                         }
                                     }
@@ -7863,16 +8016,16 @@ pub fn Console(
                                         // z-index 低于 .ac-chat-mode-sheet（5001），高于普通页面元素，
                                         // 与顶栏设置菜单 (.ac-web-titlebar-menu-backdrop) 完全同模式。
                                         div {
-                                            class: "ac-chat-mode-sheet-backdrop",
+                                            class: CHAT_MODE_SHEET_BACKDROP,
                                             onclick: move |_| chat_model_sheet_open.set(false),
                                         }
-                                        div { class: "ac-chat-mode-sheet", role: "menu",
+                                        div { class: CHAT_MODE_SHEET, role: "menu",
                                             // 模型列表。每行展示 id（大写化）+ 可选的 display_name 副标题。
                                             // .read().clone() 转 owned，避免在 rsx for / closure 里持
                                             // 有 Signal 的 Ref 借用。
                                             if let Some(hint) = chat_models_load_hint() {
                                                 span {
-                                                    class: "ac-chat-mode-sheet__sub",
+                                                    class: CHAT_SHEET_SUB,
                                                     style: "padding: 0.35rem 0.72rem 0.15rem;",
                                                     "{hint}"
                                                 }
@@ -7896,14 +8049,11 @@ pub fn Console(
                                                             rsx! {
                                                                 div {
                                                                     key: "{group_key}",
-                                                                    class: if is_open {
-                                                                        "ac-chat-mode-sheet__group is-open"
-                                                                    } else {
-                                                                        "ac-chat-mode-sheet__group"
-                                                                    },
+                                                                    class: CHAT_SHEET_GROUP,
+                                                        "data-open": is_open,
                                                                     button {
                                                                         r#type: "button",
-                                                                        class: "ac-chat-mode-sheet__group-head",
+                                                                        class: CHAT_SHEET_GROUP_HEAD,
                                                                         aria_expanded: is_open,
                                                                         onclick: move |e| {
                                                                             e.stop_propagation();
@@ -7918,7 +8068,7 @@ pub fn Console(
                                                                                 chat_model_group_open.set(Some(next));
                                                                             }
                                                                         },
-                                                                        span { class: "ac-chat-mode-sheet__group-chevron",
+                                                                        span { class: CHAT_SHEET_GROUP_CHEVRON,
                                                                             if is_open {
                                                                                 Icon {
                                                                                     icon: LdChevronDown,
@@ -7935,11 +8085,11 @@ pub fn Console(
                                                                                 }
                                                                             }
                                                                         }
-                                                                        span { class: "ac-chat-mode-sheet__group-title", "{group_title}" }
-                                                                        span { class: "ac-chat-mode-sheet__group-count", "{group_count}" }
+                                                                        span { class: CHAT_SHEET_GROUP_TITLE, "{group_title}" }
+                                                                        span { class: CHAT_SHEET_GROUP_COUNT, "{group_count}" }
                                                                     }
                                                                     if is_open {
-                                                                        div { class: "ac-chat-mode-sheet__group-body",
+                                                                        div { class: CHAT_SHEET_GROUP_BODY,
                                                                             for m in models_in_group {
                                                                                 {
                                                                                     let id = m.id.clone();
@@ -7983,47 +8133,34 @@ pub fn Console(
                                                                                     rsx! {
                                                                                         div {
                                                                                             key: "{id}",
-                                                                                            class: if chat_model() == id_for_class {
-                                                                                                if is_custom {
-                                                                                                    "ac-chat-mode-sheet__opt-row is-active is-custom"
-                                                                                                } else {
-                                                                                                    "ac-chat-mode-sheet__opt-row is-active"
-                                                                                                }
-                                                                                            } else if is_custom {
-                                                                                                "ac-chat-mode-sheet__opt-row is-custom"
-                                                                                            } else {
-                                                                                                "ac-chat-mode-sheet__opt-row"
-                                                                                            },
-                                                                                            div { class: "ac-chat-mode-sheet__opt-main",
+                                                                                            class: CHAT_SHEET_OPT_ROW,
+                                                                                            "data-active": chat_model() == id_for_class,
+                                                                                            "data-custom": is_custom,
+                                                                                            div { class: CHAT_SHEET_OPT_MAIN,
                                                                                                 button {
                                                                                                     r#type: "button",
                                                                                                     role: "menuitem",
-                                                                                                    class: if chat_model() == id_for_class {
-                                                                                                        "ac-chat-mode-sheet__opt is-active"
-                                                                                                    } else {
-                                                                                                        "ac-chat-mode-sheet__opt"
-                                                                                                    },
+                                                                                                    class: CHAT_SHEET_OPT,
+                                                            "data-active": chat_model() == id_for_class,
                                                                                                     onclick: move |_| {
                                                                                                         persist_chat_model(&id_for_click);
                                                                                                         chat_model.set(id_for_click.clone());
                                                                                                         chat_model_sheet_open.set(false);
                                                                                                     },
-                                                                                                    span { class: "ac-chat-mode-sheet__title-row",
-                                                                                                        span { class: "ac-chat-mode-sheet__title", "{title}" }
+                                                                                                    span { class: CHAT_SHEET_TITLE_ROW,
+                                                                                                        span { class: CHAT_SHEET_TITLE, "{title}" }
                                                                                                         if let Some(ok) = net_ok {
                                                                                                             span {
-                                                                                                                class: if ok {
-                                                                                                                    "ac-chat-mode-sheet__net-dot is-ok"
-                                                                                                                } else {
-                                                                                                                    "ac-chat-mode-sheet__net-dot is-bad"
-                                                                                                                },
+                                                                                                                class: CHAT_SHEET_NET_DOT,
+                                                                                                                "data-ok": ok,
+                                                                                                                "data-bad": !ok,
                                                                                                                 title: if ok { "网络正常" } else { "网络异常" },
                                                                                                                 aria_label: if ok { "网络正常" } else { "网络异常" },
                                                                                                             }
                                                                                                         }
                                                                                                     }
                                                                                                     if !sub.is_empty() {
-                                                                                                        span { class: "ac-chat-mode-sheet__sub", "{sub}" }
+                                                                                                        span { class: CHAT_SHEET_SUB, "{sub}" }
                                                                                                     }
                                                                                                     if chat_model() == id_for_class {
                                                                                                         Icon {
@@ -8031,14 +8168,14 @@ pub fn Console(
                                                                                                             width: 16,
                                                                                                             height: 16,
                                                                                                             fill: "currentColor",
-                                                                                                            class: "ac-chat-mode-sheet__check",
+                                                                                                            class: CHAT_SHEET_CHECK,
                                                                                                         }
                                                                                                     }
                                                                                                 }
                                                                                                 if is_custom && !is_editing {
                                                                                                     button {
                                                                                                         r#type: "button",
-                                                                                                        class: "ac-chat-mode-sheet__edit",
+                                                                                                        class: CHAT_SHEET_EDIT,
                                                                                                         title: "编辑自定义模型",
                                                                                                         aria_label: "编辑自定义模型",
                                                                                                         onclick: move |e| {
@@ -8059,7 +8196,7 @@ pub fn Console(
                                                                                                 if is_custom && is_editing {
                                                                                                     button {
                                                                                                         r#type: "button",
-                                                                                                        class: "ac-chat-mode-sheet__delete",
+                                                                                                        class: CHAT_SHEET_EDIT,
                                                                                                         title: "删除自定义模型",
                                                                                                         aria_label: "删除自定义模型",
                                                                                                         onclick: move |e| {
@@ -8094,18 +8231,18 @@ pub fn Console(
                                                                                             }
                                                                                             if is_editing {
                                                                                                 div {
-                                                                                                    class: "ac-chat-mode-sheet__edit-panel",
+                                                                                                    class: CHAT_SHEET_EDIT_PANEL,
                                                                                                     onclick: move |e| e.stop_propagation(),
                                                                                                     input {
                                                                                                         r#type: "text",
-                                                                                                        class: "ac-chat-mode-sheet__custom-input",
+                                                                                                        class: CHAT_SHEET_CUSTOM_INPUT,
                                                                                                         placeholder: "修改模型（可选）",
                                                                                                         value: "{edit_custom_name()}",
                                                                                                         aria_label: "修改模型（可选）",
                                                                                                         oninput: move |e| edit_custom_name.set(e.value()),
                                                                                                     }
                                                                                                     select {
-                                                                                                        class: "ac-chat-mode-sheet__custom-key",
+                                                                                                        class: CHAT_SHEET_CUSTOM_KEY,
                                                                                                         title: "绑定密钥",
                                                                                                         aria_label: "绑定密钥",
                                                                                                         onchange: move |e| edit_custom_cred.set(e.value()),
@@ -8138,16 +8275,16 @@ pub fn Console(
                                                                                                             }
                                                                                                         }
                                                                                                     }
-                                                                                                    div { class: "ac-chat-mode-sheet__edit-actions",
+                                                                                                    div { class: CHAT_SHEET_EDIT_ACTIONS,
                                                                                                         button {
                                                                                                             r#type: "button",
-                                                                                                            class: "ac-chat-mode-sheet__edit-cancel",
+                                                                                                            class: CHAT_SHEET_EDIT_CANCEL,
                                                                                                             onclick: move |_| editing_custom_id.set(None),
                                                                                                             "取消"
                                                                                                         }
                                                                                                         button {
                                                                                                             r#type: "button",
-                                                                                                            class: "ac-chat-mode-sheet__edit-save",
+                                                                                                            class: CHAT_SHEET_EDIT_SAVE,
                                                                                                             onclick: move |_| {
                                                                                                                 apply_custom_chat_model_edit(
                                                                                                                     &id_for_save,
@@ -8177,14 +8314,14 @@ pub fn Console(
                                                 }
                                             }
                                             div {
-                                                class: "ac-chat-mode-sheet__custom",
+                                                class: CHAT_SHEET_CUSTOM,
                                                 onclick: move |e| e.stop_propagation(),
                                                 if adding_custom() {
                                                     div {
-                                                        class: "ac-chat-mode-sheet__edit-panel",
+                                                        class: CHAT_SHEET_EDIT_PANEL,
                                                         input {
                                                             r#type: "text",
-                                                            class: "ac-chat-mode-sheet__custom-input",
+                                                            class: CHAT_SHEET_CUSTOM_INPUT,
                                                             placeholder: "模型名称",
                                                             value: "{custom_model_draft}",
                                                             aria_label: "模型名称",
@@ -8207,7 +8344,7 @@ pub fn Console(
                                                             },
                                                         }
                                                         select {
-                                                            class: "ac-chat-mode-sheet__custom-key",
+                                                            class: CHAT_SHEET_CUSTOM_KEY,
                                                             title: "绑定密钥",
                                                             aria_label: "绑定密钥",
                                                             onchange: move |e| add_custom_cred.set(e.value()),
@@ -8239,10 +8376,10 @@ pub fn Console(
                                                                 }
                                                             }
                                                         }
-                                                        div { class: "ac-chat-mode-sheet__edit-actions",
+                                                        div { class: CHAT_SHEET_EDIT_ACTIONS,
                                                             button {
                                                                 r#type: "button",
-                                                                class: "ac-chat-mode-sheet__edit-cancel",
+                                                                class: CHAT_SHEET_EDIT_CANCEL,
                                                                 onclick: move |_| {
                                                                     custom_model_draft.set(String::new());
                                                                     add_custom_cred.set(String::new());
@@ -8252,7 +8389,7 @@ pub fn Console(
                                                             }
                                                             button {
                                                                 r#type: "button",
-                                                                class: "ac-chat-mode-sheet__edit-save",
+                                                                class: CHAT_SHEET_EDIT_SAVE,
                                                                 onclick: move |_| {
                                                                     try_add_custom_chat_model(
                                                                         &custom_model_draft(),
@@ -8271,10 +8408,10 @@ pub fn Console(
                                                         }
                                                     }
                                                 } else {
-                                                    div { class: "ac-chat-mode-sheet__custom-actions",
+                                                    div { class: CHAT_SHEET_CUSTOM_ACTIONS,
                                                         button {
                                                             r#type: "button",
-                                                            class: "ac-chat-mode-sheet__custom-icon-btn",
+                                                            class: CHAT_SHEET_CUSTOM_ICON_BTN,
                                                             title: "添加模型",
                                                             aria_label: "添加模型",
                                                             onclick: move |_| {
@@ -8300,11 +8437,8 @@ pub fn Console(
                                                             rsx! {
                                                                 button {
                                                                     r#type: "button",
-                                                                    class: if probing {
-                                                                        "ac-chat-mode-sheet__custom-icon-btn is-busy"
-                                                                    } else {
-                                                                        "ac-chat-mode-sheet__custom-icon-btn"
-                                                                    },
+                                                                    class: CHAT_SHEET_CUSTOM_ICON_BTN,
+                                                                        "data-busy": probing,
                                                                     title: "{probe_title}",
                                                                     aria_label: "检测网络",
                                                                     disabled: probing,
@@ -8330,7 +8464,7 @@ pub fn Console(
                                                                             width: 15,
                                                                             height: 15,
                                                                             fill: "currentColor",
-                                                                            class: "ac-chat-mode-sheet__spin",
+                                                                            class: CHAT_SHEET_SPIN,
                                                                         }
                                                                     } else {
                                                                         Icon {
@@ -8349,10 +8483,10 @@ pub fn Console(
                                         }
                                     }
                                 }
-                                label { class: "ac-chat-upload-btn ac-chat-toolbar-pill",
+                                label { class: "{CHAT_TOOLBAR_PILL} {CHAT_UPLOAD_BTN}",
                                     input {
                                         r#type: "file",
-                                        class: "ac-chat-file-input",
+                                        class: CHAT_FILE_INPUT,
                                         accept: "image/*,*/*",
                                         multiple: true,
                                         onchange: move |e: FormEvent| {
@@ -8383,7 +8517,7 @@ pub fn Console(
                                         width: 15,
                                         height: 15,
                                         fill: "currentColor",
-                                        class: "ac-chat-upload-icon",
+                                        
                                     }
                                 }
                             }
@@ -8391,11 +8525,11 @@ pub fn Console(
                         button {
                             r#type: "button",
                             class: if chat_busy() {
-                                "ac-chat-send-btn ac-chat-send-btn--pause"
+                                "{CHAT_SEND_BTN} {CHAT_SEND_PAUSE}"
                             } else if chat_can_send() {
-                                "ac-chat-send-btn ac-chat-send-btn--ready"
+                                "{CHAT_SEND_BTN} {CHAT_SEND_READY}"
                             } else {
-                                "ac-chat-send-btn"
+                                "{CHAT_SEND_BTN}"
                             },
                             onclick: send_or_pause_chat,
                             if chat_busy() {
@@ -8404,7 +8538,7 @@ pub fn Console(
                                     width: 16,
                                     height: 16,
                                     fill: "currentColor",
-                                    class: "ac-chat-send-icon",
+                                    class: CHAT_SEND_ICON,
                                 }
                             } else {
                                 Icon {
@@ -8412,7 +8546,7 @@ pub fn Console(
                                     width: 16,
                                     height: 16,
                                     fill: "currentColor",
-                                    class: "ac-chat-send-icon",
+                                    class: CHAT_SEND_ICON,
                                 }
                             }
                         }
@@ -8421,9 +8555,10 @@ pub fn Console(
                     }
                     div {
                         class: "{chat_history_panel_class}",
+                                "data-rail": chat_history_is_rail,
                         style: "{chat_history_width_style}",
                             div {
-                                class: "ac-chat-history-resizer",
+                                class: CHAT_HISTORY_RESIZER,
                                 title: "拖动调整会话历史宽度",
                                 onmousedown: move |event| {
                                     chat_history_ctx_menu.set(None);
@@ -8434,7 +8569,7 @@ pub fn Console(
                             }
                             button {
                                 r#type: "button",
-                                class: "ac-chat-history-create",
+                                class: CHAT_HISTORY_CREATE,
                                 title: "开启新对话",
                                 aria_label: "开启新对话",
                                 onclick: {
@@ -8465,13 +8600,13 @@ pub fn Console(
                                         });
                                     }
                                 },
-                                div { class: "ac-chat-history-create-icon",
+                                div { class: CHAT_HISTORY_CREATE_ICON,
                                     Icon {
                                         icon: LdPlus,
                                         width: 16,
                                         height: 16,
                                         fill: "currentColor",
-                                        class: "ac-chat-header-icon",
+                                        class: CHAT_HEADER_ICON,
                                     }
                                 }
                             }
@@ -8488,15 +8623,12 @@ pub fn Console(
                                         .unwrap_or(false);
                                     rsx! {
                                         div {
-                                            class: if is_editing {
-                                                "ac-chat-history-row is-editing"
-                                            } else {
-                                                "ac-chat-history-row"
-                                            },
+                                            class: CHAT_HISTORY_ROW,
+                                                "data-editing": is_editing,
                                             if is_editing {
-                                                div { class: "ac-chat-history-edit-wrap",
+                                                div { class: CHAT_HISTORY_EDIT_WRAP,
                                                     input {
-                                                        class: "ac-chat-history-title-input",
+                                                        class: CHAT_HISTORY_TITLE_INPUT,
                                                         value: "{chat_title_draft()}",
                                                         maxlength: "48",
                                                         disabled: chat_title_saving(),
@@ -8534,10 +8666,10 @@ pub fn Console(
                                                             }
                                                         }
                                                     }
-                                                    div { class: "ac-chat-history-edit-actions",
+                                                    div { class: CHAT_HISTORY_EDIT_ACTIONS,
                                                         button {
                                                             r#type: "button",
-                                                            class: "ac-chat-history-edit-action",
+                                                            class: CHAT_HISTORY_EDIT_ACTION,
                                                             title: "保存标题",
                                                             aria_label: "保存标题",
                                                             disabled: chat_title_saving(),
@@ -8571,12 +8703,12 @@ pub fn Console(
                                                                 width: 13,
                                                                 height: 13,
                                                                 fill: "currentColor",
-                                                                class: "ac-chat-header-icon",
+                                                                class: CHAT_HEADER_ICON,
                                                             }
                                                         }
                                                         button {
                                                             r#type: "button",
-                                                            class: "ac-chat-history-edit-action",
+                                                            class: CHAT_HISTORY_EDIT_ACTION,
                                                             title: "取消编辑",
                                                             aria_label: "取消编辑标题",
                                                             disabled: chat_title_saving(),
@@ -8590,18 +8722,16 @@ pub fn Console(
                                                                 width: 13,
                                                                 height: 13,
                                                                 fill: "currentColor",
-                                                                class: "ac-chat-header-icon",
+                                                                class: CHAT_HEADER_ICON,
                                                             }
                                                         }
                                                     }
                                                 }
                                             } else {
                                                 div {
-                                                    class: format!(
-                                                        "ac-chat-history-item{}{}",
-                                                        if is_active { " is-active" } else { "" },
-                                                        if conv_running { " is-running" } else { "" },
-                                                    ),
+                                                    class: CHAT_HISTORY_ITEM,
+                                                    "data-active": is_active,
+                                                    "data-running": conv_running,
                                                     title: if let Some(title) = display_title.clone() {
                                                         title
                                                     } else if conversation.last_message_preview.trim().is_empty() {
@@ -8677,20 +8807,20 @@ pub fn Console(
                                                     },
                                                     // 图标 + 标题始终同排；窄栏时标题被 overflow 裁切渐进露出
                                                     div {
-                                                        class: "ac-chat-history-item-rail-icon",
+                                                        class: CHAT_HISTORY_RAIL_ICON,
                                                         aria_hidden: "true",
                                                         Icon {
                                                             icon: LdMessageCircle,
                                                             width: 14,
                                                             height: 14,
                                                             fill: "currentColor",
-                                                            class: "ac-chat-header-icon",
+                                                            class: CHAT_HEADER_ICON,
                                                         }
                                                     }
-                                                    div { class: "ac-chat-history-item-body",
-                                                        div { class: "ac-chat-history-item-preview-row",
+                                                    div { class: CHAT_HISTORY_ITEM_BODY,
+                                                        div { class: CHAT_HISTORY_ITEM_PREVIEW_ROW,
                                                             div {
-                                                                class: "ac-chat-history-item-preview",
+                                                                class: CHAT_HISTORY_ITEM_PREVIEW,
                                                                 if conversation.last_message_preview.trim().is_empty() {
                                                                     if let Some(title) = display_title.clone() {
                                                                         "{title}"
@@ -8706,7 +8836,7 @@ pub fn Console(
                                                                 }
                                                             }
                                                             if conv_running {
-                                                                span { class: "ac-chat-history-item-running", "执行中" }
+                                                                span { class: CHAT_HISTORY_ITEM_RUNNING, "执行中" }
                                                             }
                                                         }
                                                     }
@@ -8721,20 +8851,20 @@ pub fn Console(
             }
 
             if let Some(msg) = agent_detail_copy_notice() {
-                div { class: "ac-settings-toast", "{msg}" }
+                div { class: "", "{msg}" }
             }
 
             if agent_detail_loading() || agent_detail_error().is_some() || selected_agent_run_detail().is_some() {
-                div { class: "ac-agent-detail-backdrop",
-                    div { class: "ac-agent-detail-modal",
-                        div { class: "ac-agent-detail-head",
+                div { class: AGENT_DETAIL_BACKDROP,
+                    div { class: AGENT_DETAIL_MODAL,
+                        div { class: AGENT_DETAIL_HEAD,
                             div {
-                                h2 { class: "ac-agent-detail-title", "Agent 运行详情" }
-                                p { class: "ac-agent-detail-subtitle", "步骤、耗时、模型输出与工具完整返回内容" }
+                                h2 { class: AGENT_DETAIL_TITLE, "Agent 运行详情" }
+                                p { class: AGENT_DETAIL_SUBTITLE, "步骤、耗时、模型输出与工具完整返回内容" }
                             }
                             button {
                                 r#type: "button",
-                                class: "ac-agent-detail-close",
+                                class: AGENT_DETAIL_CLOSE,
                                 title: "关闭",
                                 aria_label: "关闭详情",
                                 onclick: move |_| {
@@ -8748,39 +8878,39 @@ pub fn Console(
                                     width: 17,
                                     height: 17,
                                     fill: "currentColor",
-                                    class: "ac-chat-ai-action-icon",
+                                    class: CHAT_AI_ACTION_ICON,
                                 }
                             }
                         }
                         if agent_detail_loading() {
-                            div { class: "ac-agent-detail-loading-skeleton",
-                                div { class: "ac-agent-detail-skeleton-meta",
+                            div { class: AGENT_DETAIL_SKEL_WRAP,
+                                div { class: AGENT_DETAIL_SKEL_META,
                                     for _ in 0..3 {
-                                        div { class: "ac-agent-detail-skeleton-chip ac-skeleton-base" }
+                                        div { class: "{AGENT_DETAIL_SKEL_CHIP} ac-skeleton-base" }
                                     }
                                 }
-                                div { class: "ac-agent-detail-skeleton-body",
+                                div { class: AGENT_DETAIL_SKEL_BODY,
                                     for i in 0..8 {
                                         div {
                                             class: if i % 3 == 2 {
-                                                "ac-agent-detail-skeleton-line ac-agent-detail-skeleton-line--short ac-skeleton-base"
+                                                "{AGENT_DETAIL_SKEL_LINE} {AGENT_DETAIL_SKEL_LINE_SHORT} ac-skeleton-base"
                                             } else {
-                                                "ac-agent-detail-skeleton-line ac-skeleton-base"
+                                                "{AGENT_DETAIL_SKEL_LINE} ac-skeleton-base"
                                             }
                                         }
                                     }
                                 }
                             }
                         } else if let Some(err) = agent_detail_error() {
-                            div { class: "ac-agent-detail-error", "{err}" }
+                            div { class: AGENT_DETAIL_ERROR, "{err}" }
                         } else if let Some(detail) = selected_agent_run_detail() {
-                            div { class: "ac-agent-detail-meta",
+                            div { class: AGENT_DETAIL_META,
                                 span { "模型: {detail.model}" }
                                 span { "状态: {detail.status}" }
                                 span { "总耗时: {format_duration_ms(detail.total_duration_ms)}" }
                                 button {
                                     r#type: "button",
-                                    class: "ac-agent-detail-copy",
+                                    class: AGENT_DETAIL_COPY,
                                     title: "复制全文",
                                     aria_label: "复制全文",
                                     onclick: {
@@ -8800,37 +8930,37 @@ pub fn Console(
                                         width: 12,
                                         height: 12,
                                         fill: "currentColor",
-                                        class: "ac-chat-ai-action-icon",
+                                        class: CHAT_AI_ACTION_ICON,
                                     }
                                     "复制全文"
                                 }
                             }
-                            div { class: "ac-agent-detail-body scrollbar-hide",
+                            div { class: "{AGENT_DETAIL_BODY} scrollbar-hide",
                                 for step in detail.steps.iter().cloned() {
-                                    section { class: "ac-agent-detail-step",
-                                        div { class: "ac-agent-detail-step-head",
+                                    section { class: AGENT_DETAIL_STEP,
+                                        div { class: AGENT_DETAIL_STEP_HEAD,
                                             strong { "步骤 #{step.index}" }
                                             span { "{step.phase} · {format_duration_ms(step.duration_ms)}" }
                                         }
-                                        div { class: "ac-agent-detail-timing",
+                                        div { class: AGENT_DETAIL_TIMING,
                                             span { "CPU {format_stored_duration_ms(step.cpu_ms)}" }
                                             span { "IO {format_stored_duration_ms(step.io_ms)}" }
                                             span { "阻塞 {format_stored_duration_ms(step.block_ms)}" }
                                         }
                                         if !step.model_output.trim().is_empty() {
-                                            div { class: "ac-agent-detail-block-title", "模型输出" }
-                                            pre { class: "ac-agent-detail-pre", "{step.model_output}" }
+                                            div { class: AGENT_DETAIL_BLOCK_TITLE, "模型输出" }
+                                            pre { class: AGENT_DETAIL_PRE, "{step.model_output}" }
                                         }
                                         for tool in step.tools.iter().cloned() {
-                                            div { class: "ac-agent-detail-tool",
-                                                div { class: "ac-agent-detail-tool-head",
+                                            div { class: AGENT_DETAIL_TOOL,
+                                                div { class: AGENT_DETAIL_STEP_HEAD,
                                                     strong { "{tool.name}" }
                                                     span { "{format_duration_ms(tool.duration_ms)}" }
                                                 }
-                                                div { class: "ac-agent-detail-block-title", "参数" }
-                                                pre { class: "ac-agent-detail-pre", "{tool.args}" }
-                                                div { class: "ac-agent-detail-block-title", "完整返回" }
-                                                pre { class: "ac-agent-detail-pre", "{tool.result}" }
+                                                div { class: AGENT_DETAIL_BLOCK_TITLE, "参数" }
+                                                pre { class: AGENT_DETAIL_PRE, "{tool.args}" }
+                                                div { class: AGENT_DETAIL_BLOCK_TITLE, "完整返回" }
+                                                pre { class: AGENT_DETAIL_PRE, "{tool.result}" }
                                             }
                                         }
                                     }
@@ -8845,21 +8975,22 @@ pub fn Console(
 
             if create_plugin_open() {
                 div {
-                    class: "ac-api-modal-backdrop ac-delete-role-modal-backdrop",
+                    class: "{API_MODAL_BACKDROP} {DELETE_ROLE_MODAL_BACKDROP}",
                     onclick: move |_| {
                         create_plugin_open.set(false);
                         create_plugin_error.set(None);
                     },
                     div {
-                        class: "ac-api-modal",
+                        class: API_MODAL,
                         onclick: move |evt| evt.stop_propagation(),
-                        h2 { class: "ac-api-modal-title", "创建插件" }
-                        p { class: "ac-api-modal-desc",
+                        h2 { class: API_MODAL_TITLE, "创建插件" }
+                        p { class: API_MODAL_DESC,
+                        "data-desc": true,
                             "将在工作区 extensions/ 下新建插件目录，并写入 README 与 manifest 脚手架。"
                         }
-                        div { class: "ac-api-modal-field",
+                        div { class: API_MODAL_FIELD,
                             input {
-                                class: "ac-api-modal-input",
+                                class: API_MODAL_INPUT,
                                 r#type: "text",
                                 placeholder: "插件名称，例如 my-plugin",
                                 value: "{create_plugin_name()}",
@@ -8890,15 +9021,15 @@ pub fn Console(
                                     }
                                 },
                             }
-                            p { class: "ac-api-modal-help", "留空则使用默认名 my-plugin。" }
+                            p { class: API_MODAL_HELP, "留空则使用默认名 my-plugin。" }
                         }
                         if let Some(err) = create_plugin_error() {
-                            p { class: "ac-api-modal-desc", style: "color: var(--danger-color, #b91c1c);", "{err}" }
+                            p { class: API_MODAL_DESC, "data-desc": true, style: "color: var(--danger-color, #b91c1c);", "{err}" }
                         }
-                        div { class: "ac-api-modal-actions",
+                        div { class: API_MODAL_ACTIONS,
                             button {
                                 r#type: "button",
-                                class: "ac-role-btn ac-role-btn-secondary",
+                                class: "{ROLE_BTN} {ROLE_BTN_SECONDARY}",
                                 onclick: move |_| {
                                     create_plugin_open.set(false);
                                     create_plugin_error.set(None);
@@ -8907,7 +9038,7 @@ pub fn Console(
                             }
                             button {
                                 r#type: "button",
-                                class: "ac-role-btn ac-role-btn-primary",
+                                class: "{ROLE_BTN} {ROLE_BTN_PRIMARY}",
                                 onclick: move |_| {
                                     let name = create_plugin_name();
                                     match super::files::fs_scaffold_extension_plugin(&name) {
@@ -8937,21 +9068,22 @@ pub fn Console(
 
             if create_app_open() {
                 div {
-                    class: "ac-api-modal-backdrop ac-delete-role-modal-backdrop",
+                    class: "{API_MODAL_BACKDROP} {DELETE_ROLE_MODAL_BACKDROP}",
                     onclick: move |_| {
                         create_app_open.set(false);
                         create_app_error.set(None);
                     },
                     div {
-                        class: "ac-api-modal",
+                        class: API_MODAL,
                         onclick: move |evt| evt.stop_propagation(),
-                        h2 { class: "ac-api-modal-title", "创建应用" }
-                        p { class: "ac-api-modal-desc",
+                        h2 { class: API_MODAL_TITLE, "创建应用" }
+                        p { class: API_MODAL_DESC,
+                        "data-desc": true,
                             "将在工作区 applications/ 下新建应用目录，创建后自动打开为当前项目。"
                         }
-                        div { class: "ac-api-modal-field",
+                        div { class: API_MODAL_FIELD,
                             input {
-                                class: "ac-api-modal-input",
+                                class: API_MODAL_INPUT,
                                 r#type: "text",
                                 placeholder: "应用名称，例如 my-app",
                                 value: "{create_app_name()}",
@@ -8992,12 +9124,12 @@ pub fn Console(
                             }
                         }
                         if let Some(err) = create_app_error() {
-                            p { class: "ac-api-modal-desc", style: "color: var(--danger-color, #b91c1c);", "{err}" }
+                            p { class: API_MODAL_DESC, "data-desc": true, style: "color: var(--danger-color, #b91c1c);", "{err}" }
                         }
-                        div { class: "ac-api-modal-actions",
+                        div { class: API_MODAL_ACTIONS,
                             button {
                                 r#type: "button",
-                                class: "ac-role-btn ac-role-btn-secondary",
+                                class: "{ROLE_BTN} {ROLE_BTN_SECONDARY}",
                                 onclick: move |_| {
                                     create_app_open.set(false);
                                     create_app_error.set(None);
@@ -9006,7 +9138,7 @@ pub fn Console(
                             }
                             button {
                                 r#type: "button",
-                                class: "ac-role-btn ac-role-btn-primary",
+                                class: "{ROLE_BTN} {ROLE_BTN_PRIMARY}",
                                 onclick: move |_| {
                                     let name = create_app_name();
                                     match super::files::fs_scaffold_local_application(&name) {
@@ -9068,7 +9200,7 @@ pub fn Console(
                     let root_now = fs_root_path();
                     rsx! {
                         div {
-                            class: "ac-chat-history-ctx-backdrop",
+                            class: CTX_BACKDROP,
                             onclick: move |_| center_tabs_ctx_menu.set(None),
                             oncontextmenu: move |evt| {
                                 evt.prevent_default();
@@ -9076,7 +9208,7 @@ pub fn Console(
                             },
                         }
                         div {
-                            class: "ac-chat-history-ctx-menu ac-center-tabs-ctx-menu",
+                            class: "{CTX_MENU} min-w-[14.5rem]",
                             role: "menu",
                             style: "{menu_style}",
                             onclick: move |evt| evt.stop_propagation(),
@@ -9084,7 +9216,7 @@ pub fn Console(
                             if let Some(tid) = target_id.clone() {
                                 button {
                                     r#type: "button",
-                                    class: "ac-chat-history-ctx-menu__item",
+                                    class: CTX_ITEM,
                                     role: "menuitem",
                                     onclick: {
                                         let tid = tid.clone();
@@ -9109,12 +9241,12 @@ pub fn Console(
                                             );
                                         }
                                     },
-                                    span { class: "ac-center-tab-ctx-label", "关闭" }
-                                    span { class: "ac-center-tab-ctx-kbd", "⌘W" }
+                                    span { class: crate::shell::style::CENTER_TAB_CTX_LABEL, "关闭" }
+                                    span { class: crate::shell::style::CENTER_TAB_CTX_KBD, "⌘W" }
                                 }
                                 button {
                                     r#type: "button",
-                                    class: "ac-chat-history-ctx-menu__item",
+                                    class: CTX_ITEM,
                                     role: "menuitem",
                                     disabled: !has_others,
                                     onclick: {
@@ -9138,12 +9270,12 @@ pub fn Console(
                                             );
                                         }
                                     },
-                                    span { class: "ac-center-tab-ctx-label", "关闭其他" }
-                                    span { class: "ac-center-tab-ctx-kbd", "⌥⌘T" }
+                                    span { class: crate::shell::style::CENTER_TAB_CTX_LABEL, "关闭其他" }
+                                    span { class: crate::shell::style::CENTER_TAB_CTX_KBD, "⌥⌘T" }
                                 }
                                 button {
                                     r#type: "button",
-                                    class: "ac-chat-history-ctx-menu__item",
+                                    class: CTX_ITEM,
                                     role: "menuitem",
                                     disabled: !can_close_right,
                                     onclick: {
@@ -9167,11 +9299,11 @@ pub fn Console(
                                             );
                                         }
                                     },
-                                    span { class: "ac-center-tab-ctx-label", "关闭右侧标签页" }
+                                    span { class: crate::shell::style::CENTER_TAB_CTX_LABEL, "关闭右侧标签页" }
                                 }
                                 button {
                                     r#type: "button",
-                                    class: "ac-chat-history-ctx-menu__item",
+                                    class: CTX_ITEM,
                                     role: "menuitem",
                                     disabled: !has_saved,
                                     onclick: move |_| {
@@ -9193,11 +9325,11 @@ pub fn Console(
                                             fs_save_notice,
                                         );
                                     },
-                                    span { class: "ac-center-tab-ctx-label", "关闭已保存" }
+                                    span { class: crate::shell::style::CENTER_TAB_CTX_LABEL, "关闭已保存" }
                                 }
                                 button {
                                     r#type: "button",
-                                    class: "ac-chat-history-ctx-menu__item",
+                                    class: CTX_ITEM,
                                     role: "menuitem",
                                     onclick: move |_| {
                                         center_tabs_ctx_menu.set(None);
@@ -9217,14 +9349,14 @@ pub fn Console(
                                             fs_save_notice,
                                         );
                                     },
-                                    span { class: "ac-center-tab-ctx-label", "全部关闭" }
+                                    span { class: crate::shell::style::CENTER_TAB_CTX_LABEL, "全部关闭" }
                                 }
 
                                 if let Some(path) = target_path.clone() {
-                                    div { class: "ac-fs-ctx-sep", role: "separator" }
+                                    div { class: FS_CTX_SEP, role: "separator" }
                                     button {
                                         r#type: "button",
-                                        class: "ac-chat-history-ctx-menu__item",
+                                        class: CTX_ITEM,
                                         role: "menuitem",
                                         onclick: {
                                             let path = path.clone();
@@ -9236,12 +9368,12 @@ pub fn Console(
                                                 }
                                             }
                                         },
-                                        span { class: "ac-center-tab-ctx-label", "复制路径" }
-                                        span { class: "ac-center-tab-ctx-kbd", "⌥⌘C" }
+                                        span { class: crate::shell::style::CENTER_TAB_CTX_LABEL, "复制路径" }
+                                        span { class: crate::shell::style::CENTER_TAB_CTX_KBD, "⌥⌘C" }
                                     }
                                     button {
                                         r#type: "button",
-                                        class: "ac-chat-history-ctx-menu__item",
+                                        class: CTX_ITEM,
                                         role: "menuitem",
                                         onclick: {
                                             let path = path.clone();
@@ -9255,14 +9387,14 @@ pub fn Console(
                                                 }
                                             }
                                         },
-                                        span { class: "ac-center-tab-ctx-label", "复制相对路径" }
-                                        span { class: "ac-center-tab-ctx-kbd", "⌥⇧⌘C" }
+                                        span { class: crate::shell::style::CENTER_TAB_CTX_LABEL, "复制相对路径" }
+                                        span { class: crate::shell::style::CENTER_TAB_CTX_KBD, "⌥⇧⌘C" }
                                     }
 
-                                    div { class: "ac-fs-ctx-sep", role: "separator" }
+                                    div { class: FS_CTX_SEP, role: "separator" }
                                     button {
                                         r#type: "button",
-                                        class: "ac-chat-history-ctx-menu__item",
+                                        class: CTX_ITEM,
                                         role: "menuitem",
                                         onclick: {
                                             let path = path.clone();
@@ -9278,7 +9410,7 @@ pub fn Console(
                                     }
                                     button {
                                         r#type: "button",
-                                        class: "ac-chat-history-ctx-menu__item",
+                                        class: CTX_ITEM,
                                         role: "menuitem",
                                         onclick: {
                                             let path = path.clone();
@@ -9303,10 +9435,10 @@ pub fn Console(
                                         "添加到聊天"
                                     }
 
-                                    div { class: "ac-fs-ctx-sep", role: "separator" }
+                                    div { class: FS_CTX_SEP, role: "separator" }
                                     button {
                                         r#type: "button",
-                                        class: "ac-chat-history-ctx-menu__item",
+                                        class: CTX_ITEM,
                                         role: "menuitem",
                                         onclick: {
                                             let path = path.clone();
@@ -9322,7 +9454,7 @@ pub fn Console(
                                     }
                                     button {
                                         r#type: "button",
-                                        class: "ac-chat-history-ctx-menu__item",
+                                        class: CTX_ITEM,
                                         role: "menuitem",
                                         onclick: {
                                             let path = path.clone();
@@ -9348,12 +9480,12 @@ pub fn Console(
                                     }
                                 }
 
-                                div { class: "ac-fs-ctx-sep", role: "separator" }
+                                div { class: FS_CTX_SEP, role: "separator" }
                             }
 
                             button {
                                 r#type: "button",
-                                class: "ac-chat-history-ctx-menu__item",
+                                class: CTX_ITEM,
                                 role: "menuitem",
                                 onclick: move |_| {
                                     center_tabs_ctx_menu.set(None);
@@ -9364,7 +9496,7 @@ pub fn Console(
                                     width: 14,
                                     height: 14,
                                     fill: "currentColor",
-                                    class: "ac-chat-header-icon",
+                                    class: CHAT_HEADER_ICON,
                                 }
                                 "打开 Pusa 浏览器"
                             }
@@ -9383,7 +9515,7 @@ pub fn Console(
                     );
                     rsx! {
                         div {
-                            class: "ac-chat-history-ctx-backdrop",
+                            class: CTX_BACKDROP,
                             onclick: move |_| chat_history_ctx_menu.set(None),
                             oncontextmenu: move |evt| {
                                 evt.prevent_default();
@@ -9391,13 +9523,13 @@ pub fn Console(
                             },
                         }
                         div {
-                            class: "ac-chat-history-ctx-menu",
+                            class: CTX_MENU,
                             role: "menu",
                             style: "{menu_style}",
                             onclick: move |evt| evt.stop_propagation(),
                             button {
                                 r#type: "button",
-                                class: "ac-chat-history-ctx-menu__item",
+                                class: CTX_ITEM,
                                 role: "menuitem",
                                 disabled: chat_busy(),
                                 onclick: {
@@ -9426,13 +9558,13 @@ pub fn Console(
                                     width: 14,
                                     height: 14,
                                     fill: "currentColor",
-                                    class: "ac-chat-header-icon",
+                                    class: CHAT_HEADER_ICON,
                                 }
                                 "编辑名称"
                             }
                             button {
                                 r#type: "button",
-                                class: "ac-chat-history-ctx-menu__item is-danger",
+                                class: CTX_ITEM_DANGER,
                                 role: "menuitem",
                                 disabled: false,
                                 onclick: move |_| {
@@ -9458,7 +9590,7 @@ pub fn Console(
                                     width: 14,
                                     height: 14,
                                     fill: "currentColor",
-                                    class: "ac-chat-header-icon",
+                                    class: CHAT_HEADER_ICON,
                                 }
                                 "删除对话"
                             }
@@ -9469,27 +9601,28 @@ pub fn Console(
 
             if let Some((pending_rid, pending_name)) = delete_role_confirm() {
                 div {
-                    class: "ac-api-modal-backdrop ac-delete-role-modal-backdrop",
+                    class: "{API_MODAL_BACKDROP} {DELETE_ROLE_MODAL_BACKDROP}",
                     onclick: move |_| delete_role_confirm.set(None),
                     div {
-                        class: "ac-api-modal",
+                        class: API_MODAL,
                         onclick: move |evt| evt.stop_propagation(),
-                        h2 { class: "ac-api-modal-title", "删除角色" }
-                        p { class: "ac-api-modal-desc",
+                        h2 { class: API_MODAL_TITLE, "删除角色" }
+                        p { class: API_MODAL_DESC,
+                        "data-desc": true,
                             "确定删除角色「"
                             "{pending_name}"
                             "」？此操作不可恢复。"
                         }
-                        div { class: "ac-api-modal-actions",
+                        div { class: API_MODAL_ACTIONS,
                             button {
                                 r#type: "button",
-                                class: "ac-role-btn ac-role-btn-secondary",
+                                class: "{ROLE_BTN} {ROLE_BTN_SECONDARY}",
                                 onclick: move |_| delete_role_confirm.set(None),
                                 "取消"
                             }
                             button {
                                 r#type: "button",
-                                class: "ac-role-btn ac-role-btn-primary",
+                                class: "{ROLE_BTN} {ROLE_BTN_PRIMARY}",
                                 onclick: move |_| {
                                     delete_role_confirm.set(None);
                                     role_loading.set(true);

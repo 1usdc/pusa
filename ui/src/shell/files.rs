@@ -15,6 +15,26 @@ use keyboard_types::{Key, Modifiers};
 
 use crate::icons::AiOutlineVerticalAlignBottom;
 
+// rsx 字符串插值只支持简单标识符，拼接类名时需先 `use` 进来。
+use crate::shell::style::{
+    AUDIO_CARD, AUDIO_EL, AUDIO_ERROR, AUDIO_META, AUDIO_PANE, AUDIO_PLAY, AUDIO_STAGE,
+    AUDIO_TITLE, AUDIO_TRACK, AUDIO_TRACK_FILL, CTX_BACKDROP, CTX_ITEM, CTX_ITEM_DANGER, CTX_MENU,
+    FILES_ACTION, FILES_EMPTY, FILES_EMPTY_ERROR, FILES_PANEL, FILES_ROW_CHEVRON, FILES_ROW_ICON,
+    FILES_ROW_NAME, FS_CTX_MENU, FS_CTX_SEP, MD_PREVIEW_PANE, MD_PREVIEW_SCROLL, PREVIEW_CHIP,
+    PREVIEW_DEVICE, PREVIEW_DEVICE_BODY, PREVIEW_DEVICE_SLOT, PREVIEW_DRAWER,
+    PREVIEW_DRAWER_MASK, PREVIEW_DRAWER_TITLE, PREVIEW_FAB, PREVIEW_FAB_BALL,
+    PREVIEW_FAB_BALL_SECONDARY, PREVIEW_FRAME, PREVIEW_FRAME_FILL, PREVIEW_IMAGE, PREVIEW_MODEL,
+    PREVIEW_MODEL_NAME, PREVIEW_MODEL_SIZE, PREVIEW_PANE, PREVIEW_PANE_SELECTABLE,
+    PREVIEW_PHONE_BAR, PREVIEW_RESIZE_MASK, PREVIEW_STAGE, PREVIEW_STAGE_IMAGE,
+    PREVIEW_STAGE_MOBILE, PREVIEW_STAGE_PAPER, DIFF, DIFF_HEADER, DIFF_HEADING, DIFF_TITLE,
+    DIFF_SUBTITLE, DIFF_PATH, DIFF_STATS, DIFF_STAT_ADD, DIFF_STAT_DEL, DIFF_OPEN_BTN, DIFF_INLINE,
+    DIFF_INLINE_BODY, DIFF_LINE, DIFF_LN, DIFF_MARK, DIFF_TEXT, EDITOR, EDITOR_TOOLBAR,
+    EDITOR_ACTIONS, EDITOR_DIRTY, EDITOR_SAVE_NOTICE, EDITOR_ERROR, EDITOR_LOADING, EDITOR_SCROLL,
+    EDITOR_CODE, EDITOR_GUTTER, EDITOR_LN, EDITOR_SURFACE, EDITOR_FIND_MARKS, EDITOR_HIGHLIGHT,
+    EDITOR_TEXTAREA, FIND, FIND_ROW, FIND_TOGGLE, FIND_SPACER, FIND_INPUT_WRAP, FIND_INPUT,
+    FIND_OPT, FIND_ACTIONS, FIND_COUNT, FIND_BTN,
+};
+
 /// 目录项（跨平台 DTO）。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FsEntryDto {
@@ -513,7 +533,7 @@ fn office_preview_post_theme_js(theme: &str) -> String {
     format!(
         r#"(() => {{
   const theme = '{theme}';
-  document.querySelectorAll('.ac-office-preview-pane iframe.ac-html-preview-frame').forEach((frame) => {{
+  document.querySelectorAll('iframe[data-office-preview-frame]').forEach((frame) => {{
     try {{ frame.contentWindow.postMessage({{ type: 'pusa-theme', theme }}, '*'); }} catch (_) {{}}
   }});
 }})();"#
@@ -549,7 +569,7 @@ struct HtmlPreviewResizeDrag {
     scale: f64,
 }
 
-/// 手机机身外圈的边框宽度（px），与 CSS `.ac-html-preview-device` 的 `border-width` 一致。
+/// 手机机身外圈的边框宽度（px），与 `style::PREVIEW_DEVICE` 的 `border` 宽度一致。
 const HTML_PREVIEW_PHONE_BEZEL: i32 = 1;
 
 /// 让「机身 + 边框」整体落在舞台内容区内的缩放比例，最多 1（不放大）。
@@ -613,6 +633,22 @@ const HTML_PREVIEW_RESIZE_HANDLES: [(&str, HtmlPreviewResizeEdge); 8] = [
     ("se", HtmlPreviewResizeEdge::Se),
     ("sw", HtmlPreviewResizeEdge::Sw),
 ];
+
+/// 把手位置 → 工具类片段（原先拼 `ac-html-preview-handle-{name}`）。
+fn html_preview_handle_class(name: &str) -> &'static str {
+    use crate::shell::style;
+    match name {
+        "n" => style::PREVIEW_HANDLE_N,
+        "s" => style::PREVIEW_HANDLE_S,
+        "e" => style::PREVIEW_HANDLE_E,
+        "w" => style::PREVIEW_HANDLE_W,
+        "ne" => style::PREVIEW_HANDLE_NE,
+        "nw" => style::PREVIEW_HANDLE_NW,
+        "se" => style::PREVIEW_HANDLE_SE,
+        "sw" => style::PREVIEW_HANDLE_SW,
+        _ => style::PREVIEW_HANDLE_N,
+    }
+}
 
 fn html_preview_apply_resize(drag: HtmlPreviewResizeDrag, x: f64, y: f64) -> (i32, i32) {
     let scale = if drag.scale > 0.0 { drag.scale } else { 1.0 };
@@ -1120,10 +1156,10 @@ pub fn SidebarFileExplorer(
 
     if !fs_available() {
         return rsx! {
-            div { class: "ac-sidebar-files",
-                div { class: "ac-sidebar-files-unavailable",
+            div { class: crate::shell::style::FILES_PANEL,
+                div { class: crate::shell::style::FILES_UNAVAILABLE,
                     p { "Web 端无法浏览本机文件。" }
-                    p { class: "ac-sidebar-files-unavailable-hint",
+                    p { class: crate::shell::style::FILES_UNAVAILABLE_HINT,
                         "请使用桌面应用打开工作区文件树。"
                     }
                 }
@@ -1137,33 +1173,29 @@ pub fn SidebarFileExplorer(
 
     rsx! {
         div {
-            class: if ctx_menu().is_some() {
-                "ac-sidebar-files ac-fs-ctx-open"
-            } else {
-                "ac-sidebar-files"
-            },
-            div { class: "ac-sidebar-files-header",
+            class: "{FILES_PANEL}",
+            div { class: crate::shell::style::FILES_HEADER,
                 button {
                     r#type: "button",
-                    class: "ac-sidebar-files-title-btn",
+                    class: crate::shell::style::FILES_TITLE_BTN,
                     title: "展开 / 收起文件树",
                     aria_expanded: section_open(),
                     onclick: move |_| {
                         section_open.with_mut(|v| *v = !*v);
                     },
-                    span { class: "ac-sidebar-files-chevron",
+                    span { class: crate::shell::style::FILES_TITLE_CHEVRON,
                         if section_open() {
                             Icon { icon: LdChevronDown, width: 14, height: 14, fill: "currentColor" }
                         } else {
                             Icon { icon: LdChevronRight, width: 14, height: 14, fill: "currentColor" }
                         }
                     }
-                    span { class: "ac-sidebar-files-root-name", "{root_name}" }
+                    span { class: crate::shell::style::FILES_ROOT_NAME, "{root_name}" }
                 }
-                div { class: "ac-sidebar-files-actions",
+                div { class: crate::shell::style::FILES_ACTIONS,
                     button {
                         r#type: "button",
-                        class: "ac-sidebar-files-action",
+                        class: FILES_ACTION,
                         title: "新建文件夹",
                         aria_label: "新建文件夹",
                         onclick: move |_| {
@@ -1182,7 +1214,7 @@ pub fn SidebarFileExplorer(
                     }
                     button {
                         r#type: "button",
-                        class: "ac-sidebar-files-action",
+                        class: FILES_ACTION,
                         title: "新建文件",
                         aria_label: "新建文件",
                         onclick: move |_| {
@@ -1201,7 +1233,7 @@ pub fn SidebarFileExplorer(
                     }
                     button {
                         r#type: "button",
-                        class: "ac-sidebar-files-action",
+                        class: FILES_ACTION,
                         title: "刷新",
                         aria_label: "刷新",
                         onclick: move |_| {
@@ -1217,7 +1249,7 @@ pub fn SidebarFileExplorer(
                     }
                     button {
                         r#type: "button",
-                        class: "ac-sidebar-files-action",
+                        class: FILES_ACTION,
                         title: "全部折叠",
                         aria_label: "全部折叠",
                         onclick: move |_| {
@@ -1230,21 +1262,21 @@ pub fn SidebarFileExplorer(
 
             if section_open() {
                 if let Some(kind) = creating {
-                    div { class: "ac-sidebar-files-create",
-                        span { class: "ac-sidebar-files-create-label",
+                    div { class: crate::shell::style::FILES_CREATE,
+                        span { class: crate::shell::style::FILES_CREATE_LABEL,
                             match kind {
                                 FsCreateKind::File => "新建文件",
                                 FsCreateKind::Folder => "新建文件夹",
                             }
                         }
                         if let Some(parent) = create_parent() {
-                            span { class: "ac-sidebar-files-create-parent", title: "{parent}",
+                            span { class: crate::shell::style::FILES_CREATE_PARENT, title: "{parent}",
                                 "{fs_file_title(&parent)}"
                             }
                         }
                         input {
                             r#type: "text",
-                            class: "ac-sidebar-files-create-input",
+                            class: crate::shell::style::FILES_CREATE_INPUT,
                             placeholder: if kind == FsCreateKind::File { "文件名…" } else { "文件夹名…" },
                             value: "{create_name()}",
                             autofocus: true,
@@ -1291,7 +1323,7 @@ pub fn SidebarFileExplorer(
                         }
                         button {
                             r#type: "button",
-                            class: "ac-sidebar-files-create-cancel",
+                            class: crate::shell::style::FILES_CREATE_CANCEL,
                             onclick: move |_| {
                                 create_mode.set(None);
                                 create_name.set(String::new());
@@ -1302,7 +1334,7 @@ pub fn SidebarFileExplorer(
                 }
 
                 div {
-                    class: "ac-sidebar-files-tree",
+                    class: crate::shell::style::FILES_TREE,
                     role: "tree",
                     tabindex: "0",
                     // 焦点在树上时：回车重命名当前主选中项。
@@ -1327,10 +1359,10 @@ pub fn SidebarFileExplorer(
                     {
                         match children_cache().get(&root_tree) {
                             Some(Err(err)) => rsx! {
-                                div { class: "ac-sidebar-files-empty is-error", "{err}" }
+                                div { class: FILES_EMPTY_ERROR, "{err}" }
                             },
                             Some(Ok(entries)) if entries.is_empty() => rsx! {
-                                div { class: "ac-sidebar-files-empty", "此目录为空" }
+                                div { class: FILES_EMPTY, "此目录为空" }
                             },
                             _ => rsx! {
                                 for (entry, depth) in rows {
@@ -1350,26 +1382,6 @@ pub fn SidebarFileExplorer(
                                         let is_muted = fs_name_is_muted(&entry.name);
                                         let is_written = highlighted_paths().contains(&entry.path);
                                         let is_renaming = renaming_path().as_deref() == Some(entry.path.as_str());
-                                        let row_class = match (is_selected, is_muted, is_written) {
-                                            (true, true, true) => {
-                                                "ac-sidebar-files-row is-selected is-muted is-just-written"
-                                            }
-                                            (true, true, false) => {
-                                                "ac-sidebar-files-row is-selected is-muted"
-                                            }
-                                            (true, false, true) => {
-                                                "ac-sidebar-files-row is-selected is-just-written"
-                                            }
-                                            (true, false, false) => "ac-sidebar-files-row is-selected",
-                                            (false, true, true) => {
-                                                "ac-sidebar-files-row is-muted is-just-written"
-                                            }
-                                            (false, true, false) => "ac-sidebar-files-row is-muted",
-                                            (false, false, true) => {
-                                                "ac-sidebar-files-row is-just-written"
-                                            }
-                                            (false, false, false) => "ac-sidebar-files-row",
-                                        };
                                         // depth 0 为工作区根的直接子项；相对根标题「PUSA」明显再缩进一级。
                                         let pad = 1.15 + (depth as f64) * 0.8;
                                         let pad_style = format!("padding-left: {pad}rem");
@@ -1378,14 +1390,14 @@ pub fn SidebarFileExplorer(
                                             if is_renaming {
                                                 div {
                                                     key: "rename-{path}",
-                                                    class: "ac-sidebar-files-row is-renaming",
+                                                    class: crate::shell::style::FILES_ROW_RENAMING,
                                                     style: "{pad_style}",
-                                                    span { class: "ac-sidebar-files-row-chevron",
+                                                    span { class: FILES_ROW_CHEVRON,
                                                         if is_dir {
                                                             Icon { icon: LdChevronRight, width: 12, height: 12, fill: "currentColor" }
                                                         }
                                                     }
-                                                    span { class: "ac-sidebar-files-row-icon",
+                                                    span { class: FILES_ROW_ICON,
                                                         if is_dir {
                                                             Icon { icon: LdFolder, width: 13, height: 13, fill: "currentColor" }
                                                         } else {
@@ -1394,7 +1406,8 @@ pub fn SidebarFileExplorer(
                                                     }
                                                     input {
                                                         r#type: "text",
-                                                        class: "ac-sidebar-files-rename-input",
+                                                        class: crate::shell::style::FILES_RENAME_INPUT,
+                                                        "data-files-rename-input": true,
                                                         value: "{rename_draft()}",
                                                         autofocus: true,
                                                         onmounted: move |_| {
@@ -1454,7 +1467,7 @@ pub fn SidebarFileExplorer(
                                                                     return;
                                                                 }
                                                                 let keep = document::eval(
-                                                                    r#"return !!(document.activeElement && document.activeElement.classList && document.activeElement.classList.contains('ac-sidebar-files-rename-input'));"#,
+                                                                    r#"return !!(document.activeElement && document.activeElement.hasAttribute && document.activeElement.hasAttribute('data-files-rename-input'));"#,
                                                                 )
                                                                 .join::<bool>()
                                                                 .await
@@ -1472,7 +1485,10 @@ pub fn SidebarFileExplorer(
                                                 button {
                                                     key: "{path}",
                                                     r#type: "button",
-                                                    class: "{row_class}",
+                                                    class: crate::shell::style::FILES_ROW,
+                                                    "data-selected": is_selected,
+                                                    "data-muted": is_muted,
+                                                    "data-written": is_written,
                                                     style: "{pad_style}",
                                                     role: "treeitem",
                                                     title: "{path}",
@@ -1581,7 +1597,7 @@ pub fn SidebarFileExplorer(
                                                             y: coords.y,
                                                         }));
                                                     },
-                                                    span { class: "ac-sidebar-files-row-chevron",
+                                                    span { class: FILES_ROW_CHEVRON,
                                                         if is_dir {
                                                             if is_open {
                                                                 Icon { icon: LdChevronDown, width: 12, height: 12, fill: "currentColor" }
@@ -1590,14 +1606,14 @@ pub fn SidebarFileExplorer(
                                                             }
                                                         }
                                                     }
-                                                    span { class: "ac-sidebar-files-row-icon",
+                                                    span { class: FILES_ROW_ICON,
                                                         if is_dir {
                                                             Icon { icon: LdFolder, width: 13, height: 13, fill: "currentColor" }
                                                         } else {
                                                             Icon { icon: LdFile, width: 13, height: 13, fill: "currentColor" }
                                                         }
                                                     }
-                                                    span { class: "ac-sidebar-files-row-name", "{name}" }
+                                                    span { class: FILES_ROW_NAME, "{name}" }
                                                 }
                                             }
                                         }
@@ -1660,7 +1676,7 @@ pub fn SidebarFileExplorer(
                     let anchor_y = ctx.y;
                     rsx! {
                         div {
-                            class: "ac-chat-history-ctx-backdrop",
+                            class: "{CTX_BACKDROP} z-[1300]!",
                             onclick: move |_| ctx_menu.set(None),
                             oncontextmenu: move |evt| {
                                 evt.prevent_default();
@@ -1669,7 +1685,7 @@ pub fn SidebarFileExplorer(
                         }
                         div {
                             id: "ac-fs-ctx-menu",
-                            class: "ac-chat-history-ctx-menu ac-fs-ctx-menu",
+                            class: "{CTX_MENU} {FS_CTX_MENU}",
                             role: "menu",
                             style: "{menu_style}",
                             onclick: move |evt| evt.stop_propagation(),
@@ -1721,7 +1737,7 @@ pub fn SidebarFileExplorer(
                                     if let Some(html) = html_preview.clone() {
                                         button {
                                             r#type: "button",
-                                            class: "ac-chat-history-ctx-menu__item",
+                                            class: CTX_ITEM,
                                             role: "menuitem",
                                             onclick: move |_| {
                                                 ctx_menu.set(None);
@@ -1732,7 +1748,7 @@ pub fn SidebarFileExplorer(
                                     } else if is_image {
                                         button {
                                             r#type: "button",
-                                            class: "ac-chat-history-ctx-menu__item",
+                                            class: CTX_ITEM,
                                             role: "menuitem",
                                             onclick: {
                                                 let path = path.clone();
@@ -1745,7 +1761,7 @@ pub fn SidebarFileExplorer(
                                         }
                                         button {
                                             r#type: "button",
-                                            class: "ac-chat-history-ctx-menu__item",
+                                            class: CTX_ITEM,
                                             role: "menuitem",
                                             onclick: {
                                                 let path = path.clone();
@@ -1762,7 +1778,7 @@ pub fn SidebarFileExplorer(
                                     } else if is_audio {
                                         button {
                                             r#type: "button",
-                                            class: "ac-chat-history-ctx-menu__item",
+                                            class: CTX_ITEM,
                                             role: "menuitem",
                                             onclick: {
                                                 let path = path.clone();
@@ -1776,7 +1792,7 @@ pub fn SidebarFileExplorer(
                                     } else if is_pdf {
                                         button {
                                             r#type: "button",
-                                            class: "ac-chat-history-ctx-menu__item",
+                                            class: CTX_ITEM,
                                             role: "menuitem",
                                             onclick: {
                                                 let path = path.clone();
@@ -1789,7 +1805,7 @@ pub fn SidebarFileExplorer(
                                         }
                                         button {
                                             r#type: "button",
-                                            class: "ac-chat-history-ctx-menu__item",
+                                            class: CTX_ITEM,
                                             role: "menuitem",
                                             onclick: {
                                                 let path = path.clone();
@@ -1806,7 +1822,7 @@ pub fn SidebarFileExplorer(
                                     } else if is_stl {
                                         button {
                                             r#type: "button",
-                                            class: "ac-chat-history-ctx-menu__item",
+                                            class: CTX_ITEM,
                                             role: "menuitem",
                                             onclick: {
                                                 let path = path.clone();
@@ -1819,7 +1835,7 @@ pub fn SidebarFileExplorer(
                                         }
                                         button {
                                             r#type: "button",
-                                            class: "ac-chat-history-ctx-menu__item",
+                                            class: CTX_ITEM,
                                             role: "menuitem",
                                             onclick: {
                                                 let path = path.clone();
@@ -1836,7 +1852,7 @@ pub fn SidebarFileExplorer(
                                     } else if is_office {
                                         button {
                                             r#type: "button",
-                                            class: "ac-chat-history-ctx-menu__item",
+                                            class: CTX_ITEM,
                                             role: "menuitem",
                                             onclick: {
                                                 let path = path.clone();
@@ -1849,7 +1865,7 @@ pub fn SidebarFileExplorer(
                                         }
                                         button {
                                             r#type: "button",
-                                            class: "ac-chat-history-ctx-menu__item",
+                                            class: CTX_ITEM,
                                             role: "menuitem",
                                             onclick: {
                                                 let path = path.clone();
@@ -1866,7 +1882,7 @@ pub fn SidebarFileExplorer(
                                     } else if !is_dir {
                                         button {
                                             r#type: "button",
-                                            class: "ac-chat-history-ctx-menu__item",
+                                            class: CTX_ITEM,
                                             role: "menuitem",
                                             onclick: {
                                                 let path = path.clone();
@@ -1879,7 +1895,7 @@ pub fn SidebarFileExplorer(
                                         }
                                         button {
                                             r#type: "button",
-                                            class: "ac-chat-history-ctx-menu__item",
+                                            class: CTX_ITEM,
                                             role: "menuitem",
                                             onclick: {
                                                 let path = path.clone();
@@ -1898,7 +1914,7 @@ pub fn SidebarFileExplorer(
                             }
                             button {
                                 r#type: "button",
-                                class: "ac-chat-history-ctx-menu__item",
+                                class: CTX_ITEM,
                                 role: "menuitem",
                                 onclick: {
                                     let path = path.clone();
@@ -1914,7 +1930,7 @@ pub fn SidebarFileExplorer(
                             }
                             button {
                                 r#type: "button",
-                                class: "ac-chat-history-ctx-menu__item",
+                                class: CTX_ITEM,
                                 role: "menuitem",
                                 onclick: {
                                     let path = path.clone();
@@ -1934,11 +1950,11 @@ pub fn SidebarFileExplorer(
                                 "在终端中打开"
                             }
 
-                            div { class: "ac-fs-ctx-sep", role: "separator" }
+                            div { class: FS_CTX_SEP, role: "separator" }
 
                             button {
                                 r#type: "button",
-                                class: "ac-chat-history-ctx-menu__item",
+                                class: CTX_ITEM,
                                 role: "menuitem",
                                 onclick: {
                                     let targets = add_targets.clone();
@@ -1951,7 +1967,7 @@ pub fn SidebarFileExplorer(
                             }
                             button {
                                 r#type: "button",
-                                class: "ac-chat-history-ctx-menu__item",
+                                class: CTX_ITEM,
                                 role: "menuitem",
                                 onclick: {
                                     let targets = add_targets.clone();
@@ -1963,11 +1979,11 @@ pub fn SidebarFileExplorer(
                                 "{add_new_label}"
                             }
 
-                            div { class: "ac-fs-ctx-sep", role: "separator" }
+                            div { class: FS_CTX_SEP, role: "separator" }
 
                             button {
                                 r#type: "button",
-                                class: "ac-chat-history-ctx-menu__item",
+                                class: CTX_ITEM,
                                 role: "menuitem",
                                 onclick: {
                                     let paths = clip_targets.clone();
@@ -1988,7 +2004,7 @@ pub fn SidebarFileExplorer(
                             }
                             button {
                                 r#type: "button",
-                                class: "ac-chat-history-ctx-menu__item",
+                                class: CTX_ITEM,
                                 role: "menuitem",
                                 onclick: {
                                     let paths = clip_targets.clone();
@@ -2010,7 +2026,7 @@ pub fn SidebarFileExplorer(
                             if has_clipboard {
                                 button {
                                     r#type: "button",
-                                    class: "ac-chat-history-ctx-menu__item",
+                                    class: CTX_ITEM,
                                     role: "menuitem",
                                     onclick: {
                                         let dest = paste_target.clone();
@@ -2058,11 +2074,11 @@ pub fn SidebarFileExplorer(
                                 }
                             }
 
-                            div { class: "ac-fs-ctx-sep", role: "separator" }
+                            div { class: FS_CTX_SEP, role: "separator" }
 
                             button {
                                 r#type: "button",
-                                class: "ac-chat-history-ctx-menu__item",
+                                class: CTX_ITEM,
                                 role: "menuitem",
                                 onclick: {
                                     let path = path.clone();
@@ -2078,7 +2094,7 @@ pub fn SidebarFileExplorer(
                             }
                             button {
                                 r#type: "button",
-                                class: "ac-chat-history-ctx-menu__item",
+                                class: CTX_ITEM,
                                 role: "menuitem",
                                 onclick: {
                                     let path = path.clone();
@@ -2095,11 +2111,11 @@ pub fn SidebarFileExplorer(
                                 "复制相对路径"
                             }
 
-                            div { class: "ac-fs-ctx-sep", role: "separator" }
+                            div { class: FS_CTX_SEP, role: "separator" }
 
                             button {
                                 r#type: "button",
-                                class: "ac-chat-history-ctx-menu__item",
+                                class: CTX_ITEM,
                                 role: "menuitem",
                                 onclick: {
                                     let path = path.clone();
@@ -2117,7 +2133,7 @@ pub fn SidebarFileExplorer(
                             }
                             button {
                                 r#type: "button",
-                                class: "ac-chat-history-ctx-menu__item is-danger",
+                                class: CTX_ITEM_DANGER,
                                 role: "menuitem",
                                 onclick: {
                                     let targets = delete_targets.clone();
@@ -2233,7 +2249,7 @@ fn focus_sidebar_rename_input() {
     let _ = document::eval(
         r#"(() => {
   const run = () => {
-    const el = document.querySelector('input.ac-sidebar-files-rename-input');
+    const el = document.querySelector('input[data-files-rename-input]');
     if (!el) return false;
     el.focus();
     const v = el.value || '';
@@ -2461,11 +2477,15 @@ fn build_find_marks_html(source: &str, matches: &[FindMatch], current: usize) ->
         }
         out.push_str(&escape_find_html(&source[last..m.start]));
         let cls = if i == current {
-            "ac-file-find-hit is-current"
+            crate::shell::style::FIND_HIT_CURRENT
         } else {
-            "ac-file-find-hit"
+            crate::shell::style::FIND_HIT
         };
-        out.push_str("<mark class=\"");
+        out.push_str(if i == current {
+            "<mark data-find-hit data-current class=\""
+        } else {
+            "<mark data-find-hit class=\""
+        });
         out.push_str(cls);
         out.push_str("\">");
         out.push_str(&escape_find_html(&source[m.start..m.end]));
@@ -2479,7 +2499,7 @@ fn build_find_marks_html(source: &str, matches: &[FindMatch], current: usize) ->
     out
 }
 
-/// 选中当前匹配，并滚动到 `mark.ac-file-find-hit.is-current`（高亮层渲染后再定位）。
+/// 选中当前匹配，并滚动到 `mark[data-find-hit][data-current]`（高亮层渲染后再定位）。
 fn select_find_match_in_editor(text: &str, m: FindMatch, focus_editor: bool) {
     let start = utf16_offset(text, m.start);
     let end = utf16_offset(text, m.end);
@@ -2487,8 +2507,8 @@ fn select_find_match_in_editor(text: &str, m: FindMatch, focus_editor: bool) {
     let _ = document::eval(&format!(
         r#"(() => {{
   const scrollToHit = () => {{
-    const scroll = document.querySelector('.ac-file-editor-scroll');
-    const hit = document.querySelector('mark.ac-file-find-hit.is-current');
+    const scroll = document.querySelector('[data-editor-scroll]');
+    const hit = document.querySelector('mark[data-find-hit][data-current]');
     if (scroll && hit) {{
       const sRect = scroll.getBoundingClientRect();
       const hRect = hit.getBoundingClientRect();
@@ -2501,7 +2521,7 @@ fn select_find_match_in_editor(text: &str, m: FindMatch, focus_editor: bool) {
       return true;
     }}
     // 高亮层尚未挂上时，按行号估算滚动。
-    const ta = document.querySelector('textarea.ac-file-editor-textarea');
+    const ta = document.querySelector('textarea[data-editor-textarea]');
     if (!ta || !scroll) return false;
     const before = ta.value.slice(0, {start});
     const lines = before.split('\\n').length;
@@ -2514,7 +2534,7 @@ fn select_find_match_in_editor(text: &str, m: FindMatch, focus_editor: bool) {
     scroll.scrollTop = Math.max(0, pad + (lines - 1) * lineHeight - scroll.clientHeight / 3);
     return true;
   }};
-  const ta = document.querySelector('textarea.ac-file-editor-textarea');
+  const ta = document.querySelector('textarea[data-editor-textarea]');
   if (ta) {{
     {focus_js}
     try {{ ta.setSelectionRange({start}, {end}); }} catch (_) {{}}
@@ -2531,7 +2551,7 @@ fn select_find_match_in_editor(text: &str, m: FindMatch, focus_editor: bool) {
 fn focus_file_find_input() {
     let _ = document::eval(
         r#"(() => {
-  const el = document.querySelector('input.ac-file-find-query');
+  const el = document.querySelector('input[data-find-query]');
   if (!el) return;
   el.focus();
   el.select();
@@ -2821,7 +2841,8 @@ pub fn FileEditorPane(
 
     rsx! {
         section {
-            class: "ac-file-editor",
+            class: EDITOR,
+            "data-file-editor": true,
             onkeydown: move |e: KeyboardEvent| {
                 if is_save_shortcut(&e) {
                     e.prevent_default();
@@ -2859,16 +2880,13 @@ pub fn FileEditorPane(
             },
             if find_open() {
                 div {
-                    class: if replace_open() {
-                        "ac-file-find is-replace"
-                    } else {
-                        "ac-file-find"
-                    },
+                    class: FIND,
+                    "data-replace": replace_open(),
                     role: "search",
-                    div { class: "ac-file-find-row",
+                    div { class: FIND_ROW,
                         button {
                             r#type: "button",
-                            class: "ac-file-find-toggle",
+                            class: FIND_TOGGLE,
                             title: if replace_open() { "收起替换" } else { "展开替换" },
                             aria_label: if replace_open() { "收起替换" } else { "展开替换" },
                             aria_expanded: replace_open(),
@@ -2881,10 +2899,11 @@ pub fn FileEditorPane(
                                 Icon { icon: LdChevronRight, width: 14, height: 14, fill: "currentColor" }
                             }
                         }
-                        div { class: "ac-file-find-input-wrap",
+                        div { class: FIND_INPUT_WRAP,
                             input {
                                 r#type: "text",
-                                class: "ac-file-find-query",
+                                class: FIND_INPUT,
+                                "data-find-query": true,
                                 value: "{find_query}",
                                 placeholder: "查找",
                                 spellcheck: false,
@@ -2906,7 +2925,8 @@ pub fn FileEditorPane(
                             }
                             button {
                                 r#type: "button",
-                                class: if case_sensitive() { "ac-file-find-opt is-active" } else { "ac-file-find-opt" },
+                                class: FIND_OPT,
+                                "data-active": case_sensitive(),
                                 title: "区分大小写",
                                 aria_label: "区分大小写",
                                 aria_pressed: case_sensitive(),
@@ -2918,7 +2938,8 @@ pub fn FileEditorPane(
                             }
                             button {
                                 r#type: "button",
-                                class: if whole_word() { "ac-file-find-opt is-active" } else { "ac-file-find-opt" },
+                                class: FIND_OPT,
+                                "data-active": whole_word(),
                                 title: "全字匹配",
                                 aria_label: "全字匹配",
                                 aria_pressed: whole_word(),
@@ -2930,7 +2951,8 @@ pub fn FileEditorPane(
                             }
                             button {
                                 r#type: "button",
-                                class: if use_regex() { "ac-file-find-opt is-active" } else { "ac-file-find-opt" },
+                                class: FIND_OPT,
+                                "data-active": use_regex(),
                                 title: "使用正则表达式",
                                 aria_label: "使用正则表达式",
                                 aria_pressed: use_regex(),
@@ -2941,18 +2963,16 @@ pub fn FileEditorPane(
                                 Icon { icon: LdRegex, width: 13, height: 13, fill: "currentColor" }
                             }
                         }
-                        div { class: "ac-file-find-actions",
+                        div { class: FIND_ACTIONS,
                             span {
-                                class: if find_error().is_some() || (match_count == 0 && !find_query().is_empty()) {
-                                    "ac-file-find-count is-empty"
-                                } else {
-                                    "ac-file-find-count"
-                                },
+                                class: FIND_COUNT,
+                                "data-empty": find_error().is_some()
+                                    || (match_count == 0 && !find_query().is_empty()),
                                 "{match_label}"
                             }
                             button {
                                 r#type: "button",
-                                class: "ac-file-find-btn",
+                                class: FIND_BTN,
                                 title: "上一个",
                                 aria_label: "上一个",
                                 disabled: match_count == 0,
@@ -2963,7 +2983,7 @@ pub fn FileEditorPane(
                             }
                             button {
                                 r#type: "button",
-                                class: "ac-file-find-btn",
+                                class: FIND_BTN,
                                 title: "下一个",
                                 aria_label: "下一个",
                                 disabled: match_count == 0,
@@ -2974,7 +2994,7 @@ pub fn FileEditorPane(
                             }
                             button {
                                 r#type: "button",
-                                class: "ac-file-find-btn",
+                                class: FIND_BTN,
                                 title: "关闭",
                                 aria_label: "关闭",
                                 onclick: move |_| {
@@ -2986,12 +3006,12 @@ pub fn FileEditorPane(
                         }
                     }
                     if replace_open() {
-                        div { class: "ac-file-find-row",
-                            span { class: "ac-file-find-toggle-spacer", aria_hidden: "true" }
-                            div { class: "ac-file-find-input-wrap",
+                        div { class: FIND_ROW,
+                            span { class: FIND_SPACER, aria_hidden: "true" }
+                            div { class: FIND_INPUT_WRAP,
                                 input {
                                     r#type: "text",
-                                    class: "ac-file-find-replace",
+                                    class: FIND_INPUT,
                                     value: "{replace_text}",
                                     placeholder: "替换",
                                     spellcheck: false,
@@ -3019,7 +3039,8 @@ pub fn FileEditorPane(
                                 }
                                 button {
                                     r#type: "button",
-                                    class: if preserve_case() { "ac-file-find-opt is-active" } else { "ac-file-find-opt" },
+                                    class: FIND_OPT,
+                                "data-active": preserve_case(),
                                     title: "保留大小写",
                                     aria_label: "保留大小写",
                                     aria_pressed: preserve_case(),
@@ -3029,10 +3050,10 @@ pub fn FileEditorPane(
                                     Icon { icon: LdCaseUpper, width: 13, height: 13, fill: "currentColor" }
                                 }
                             }
-                            div { class: "ac-file-find-actions",
+                            div { class: FIND_ACTIONS,
                                 button {
                                     r#type: "button",
-                                    class: "ac-file-find-btn",
+                                    class: FIND_BTN,
                                     title: "替换",
                                     aria_label: "替换",
                                     disabled: match_count == 0,
@@ -3057,7 +3078,7 @@ pub fn FileEditorPane(
                                 }
                                 button {
                                     r#type: "button",
-                                    class: "ac-file-find-btn",
+                                    class: FIND_BTN,
                                     title: "全部替换",
                                     aria_label: "全部替换",
                                     disabled: match_count == 0,
@@ -3085,19 +3106,19 @@ pub fn FileEditorPane(
                 }
             }
             if show_status {
-                div { class: "ac-file-editor-toolbar",
-                    div { class: "ac-file-editor-actions",
+                div { class: EDITOR_TOOLBAR,
+                    div { class: EDITOR_ACTIONS,
                         if is_dirty {
-                            span { class: "ac-file-editor-dirty", "未保存" }
+                            span { class: EDITOR_DIRTY, "未保存" }
                         }
                         if let Some(msg) = notice {
-                            span { class: "ac-file-editor-save-notice", "{msg}" }
+                            span { class: EDITOR_SAVE_NOTICE, "{msg}" }
                         }
                     }
                 }
             }
             if let Some(err) = err {
-                div { class: "ac-file-editor-error", "{err}" }
+                div { class: EDITOR_ERROR, "{err}" }
             } else if let Some(body) = content {
                 {
                     let line_count = count_text_lines(&body);
@@ -3114,35 +3135,37 @@ pub fn FileEditorPane(
                         String::new()
                     };
                     rsx! {
-                        div { class: "ac-file-editor-scroll",
+                        div { class: EDITOR_SCROLL,
+                            "data-editor-scroll": true,
                             div {
-                                class: "ac-file-editor-code",
+                                class: EDITOR_CODE,
                                 style: "{code_style}",
                                 div {
-                                    class: "ac-file-editor-gutter",
+                                    class: EDITOR_GUTTER,
                                     aria_hidden: "true",
                                     for n in 1..=line_count {
                                         div {
                                             key: "{n}",
-                                            class: "ac-file-editor-ln",
+                                            class: EDITOR_LN,
                                             "{n}"
                                         }
                                     }
                                 }
-                                div { class: "ac-file-editor-surface",
+                                div { class: EDITOR_SURFACE,
                                     if !find_marks.is_empty() {
                                         pre {
-                                            class: "ac-file-editor-find-marks",
+                                            class: EDITOR_FIND_MARKS,
                                             aria_hidden: "true",
                                             dangerous_inner_html: "{find_marks}",
                                         }
                                     }
                                     pre {
-                                        class: "ac-file-editor-highlight",
+                                        class: EDITOR_HIGHLIGHT,
                                         dangerous_inner_html: "{highlight}",
                                     }
                                     textarea {
-                                        class: "ac-file-editor-textarea",
+                                        class: EDITOR_TEXTAREA,
+                                        "data-editor-textarea": true,
                                         value: "{body}",
                                         spellcheck: "false",
                                         oninput: move |e| {
@@ -3163,7 +3186,7 @@ pub fn FileEditorPane(
                     }
                 }
             } else {
-                div { class: "ac-file-editor-loading", "正在读取…" }
+                div { class: EDITOR_LOADING, "正在读取…" }
             }
         }
     }
@@ -3365,34 +3388,35 @@ pub fn FileEditDiffPane(
         .count();
 
     rsx! {
-        section { class: "ac-file-diff",
-            div { class: "ac-file-diff-header",
-                div { class: "ac-file-diff-heading",
-                    h2 { class: "ac-file-diff-title", "{title}" }
-                    p { class: "ac-file-diff-subtitle", "{subtitle}" }
-                    p { class: "ac-file-diff-path", title: "{path}", "{path}" }
-                    p { class: "ac-file-diff-stats",
-                        span { class: "ac-file-diff-stat is-add", "+{add_n}" }
-                        span { class: "ac-file-diff-stat is-del", "-{del_n}" }
+        section { class: DIFF,
+            "data-file-diff": true,
+            div { class: DIFF_HEADER,
+                div { class: DIFF_HEADING,
+                    h2 { class: DIFF_TITLE, "{title}" }
+                    p { class: DIFF_SUBTITLE, "{subtitle}" }
+                    p { class: DIFF_PATH, title: "{path}", "{path}" }
+                    p { class: DIFF_STATS,
+                        span { class: DIFF_STAT_ADD, "+{add_n}" }
+                        span { class: DIFF_STAT_DEL, "-{del_n}" }
                     }
                 }
                 if can_open_current {
                     button {
                         r#type: "button",
-                        class: "ac-file-diff-open-btn",
+                        class: DIFF_OPEN_BTN,
                         onclick: move |_| on_open_current.call(()),
                         "打开当前文件"
                     }
                 }
             }
-            div { class: "ac-file-diff-inline",
-                div { class: "ac-file-diff-inline-body", role: "table",
+            div { class: DIFF_INLINE,
+                div { class: DIFF_INLINE_BODY, role: "table",
                     for (idx, line) in lines.iter().enumerate() {
                         {
-                            let cls = match line.kind {
-                                DiffLineKind::Delete => "ac-file-diff-line is-del",
-                                DiffLineKind::Insert => "ac-file-diff-line is-add",
-                                DiffLineKind::Context => "ac-file-diff-line",
+                            let kind = match line.kind {
+                                DiffLineKind::Delete => "del",
+                                DiffLineKind::Insert => "add",
+                                DiffLineKind::Context => "",
                             };
                             let mark = match line.kind {
                                 DiffLineKind::Delete => '-',
@@ -3412,21 +3436,22 @@ pub fn FileEditDiffPane(
                             rsx! {
                                 div {
                                     key: "{idx}",
-                                    class: "{cls}",
+                                    class: DIFF_LINE,
+                                    "data-kind": kind,
                                     role: "row",
                                     span {
-                                        class: "ac-file-diff-ln is-old",
+                                        class: DIFF_LN,
                                         aria_hidden: "true",
                                         "{old_ln}"
                                     }
                                     span {
-                                        class: "ac-file-diff-ln is-new",
+                                        class: DIFF_LN,
                                         aria_hidden: "true",
                                         "{new_ln}"
                                     }
-                                    span { class: "ac-file-diff-mark", "{mark}" }
+                                    span { class: DIFF_MARK, "{mark}" }
                                     span {
-                                        class: "ac-file-diff-text",
+                                        class: DIFF_TEXT,
                                         dangerous_inner_html: "{highlighted}",
                                     }
                                 }
@@ -3458,18 +3483,18 @@ pub fn FileMdPreviewPane(
     });
 
     rsx! {
-        section { class: "ac-md-preview-pane",
+        section { class: MD_PREVIEW_PANE,
             match content() {
                 Ok(text) if text.is_empty() => rsx! {
-                    div { class: "ac-file-editor-empty", "暂无内容" }
+                    div { class: "px-[1.1rem] py-5 text-center text-[0.85rem] font-[650] text-secondary-3", "暂无内容" }
                 },
                 Ok(text) => rsx! {
-                    div { class: "ac-md-preview-scroll scrollbar-hide",
+                    div { class: "{MD_PREVIEW_SCROLL} scrollbar-hide",
                         crate::chat::ChatMarkdownBody { content: text }
                     }
                 },
                 Err(err) => rsx! {
-                    div { class: "ac-file-editor-error", "{err}" }
+                    div { class: EDITOR_ERROR, "{err}" }
                 },
             }
         }
@@ -3498,14 +3523,9 @@ pub fn FileHtmlPreviewPane(path: String) -> Element {
     let slot_w = (phone_w() + 2 * HTML_PREVIEW_PHONE_BEZEL) as f64 * phone_scale;
     let slot_h = (phone_h() + 2 * HTML_PREVIEW_PHONE_BEZEL) as f64 * phone_scale;
     let stage_class = if is_mobile {
-        "ac-html-preview-stage is-mobile"
+        PREVIEW_STAGE_MOBILE
     } else {
-        "ac-html-preview-stage"
-    };
-    let pane_class = if drag().is_some() {
-        "ac-html-preview-pane is-resizing"
-    } else {
-        "ac-html-preview-pane"
+        PREVIEW_STAGE
     };
     let selected_model = HTML_PREVIEW_PHONE_MODELS
         .get(model_idx())
@@ -3514,7 +3534,8 @@ pub fn FileHtmlPreviewPane(path: String) -> Element {
 
     rsx! {
         section {
-            class: "{pane_class}",
+            class: PREVIEW_PANE,
+            "data-resizing": drag().is_some(),
             onmousemove: move |event| {
                 let Some(current) = drag() else {
                     return;
@@ -3543,35 +3564,35 @@ pub fn FileHtmlPreviewPane(path: String) -> Element {
                     // slot 占据缩放后的实际尺寸，机身内部仍按真实设备像素排版，只做视觉缩放，
                     // 这样 iframe 里的媒体查询与真机一致，同时机身永远不会顶到舞台上下边。
                     div {
-                        class: "ac-html-preview-device-slot",
+                        class: PREVIEW_DEVICE_SLOT,
                         style: "width: {slot_w:.1}px; height: {slot_h:.1}px;",
                         div {
-                            class: "ac-html-preview-device",
+                            class: PREVIEW_DEVICE,
                             style: "width: {phone_w()}px; height: {phone_h()}px; transform: scale({phone_scale});",
-                            div { class: "ac-html-preview-device-body",
+                            div { class: PREVIEW_DEVICE_BODY,
                                 match frame() {
                                     Ok(HtmlPreviewFrame::Url(src)) => rsx! {
                                         iframe {
-                                            class: "ac-html-preview-frame",
+                                            class: PREVIEW_FRAME_FILL,
                                             src: "{src}",
                                             title: "{iframe_title}",
                                         }
                                     },
                                     Ok(HtmlPreviewFrame::SrcDoc(srcdoc)) => rsx! {
                                         iframe {
-                                            class: "ac-html-preview-frame",
+                                            class: PREVIEW_FRAME_FILL,
                                             srcdoc: "{srcdoc}",
                                             title: "{iframe_title}",
                                         }
                                     },
                                     Err(err) => rsx! {
-                                        div { class: "ac-file-editor-error", "{err}" }
+                                        div { class: EDITOR_ERROR, "{err}" }
                                     },
                                 }
                             }
                             for (name, edge) in HTML_PREVIEW_RESIZE_HANDLES {
                                 div {
-                                    class: "ac-html-preview-handle ac-html-preview-handle-{name}",
+                                    class: html_preview_handle_class(name),
                                     onmousedown: move |event| {
                                         event.prevent_default();
                                         event.stop_propagation();
@@ -3593,33 +3614,30 @@ pub fn FileHtmlPreviewPane(path: String) -> Element {
                     match frame() {
                         Ok(HtmlPreviewFrame::Url(src)) => rsx! {
                             iframe {
-                                class: "ac-html-preview-frame",
+                                class: PREVIEW_FRAME,
                                 src: "{src}",
                                 title: "{iframe_title}",
                             }
                         },
                         Ok(HtmlPreviewFrame::SrcDoc(srcdoc)) => rsx! {
                             iframe {
-                                class: "ac-html-preview-frame",
+                                class: PREVIEW_FRAME,
                                 srcdoc: "{srcdoc}",
                                 title: "{iframe_title}",
                             }
                         },
                         Err(err) => rsx! {
-                            div { class: "ac-file-editor-error", "{err}" }
+                            div { class: EDITOR_ERROR, "{err}" }
                         },
                     }
                 }
             }
             if is_mobile {
-                div { class: "ac-html-preview-phone-bar",
+                div { class: PREVIEW_PHONE_BAR,
                     button {
                         r#type: "button",
-                        class: if drawer_open() {
-                            "ac-html-preview-chip is-active"
-                        } else {
-                            "ac-html-preview-chip"
-                        },
+                        class: PREVIEW_CHIP,
+                        "data-active": drawer_open(),
                         title: "选择手机型号",
                         aria_label: "选择手机型号",
                         aria_expanded: drawer_open(),
@@ -3636,27 +3654,21 @@ pub fn FileHtmlPreviewPane(path: String) -> Element {
                 if drawer_open() {
                     button {
                         r#type: "button",
-                        class: "ac-html-preview-drawer-mask",
+                        class: PREVIEW_DRAWER_MASK,
                         aria_label: "关闭型号列表",
                         onclick: move |_| drawer_open.set(false),
                     }
                 }
                 aside {
-                    class: if drawer_open() {
-                        "ac-html-preview-drawer is-open"
-                    } else {
-                        "ac-html-preview-drawer"
-                    },
+                    class: PREVIEW_DRAWER,
+                    "data-open": drawer_open(),
                     "aria-label": "手机型号",
-                    p { class: "ac-html-preview-drawer-title", "手机型号" }
+                    p { class: PREVIEW_DRAWER_TITLE, "手机型号" }
                     for (idx, model) in HTML_PREVIEW_PHONE_MODELS.iter().enumerate() {
                         button {
                             r#type: "button",
-                            class: if idx == model_idx() {
-                                "ac-html-preview-model is-active"
-                            } else {
-                                "ac-html-preview-model"
-                            },
+                            class: PREVIEW_MODEL,
+                            "data-active": idx == model_idx(),
                             onclick: move |_| {
                                 model_idx.set(idx);
                                 phone_w.set(HTML_PREVIEW_PHONE_MODELS[idx].width);
@@ -3664,17 +3676,17 @@ pub fn FileHtmlPreviewPane(path: String) -> Element {
                                 resized.set(false);
                                 drawer_open.set(false);
                             },
-                            span { class: "ac-html-preview-model-name", "{model.label}" }
-                            span { class: "ac-html-preview-model-size", "{model.width} × {model.height}" }
+                            span { class: PREVIEW_MODEL_NAME, "{model.label}" }
+                            span { class: PREVIEW_MODEL_SIZE, "{model.width} × {model.height}" }
                         }
                     }
                 }
             }
             // 悬浮球：单击直接在桌面 / 手机视口之间切换，图标显示当前模式。
-            div { class: "ac-html-preview-fab",
+            div { class: PREVIEW_FAB,
                 button {
                     r#type: "button",
-                    class: "ac-html-preview-fab-ball",
+                    class: PREVIEW_FAB_BALL,
                     title: if is_mobile { "切换为桌面预览" } else { "切换为手机预览" },
                     aria_label: if is_mobile { "切换为桌面预览" } else { "切换为手机预览" },
                     aria_pressed: is_mobile,
@@ -3706,7 +3718,7 @@ pub fn FileHtmlPreviewPane(path: String) -> Element {
                 if is_mobile && resized() {
                     button {
                         r#type: "button",
-                        class: "ac-html-preview-fab-ball is-secondary",
+                        class: PREVIEW_FAB_BALL_SECONDARY,
                         title: "还原为当前型号默认尺寸",
                         aria_label: "还原尺寸",
                         onclick: move |_| {
@@ -3727,7 +3739,7 @@ pub fn FileHtmlPreviewPane(path: String) -> Element {
                 }
             }
             if drag().is_some() {
-                div { class: "ac-html-preview-resize-mask" }
+                div { class: PREVIEW_RESIZE_MASK }
             }
         }
     }
@@ -3742,19 +3754,20 @@ pub fn FileImagePreviewPane(path: String) -> Element {
     let alt = format!("预览 {title}");
 
     rsx! {
-        section { class: "ac-html-preview-pane ac-image-preview-pane",
-            div { class: "ac-html-preview-stage ac-image-preview-stage",
+        section { class: PREVIEW_PANE,
+            "data-preview-pane": true,
+            div { class: PREVIEW_STAGE_IMAGE,
                 match src() {
                     Ok(src) => rsx! {
                         img {
-                            class: "ac-image-preview-img",
+                            class: PREVIEW_IMAGE,
                             src: "{src}",
                             alt: "{alt}",
                             draggable: "false",
                         }
                     },
                     Err(err) => rsx! {
-                        div { class: "ac-file-editor-error", "{err}" }
+                        div { class: EDITOR_ERROR, "{err}" }
                     },
                 }
             }
@@ -4043,21 +4056,22 @@ pub fn FileAudioPreviewPane(path: String) -> Element {
     };
 
     rsx! {
-        section { class: "ac-html-preview-pane ac-audio-preview-pane",
-            div { class: "ac-html-preview-stage ac-audio-preview-stage",
+        section { class: AUDIO_PANE,
+            "data-preview-pane": true,
+            div { class: AUDIO_STAGE,
                 match src() {
                     Ok(src) => rsx! {
                         audio {
                             id: "{audio_dom_id}",
-                            class: "ac-audio-preview-el",
+                            class: AUDIO_EL,
                             src: "{src}",
                             preload: "metadata",
                         }
-                        div { class: "ac-audio-preview-card",
-                            div { class: "ac-audio-preview-title", "{title}" }
+                        div { class: AUDIO_CARD,
+                            div { class: AUDIO_TITLE, "{title}" }
                             button {
                                 r#type: "button",
-                                class: "ac-audio-preview-play",
+                                class: AUDIO_PLAY,
                                 title: if playing() { "暂停" } else { "播放" },
                                 aria_label: if playing() { "暂停" } else { "播放" },
                                 onclick: toggle_play,
@@ -4069,7 +4083,7 @@ pub fn FileAudioPreviewPane(path: String) -> Element {
                             }
                             div {
                                 id: "{track_dom_id}",
-                                class: "ac-audio-preview-track",
+                                class: AUDIO_TRACK,
                                 role: "slider",
                                 aria_label: "音频进度",
                                 aria_valuemin: "0",
@@ -4077,20 +4091,20 @@ pub fn FileAudioPreviewPane(path: String) -> Element {
                                 onclick: seek,
                                 div {
                                     id: "{fill_dom_id}",
-                                    class: "ac-audio-preview-track-fill",
+                                    class: AUDIO_TRACK_FILL,
                                 }
                             }
-                            div { class: "ac-audio-preview-meta",
+                            div { class: AUDIO_META,
                                 span { "{format_audio_clock(current_secs())}" }
                                 span { "{format_audio_clock(duration_secs())}" }
                             }
                             if let Some(err) = load_error() {
-                                div { class: "ac-audio-preview-error", "{err}" }
+                                div { class: AUDIO_ERROR, "{err}" }
                             }
                         }
                     },
                     Err(err) => rsx! {
-                        div { class: "ac-file-editor-error", "{err}" }
+                        div { class: EDITOR_ERROR, "{err}" }
                     },
                 }
             }
@@ -4107,18 +4121,19 @@ pub fn FilePdfPreviewPane(path: String) -> Element {
     let iframe_title = format!("预览 {title}");
 
     rsx! {
-        section { class: "ac-html-preview-pane ac-pdf-preview-pane",
-            div { class: "ac-html-preview-stage",
+        section { class: PREVIEW_PANE_SELECTABLE,
+            "data-preview-pane": true,
+            div { class: PREVIEW_STAGE_PAPER,
                 match src() {
                     Ok(src) => rsx! {
                         iframe {
-                            class: "ac-html-preview-frame",
+                            class: PREVIEW_FRAME,
                             src: "{src}",
                             title: "{iframe_title}",
                         }
                     },
                     Err(err) => rsx! {
-                        div { class: "ac-file-editor-error", "{err}" }
+                        div { class: EDITOR_ERROR, "{err}" }
                     },
                 }
             }
@@ -4135,25 +4150,26 @@ pub fn FileStlPreviewPane(path: String) -> Element {
     let iframe_title = format!("预览 {title}");
 
     rsx! {
-        section { class: "ac-html-preview-pane ac-stl-preview-pane",
-            div { class: "ac-html-preview-stage",
+        section { class: PREVIEW_PANE,
+            "data-preview-pane": true,
+            div { class: PREVIEW_STAGE_PAPER,
                 match frame() {
                     Ok(HtmlPreviewFrame::Url(src)) => rsx! {
                         iframe {
-                            class: "ac-html-preview-frame",
+                            class: PREVIEW_FRAME,
                             src: "{src}",
                             title: "{iframe_title}",
                         }
                     },
                     Ok(HtmlPreviewFrame::SrcDoc(srcdoc)) => rsx! {
                         iframe {
-                            class: "ac-html-preview-frame",
+                            class: PREVIEW_FRAME,
                             srcdoc: "{srcdoc}",
                             title: "{iframe_title}",
                         }
                     },
                     Err(err) => rsx! {
-                        div { class: "ac-file-editor-error", "{err}" }
+                        div { class: EDITOR_ERROR, "{err}" }
                     },
                 }
             }
@@ -4248,28 +4264,31 @@ pub fn FileOfficePreviewPane(path: String) -> Element {
     });
 
     rsx! {
-        section { class: "ac-html-preview-pane ac-office-preview-pane",
-            div { class: "ac-html-preview-stage",
+        section { class: PREVIEW_PANE_SELECTABLE,
+            "data-preview-pane": true,
+            div { class: PREVIEW_STAGE_PAPER,
                 match frame() {
                     None => rsx! {
-                        div { class: "ac-file-editor-loading", "{loading_hint}" }
+                        div { class: EDITOR_LOADING, "{loading_hint}" }
                     },
                     Some(Ok(HtmlPreviewFrame::Url(src))) => rsx! {
                         iframe {
-                            class: "ac-html-preview-frame",
+                            class: PREVIEW_FRAME,
+                            "data-office-preview-frame": true,
                             src: "{src}",
                             title: "{iframe_title}",
                         }
                     },
                     Some(Ok(HtmlPreviewFrame::SrcDoc(srcdoc))) => rsx! {
                         iframe {
-                            class: "ac-html-preview-frame",
+                            class: PREVIEW_FRAME,
+                            "data-office-preview-frame": true,
                             srcdoc: "{srcdoc}",
                             title: "{iframe_title}",
                         }
                     },
                     Some(Err(err)) => rsx! {
-                        div { class: "ac-file-editor-error", "{err}" }
+                        div { class: EDITOR_ERROR, "{err}" }
                     },
                 }
             }

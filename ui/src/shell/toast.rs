@@ -26,7 +26,8 @@ use dioxus_free_icons::Icon;
 /// 每条 toast 的显示时长。设计上比标准 1500ms 略长，便于多条堆叠时用户也能看完。
 const AUTO_DISMISS_MS: u32 = 3000;
 
-/// Toast 语义类别。映射到 CSS 修饰符 `.ac-toast--{success|error|warning|info}`。
+/// Toast 语义类别。样式差异通过两个静态 Tailwind 类片段表达
+/// （类名必须是完整字面量，Tailwind 才能扫描到；不要用 format! 拼接）。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ToastKind {
     Success,
@@ -36,12 +37,23 @@ pub enum ToastKind {
 }
 
 impl ToastKind {
-    fn css_modifier(self) -> &'static str {
+    /// 胶囊描边色（任意值引用 colors.css 令牌，暗色主题自动跟随）。
+    fn border_class(self) -> &'static str {
         match self {
-            ToastKind::Success => "success",
-            ToastKind::Error => "error",
-            ToastKind::Warning => "warning",
-            ToastKind::Info => "info",
+            ToastKind::Success => "border-[color-mix(in_srgb,var(--ac-color-22c55e)_28%,transparent)]",
+            ToastKind::Error => "border-[color-mix(in_srgb,var(--ac-color-f87171)_38%,transparent)]",
+            ToastKind::Warning => "border-[color-mix(in_srgb,var(--ac-color-f59e0b)_30%,transparent)]",
+            ToastKind::Info => "border-[color-mix(in_srgb,var(--ac-color-2563eb)_28%,transparent)]",
+        }
+    }
+
+    /// 左侧图标颜色；svg `stroke=currentColor` 自动跟随。
+    fn icon_class(self) -> &'static str {
+        match self {
+            ToastKind::Success => "text-ac-green",
+            ToastKind::Error => "text-ac-red",
+            ToastKind::Warning => "text-ac-amber",
+            ToastKind::Info => "text-ac-blue",
         }
     }
 }
@@ -151,15 +163,18 @@ pub fn ToastViewport() -> Element {
     // 解析为方法调用，因此显式 `.read().clone()` 拿 owned 快照后再迭代。
     let snapshot = ctx.items.read().clone();
     rsx! {
-        div { class: "ac-toast-viewport",
+        div {
+            class: "fixed top-[1.1rem] left-1/2 -translate-x-1/2 z-[1300] flex flex-col items-center gap-2 pointer-events-none",
             for item in snapshot {
                 div {
                     key: "{item.id}",
-                    class: "ac-toast ac-toast--{item.kind.css_modifier()}",
-                    span { class: "ac-toast__icon", aria_hidden: "true",
+                    class: "pointer-events-auto inline-flex items-center gap-[0.55rem] max-w-[min(78vw,28rem)] py-[0.6rem] pr-[0.95rem] pl-[0.65rem] border border-transparent rounded-[0.65rem] bg-white shadow-[0_14px_30px_var(--shadow-color)] text-[0.9rem] font-bold text-secondary-1 {item.kind.border_class()} animate-toast-in motion-reduce:animate-none",
+                    span {
+                        class: "inline-flex items-center justify-center shrink-0 leading-[0] {item.kind.icon_class()}",
+                        aria_hidden: "true",
                         {render_kind_icon(item.kind)}
                     }
-                    span { class: "ac-toast__msg", "{item.message}" }
+                    span { class: "text-left leading-[1.3]", "{item.message}" }
                 }
             }
         }
@@ -170,7 +185,7 @@ pub fn ToastViewport() -> Element {
 ///
 /// Lucide 在 `dioxus_free_icons` 中 `fill_and_stroke` 返回 `("none", user_color, "2")`，
 /// 因此传 `fill: "currentColor"` 实际等价于 `stroke="currentColor"`，颜色会跟随
-/// `.ac-toast--*` 修饰符里设置的 `color` 自动变换。
+/// 图标容器上的 `text-ac-*` 类自动变换。
 fn render_kind_icon(kind: ToastKind) -> Element {
     match kind {
         ToastKind::Success => rsx! {

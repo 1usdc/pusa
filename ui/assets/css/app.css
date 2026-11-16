@@ -1,0 +1,280 @@
+/*
+ * Pusa 唯一手写样式入口（Tailwind v4）。
+ *
+ * 生成产物：`ui/assets/css/styles.css`（不要手改，改本文件后重新生成）
+ *   just tailwind         # 手动生成（提交前必须跑，CI 会校验产物与源码一致）
+ *   just tailwind-watch   # 开发时并行监听
+ *
+ * Rust 侧只挂载生成产物 `styles.css`，见 `ui/src/lib.rs` / `ui/src/desktop/auth.rs`。
+ *
+ * 迁移期说明（P1~P5 绞杀阶段）：
+ *   - main.css 尚未迁移完，整体 @import 进来保持像素一致；
+ *   - 每迁完一个模块，就把 main.css 中对应段落删掉，rsx 改成工具类；
+ *   - 全部迁完后删除下面的 `@import "./main.css"` 与 main.css 文件本身。
+ */
+
+@import "tailwindcss" source(none);
+@import "./colors.css";
+@import "./main.css";
+@import "../terminal/xterm.css";
+
+/*
+ * Tailwind 只扫描 rsx 里的字面量类名。
+ * `source(none)` 关掉自动扫描：否则会误扫 target/、dist/ 与 13k 行旧 CSS。
+ * 新增 rsx 目录时在这里补一条 @source。
+ */
+@source "../../src/**/*.rs";
+
+/* Dioxus 用 html[data-theme] 切主题（见 shell/theme.rs），映射成 Tailwind 的 dark: 变体 */
+
+/* 聊天区动画（由 style.rs 常量里的 animate-[...] 引用） */
+@keyframes ac-chat-bubble-enter {
+    from {
+        opacity: 0;
+        transform: translateY(0.35rem);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes ac-chat-trace-pulse {
+
+    0%,
+    80%,
+    100% {
+        opacity: 0.3;
+        transform: scale(0.85);
+    }
+
+    40% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+@keyframes ac-chat-mode-sheet-in {
+    from {
+        opacity: 0;
+        transform: translateY(0.5rem) scale(0.98);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes ac-chat-mode-sheet-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+
+/* —— 白名单：由 Rust/JS 生成 DOM 引用的类（协议类，不参与 rsx 迁移） —— */
+
+/* 语法高亮 token（ac-syn-* 由 syntax.rs / textmate.rs 按类型输出） */
+.ac-syn-keyword {
+    color: var(--ac-syn-keyword);
+    font-weight: 650;
+}
+
+.ac-syn-string {
+    color: var(--ac-syn-string);
+}
+
+.ac-syn-comment {
+    color: var(--ac-syn-comment);
+    font-style: italic;
+}
+
+.ac-syn-number {
+    color: var(--ac-syn-number);
+}
+
+.ac-syn-func {
+    color: var(--ac-syn-func);
+}
+
+.ac-syn-type {
+    color: var(--ac-syn-type);
+}
+
+.ac-syn-tag {
+    color: var(--ac-syn-tag);
+}
+
+.ac-syn-punct {
+    color: var(--ac-syn-punct);
+}
+
+/* 表格横向滚动容器（markdown.rs 字符串替换注入） */
+.ac-chat-md-table-scroll {
+    max-width: 100%;
+    margin: 0.55em 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+}
+
+/* 角色头像 conic 光环旋转 */
+@keyframes ac-role-avatar-halo-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/*
+ * 设计令牌 → Tailwind 颜色（1:1 对齐 colors.css）。
+ * `@theme inline` 让工具类直接输出 `var(--…)`，html[data-theme] 切换时即时生效，无需 dark: 变体。
+ * 命名约定：
+ *   - `primary-N` / `secondary-N`：colors.css 的表面 / 文字阶梯（bg-primary-3、text-secondary-1）
+ *   - `text-primary/secondary/tertiary`：正文三级灰阶（text-text-secondary）
+ *   - `border / border-light / border-hover`：描边三态
+ *   - `muted / faint`：text-secondary / text-tertiary 的短别名
+ *   - `ac-*`：colors.css 的 raw palette（按需补充，勿发明新名字）
+ */
+@theme inline {
+    --color-primary: var(--primary-color);
+    --color-primary-1: var(--primary-color-1);
+    --color-primary-2: var(--primary-color-2);
+    --color-primary-3: var(--primary-color-3);
+    --color-primary-4: var(--primary-color-4);
+    --color-primary-5: var(--primary-color-5);
+    --color-secondary-1: var(--secondary-color-1);
+    --color-secondary-2: var(--secondary-color-2);
+    --color-secondary-3: var(--secondary-color-3);
+    --color-secondary-4: var(--secondary-color-4);
+    --color-secondary-5: var(--secondary-color-5);
+    --color-text-primary: var(--text-primary);
+    --color-text-secondary: var(--text-secondary);
+    --color-text-tertiary: var(--text-tertiary);
+    --color-text-input: var(--text-input);
+    --color-border: var(--border-color);
+    --color-border-light: var(--border-color-light);
+    --color-border-hover: var(--border-color-hover);
+    --color-border-dark: var(--border-color-dark);
+    --color-button-primary: var(--button-primary);
+    --color-brand: var(--brand);
+    --color-brand-light: var(--brand-light);
+    --color-line: var(--line);
+    --color-muted: var(--text-secondary);
+    --color-faint: var(--text-tertiary);
+    --color-ac-blue: var(--ac-color-2563eb);
+    --color-ac-green: var(--ac-color-22c55e);
+    --color-ac-red: var(--ac-color-f87171);
+    --color-ac-amber: var(--ac-color-f59e0b);
+    --color-ac-orange: var(--ac-color-f97316);
+    --color-error: var(--primary-error-color-light);
+}
+
+/* 动画令牌：keyframes 写在 @theme 里，用到 animate-* 的地方自动带上 */
+@theme {
+    --animate-toast-in: toast-in 180ms ease-out;
+
+    @keyframes toast-in {
+        from {
+            opacity: 0;
+            transform: translateY(-6px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    /* 文件树里「刚被写入」的行，短暂脉冲一次（原 main.css 的
+       ac-files-just-written-pulse）。keyframes 见文件末尾：@theme 内只允许
+       一个 @keyframes，第二个会触发解析错误。 */
+    --animate-files-just-written: files-just-written 1.2s ease-out 1;
+}
+
+@keyframes files-just-written {
+    from {
+        background-color: color-mix(in srgb, var(--ac-color-93c5fd) 55%, var(--primary-color-1));
+    }
+
+    to {
+        background-color: color-mix(in srgb, var(--brand) 22%, transparent);
+    }
+}
+
+/*
+ * Dioxus 官方组件的浅/暗开关（原 dx-components-theme.css，已并入本文件）。
+ * `--light`/`--dark` 作为空值开关参与 `var(--light, x) var(--dark, y)` 写法。
+ */
+html[data-theme="dark"] {
+    --dark: initial;
+    --light: ;
+}
+
+html[data-theme="light"] {
+    --dark: ;
+    --light: initial;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --dark: initial;
+        --light: ;
+    }
+}
+
+@media (prefers-color-scheme: light) {
+    :root {
+        --dark: ;
+        --light: initial;
+    }
+}
+
+/*
+ * 全局 rem 基准（从 main.css 迁入）。
+ *
+ * 默认 12px（笔记本 13"-15"），按视口宽度分档放大：改这里相当于整体缩放
+ * （所有 rem 写的字号 / padding / 间距 / 圆角都会乘以新基准）。
+ * 想给某个组件单独脱钩，写绝对 `px` 即可；勿用 `font-size: %`，会破坏浏览器
+ * 的「Default font size」无障碍偏好。
+ */
+@layer base {
+    html {
+        font-size: 12px;
+    }
+
+    /* 大屏笔电 / 1080p 桌面（≥ 1600 宽） */
+    @media (min-width: 1600px) {
+        html {
+            font-size: 14px;
+        }
+    }
+
+    /* 2K / 27" 显示器（≥ 2200 宽） */
+    @media (min-width: 2200px) {
+        html {
+            font-size: 16px;
+        }
+    }
+
+    /* 4K+ / 超宽屏（≥ 2880 宽） */
+    @media (min-width: 2880px) {
+        html {
+            font-size: 17px;
+        }
+    }
+
+    /* 字体大小设置（shell/theme.rs 写 html[data-font-size]）：优先级高于媒体查询 */
+    html[data-font-size="small"] {
+        font-size: 14px !important;
+    }
+
+    html[data-font-size="medium"] {
+        font-size: 16px !important;
+    }
+
+    html[data-font-size="large"] {
+        font-size: 18px !important;
+    }
+}

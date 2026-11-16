@@ -130,10 +130,10 @@ pub fn SidebarSearchPanel(
 
     if !super::files::fs_available() {
         return rsx! {
-            div { class: "ac-sidebar-search",
-                div { class: "ac-sidebar-files-unavailable",
+            div { class: crate::shell::style::SEARCH_PANEL,
+                div { class: crate::shell::style::FILES_UNAVAILABLE,
                     p { "Web 端无法搜索本机文件" }
-                    p { class: "ac-sidebar-files-unavailable-hint",
+                    p { class: crate::shell::style::FILES_UNAVAILABLE_HINT,
                         "请使用桌面应用打开工作区并搜索文件内容。"
                     }
                 }
@@ -211,13 +211,13 @@ pub fn SidebarSearchPanel(
     };
 
     rsx! {
-        div { class: "ac-sidebar-search",
-            div { class: "ac-sidebar-search-header",
-                span { class: "ac-sidebar-search-title", title: "{root_path}", "搜索" }
-                div { class: "ac-sidebar-search-actions",
+        div { class: crate::shell::style::SEARCH_PANEL,
+            div { class: crate::shell::style::SEARCH_HEADER,
+                span { class: crate::shell::style::SEARCH_TITLE, title: "{root_path}", "搜索" }
+                div { class: crate::shell::style::SEARCH_ACTIONS,
                     button {
                         r#type: "button",
-                        class: "ac-sidebar-files-action",
+                        class: crate::shell::style::FILES_ACTION,
                         title: "刷新",
                         aria_label: "刷新",
                         disabled: loading() || !has_query,
@@ -241,7 +241,7 @@ pub fn SidebarSearchPanel(
                     }
                     button {
                         r#type: "button",
-                        class: "ac-sidebar-files-action",
+                        class: crate::shell::style::FILES_ACTION,
                         title: "清除结果",
                         aria_label: "清除结果",
                         onclick: move |_| {
@@ -255,7 +255,7 @@ pub fn SidebarSearchPanel(
                     }
                     button {
                         r#type: "button",
-                        class: "ac-sidebar-files-action",
+                        class: crate::shell::style::FILES_ACTION,
                         title: "全部折叠",
                         aria_label: "全部折叠",
                         onclick: move |_| {
@@ -272,11 +272,11 @@ pub fn SidebarSearchPanel(
                 }
             }
 
-            div { class: "ac-sidebar-search-fields",
-                div { class: "ac-search-pair",
+            div { class: crate::shell::style::SEARCH_FIELDS,
+                div { class: crate::shell::style::SEARCH_PAIR,
                     button {
                         r#type: "button",
-                        class: "ac-search-pair-toggle",
+                        class: crate::shell::style::SEARCH_PAIR_TOGGLE,
                         title: if replace_open() { "收起替换" } else { "展开替换" },
                         aria_label: if replace_open() { "收起替换" } else { "展开替换" },
                         aria_expanded: replace_open(),
@@ -289,11 +289,11 @@ pub fn SidebarSearchPanel(
                             Icon { icon: LdChevronRight, width: 14, height: 14, fill: "currentColor" }
                         }
                     }
-                    div { class: "ac-search-pair-inputs",
-                        div { class: "ac-search-input-row",
+                    div { class: crate::shell::style::SEARCH_PAIR_INPUTS,
+                        div { class: crate::shell::style::SEARCH_INPUT_ROW,
                             input {
                                 r#type: "search",
-                                class: "ac-search-input",
+                                class: crate::shell::style::SEARCH_INPUT,
                                 value: "{query}",
                                 placeholder: "搜索",
                                 spellcheck: false,
@@ -337,11 +337,8 @@ pub fn SidebarSearchPanel(
                             }
                             button {
                                 r#type: "button",
-                                class: if case_sensitive() {
-                                    "ac-search-toggle is-active"
-                                } else {
-                                    "ac-search-toggle"
-                                },
+                                class: crate::shell::style::SEARCH_TOGGLE,
+                                "data-active": case_sensitive(),
                                 title: "区分大小写",
                                 aria_label: "区分大小写",
                                 aria_pressed: case_sensitive(),
@@ -368,11 +365,8 @@ pub fn SidebarSearchPanel(
                             }
                             button {
                                 r#type: "button",
-                                class: if whole_word() {
-                                    "ac-search-toggle is-active"
-                                } else {
-                                    "ac-search-toggle"
-                                },
+                                class: crate::shell::style::SEARCH_TOGGLE,
+                                "data-active": whole_word(),
                                 title: "全字匹配",
                                 aria_label: "全字匹配",
                                 aria_pressed: whole_word(),
@@ -399,11 +393,8 @@ pub fn SidebarSearchPanel(
                             }
                             button {
                                 r#type: "button",
-                                class: if use_regex() {
-                                    "ac-search-toggle is-active"
-                                } else {
-                                    "ac-search-toggle"
-                                },
+                                class: crate::shell::style::SEARCH_TOGGLE,
+                                "data-active": use_regex(),
                                 title: "正则表达式",
                                 aria_label: "正则表达式",
                                 aria_pressed: use_regex(),
@@ -430,10 +421,10 @@ pub fn SidebarSearchPanel(
                             }
                         }
                         if replace_open() {
-                            div { class: "ac-search-input-row",
+                            div { class: crate::shell::style::SEARCH_INPUT_ROW,
                                 input {
                                     r#type: "text",
-                                    class: "ac-search-input",
+                                    class: crate::shell::style::SEARCH_INPUT,
                                     value: "{replace_text}",
                                     placeholder: "替换",
                                     spellcheck: false,
@@ -441,11 +432,8 @@ pub fn SidebarSearchPanel(
                                 }
                                 button {
                                     r#type: "button",
-                                    class: if preserve_case() {
-                                        "ac-search-toggle is-active"
-                                    } else {
-                                        "ac-search-toggle"
-                                    },
+                                    class: crate::shell::style::SEARCH_TOGGLE,
+                                    "data-active": preserve_case(),
                                     title: "保留大小写",
                                     aria_label: "保留大小写",
                                     aria_pressed: preserve_case(),
@@ -456,7 +444,7 @@ pub fn SidebarSearchPanel(
                                 }
                                 button {
                                     r#type: "button",
-                                    class: "ac-search-toggle ac-search-replace-all",
+                                    class: crate::shell::style::SEARCH_TOGGLE,
                                     title: "全部替换",
                                     aria_label: "全部替换",
                                     disabled: replacing() || match_count == 0 || query().trim().is_empty(),
@@ -572,10 +560,10 @@ pub fn SidebarSearchPanel(
                     }
                 }
 
-                div { class: "ac-search-pair ac-search-pair--filters",
+                div { class: crate::shell::style::SEARCH_PAIR,
                     button {
                         r#type: "button",
-                        class: "ac-search-pair-toggle",
+                        class: crate::shell::style::SEARCH_PAIR_TOGGLE_SHORT,
                         title: if exclude_open() { "收起排除文件" } else { "展开排除文件" },
                         aria_label: if exclude_open() { "收起排除文件" } else { "展开排除文件" },
                         aria_expanded: exclude_open(),
@@ -588,12 +576,12 @@ pub fn SidebarSearchPanel(
                             Icon { icon: LdChevronRight, width: 14, height: 14, fill: "currentColor" }
                         }
                     }
-                    div { class: "ac-search-pair-inputs",
-                        label { class: "ac-search-filter",
-                            span { class: "ac-search-filter-label", "包含文件" }
+                    div { class: crate::shell::style::SEARCH_PAIR_INPUTS,
+                        label { class: crate::shell::style::SEARCH_FILTER,
+                            span { class: crate::shell::style::SEARCH_FILTER_LABEL, "包含文件" }
                             input {
                                 r#type: "text",
-                                class: "ac-search-filter-input",
+                                class: crate::shell::style::SEARCH_FILTER_INPUT,
                                 value: "{include_glob}",
                                 placeholder: "例如：*.rs, src/**/*.ts",
                                 spellcheck: false,
@@ -638,11 +626,11 @@ pub fn SidebarSearchPanel(
                             }
                         }
                         if exclude_open() {
-                            label { class: "ac-search-filter",
-                                span { class: "ac-search-filter-label", "排除文件" }
+                            label { class: crate::shell::style::SEARCH_FILTER,
+                                span { class: crate::shell::style::SEARCH_FILTER_LABEL, "排除文件" }
                                 input {
                                     r#type: "text",
-                                    class: "ac-search-filter-input",
+                                    class: crate::shell::style::SEARCH_FILTER_INPUT,
                                     value: "{exclude_glob}",
                                     placeholder: "例如：*.lock, dist",
                                     spellcheck: false,
@@ -691,19 +679,19 @@ pub fn SidebarSearchPanel(
                 }
             }
 
-            div { class: "ac-sidebar-search-summary", "{summary}" }
+            div { class: crate::shell::style::SEARCH_SUMMARY, "{summary}" }
 
-            div { class: "ac-sidebar-search-results", role: "tree",
+            div { class: crate::shell::style::SEARCH_RESULTS, role: "tree",
                 onscroll: move |e| {
                     scroll_top.set(e.data().scroll_top());
                 },
                 if loading() && current.files.is_empty() {
-                    div { class: "ac-sidebar-files-empty",
+                    div { class: crate::shell::style::FILES_EMPTY,
                         Icon { icon: LdSearch, width: 16, height: 16, fill: "currentColor" }
                         "正在搜索工作区…"
                     }
                 } else if !loading() && current.files.is_empty() && has_query {
-                    div { class: "ac-sidebar-files-empty",
+                    div { class: crate::shell::style::FILES_EMPTY,
                         Icon { icon: LdSearch, width: 16, height: 16, fill: "currentColor" }
                         if let Some(err) = current.error.as_ref() {
                             "{err}"
@@ -725,10 +713,10 @@ pub fn SidebarSearchPanel(
                         let hits = group.hits.clone();
                         let hit_n = hits.len();
                         rsx! {
-                            div { class: "ac-search-file", key: "{path}",
+                            div { class: crate::shell::style::SEARCH_FILE, key: "{path}",
                                 button {
                                     r#type: "button",
-                                    class: "ac-search-file-head",
+                                    class: crate::shell::style::SEARCH_FILE_HEAD,
                                     title: "{rel}",
                                     onclick: move |_| {
                                         let p = path_toggle.clone();
@@ -744,18 +732,18 @@ pub fn SidebarSearchPanel(
                                     ondoubleclick: move |_| {
                                         on_open_file.call(path_open.clone());
                                     },
-                                    span { class: "ac-sidebar-files-row-chevron",
+                                    span { class: crate::shell::style::FILES_ROW_CHEVRON,
                                         if open {
                                             Icon { icon: LdChevronDown, width: 12, height: 12, fill: "currentColor" }
                                         } else {
                                             Icon { icon: LdChevronRight, width: 12, height: 12, fill: "currentColor" }
                                         }
                                     }
-                                    span { class: "ac-sidebar-files-row-icon",
+                                    span { class: crate::shell::style::FILES_ROW_ICON,
                                         Icon { icon: LdFile, width: 13, height: 13, fill: "currentColor" }
                                     }
-                                    span { class: "ac-search-file-name", "{rel}" }
-                                    span { class: "ac-search-file-count", "{hit_n}" }
+                                    span { class: crate::shell::style::SEARCH_FILE_NAME, "{rel}" }
+                                    span { class: crate::shell::style::SEARCH_FILE_COUNT, "{hit_n}" }
                                 }
                                 if open {
                                     for (idx, hit) in hits.iter().enumerate() {
@@ -768,14 +756,14 @@ pub fn SidebarSearchPanel(
                                             rsx! {
                                                 button {
                                                     r#type: "button",
-                                                    class: "ac-search-hit",
+                                                    class: crate::shell::style::SEARCH_HIT,
                                                     key: "{path}:{line_no}:{idx}",
                                                     title: "{rel}:{line_no}",
                                                     onclick: move |_| {
                                                         on_open_file.call(path.clone());
                                                     },
-                                                    span { class: "ac-search-hit-ln", "{line_no}" }
-                                                    span { class: "ac-search-hit-text",
+                                                    span { class: crate::shell::style::SEARCH_HIT_LN, "{line_no}" }
+                                                    span { class: crate::shell::style::SEARCH_HIT_TEXT,
                                                         {highlight_line(&line, start, end)}
                                                     }
                                                 }
@@ -823,7 +811,7 @@ fn highlight_line(line: &str, start: usize, end: usize) -> Element {
     let after = &line[end..];
     rsx! {
         "{before}"
-        span { class: "ac-search-hit-mark", "{mid}" }
+        span { class: crate::shell::style::SEARCH_HIT_MARK, "{mid}" }
         "{after}"
     }
 }

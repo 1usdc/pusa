@@ -201,14 +201,14 @@ pub fn LlmCredentialsPanel(
     let local_or_private_base = is_local_or_private_openai_base(&add_base());
 
     rsx! {
-        div { class: "ac-llm-cred-panel",
-            p { class: "ac-settings-lead",
+        div { class: crate::shell::style::MODAL_BODY_FLEX_COL,
+            p { class: "m-0 mb-5 text-[0.8rem] leading-[1.5] text-secondary-3 shrink-0",
                 "可添加多组AI大模型端点，打开的端点会同时启用，模型列表可切换选择这些模型。"
             }
 
             if !credentials.is_empty() {
-                p { class: "ac-settings-label", "已保存的密钥" }
-                ul { class: "ac-llm-cred-list",
+                p { class: crate::shell::style::FIELD_LABEL, "已保存的密钥" }
+                ul { class: crate::shell::style::CRED_LIST,
                     for cred in credentials.clone() {
                         {
                             let id = cred.id.clone();
@@ -228,11 +228,11 @@ pub fn LlmCredentialsPanel(
                 }
             }
 
-            div { class: "ac-llm-cred-foot",
+            div { class: crate::shell::style::CRED_FOOT,
                 if !adding() {
                     button {
                         r#type: "button",
-                        class: "ac-settings-add-btn",
+                        class: crate::shell::style::BTN_ADD_PILL,
                         onclick: move |_| {
                             add_provider.set(LlmApiProvider::Openai);
                             add_label.set(String::new());
@@ -243,16 +243,13 @@ pub fn LlmCredentialsPanel(
                         "添加密钥"
                     }
                 } else {
-                    p { class: "ac-settings-label", "添加密钥" }
-                    div { class: "ac-settings-provider", role: "tablist", aria_label: "API 类型",
+                    p { class: crate::shell::style::FIELD_LABEL, "添加密钥" }
+                    div { class: crate::shell::style::PROVIDER_TABS, role: "tablist", aria_label: "API 类型",
                         button {
                             r#type: "button",
                             role: "tab",
-                            class: if provider == LlmApiProvider::Openai {
-                                "ac-settings-provider-btn is-active"
-                            } else {
-                                "ac-settings-provider-btn"
-                            },
+                            class: crate::shell::style::PROVIDER_TAB,
+                            "data-active": provider == LlmApiProvider::Openai,
                             aria_selected: provider == LlmApiProvider::Openai,
                             onclick: move |_| {
                                 if add_provider() == LlmApiProvider::Openai {
@@ -270,11 +267,8 @@ pub fn LlmCredentialsPanel(
                         button {
                             r#type: "button",
                             role: "tab",
-                            class: if provider == LlmApiProvider::Anthropic {
-                                "ac-settings-provider-btn is-active"
-                            } else {
-                                "ac-settings-provider-btn"
-                            },
+                            class: crate::shell::style::PROVIDER_TAB,
+                            "data-active": provider == LlmApiProvider::Anthropic,
                             aria_selected: provider == LlmApiProvider::Anthropic,
                             onclick: move |_| {
                                 if add_provider() == LlmApiProvider::Anthropic {
@@ -290,19 +284,19 @@ pub fn LlmCredentialsPanel(
                             "Anthropic"
                         }
                     }
-                    label { class: "ac-settings-label", "名称"
+                    label { class: crate::shell::style::FIELD_LABEL, "名称"
                         input {
                             r#type: "text",
-                            class: "ac-settings-input",
+                            class: crate::shell::style::FIELD_INPUT,
                             placeholder: "{provider_label(provider)}",
                             value: "{add_label()}",
                             oninput: move |e| add_label.set(e.value()),
                         }
                     }
-                    label { class: "ac-settings-label", "API Key（可选）"
+                    label { class: crate::shell::style::FIELD_LABEL, "API Key（可选）"
                         input {
                             r#type: "password",
-                            class: "ac-settings-input",
+                            class: crate::shell::style::FIELD_INPUT,
                             placeholder: if local_or_private_base {
                                 "可留空（本地 / 内网）"
                             } else {
@@ -312,19 +306,19 @@ pub fn LlmCredentialsPanel(
                             oninput: move |e| add_key.set(e.value()),
                         }
                     }
-                    label { class: "ac-settings-label", "Base URL（以 /v1 结尾）"
+                    label { class: crate::shell::style::FIELD_LABEL, "Base URL（以 /v1 结尾）"
                         input {
                             r#type: "text",
-                            class: "ac-settings-input",
+                            class: crate::shell::style::FIELD_INPUT,
                             placeholder: "{provider.default_v1_base()}",
                             value: "{add_base()}",
                             oninput: move |e| add_base.set(e.value()),
                         }
                     }
-                    div { class: "ac-settings-actions ac-settings-actions--row",
+                    div { class: crate::shell::style::FIELD_ACTIONS_ROW,
                         button {
                             r#type: "button",
-                            class: "ac-settings-cancel",
+                            class: crate::shell::style::BTN_CANCEL,
                             onclick: move |_| {
                                 reset_add_form(adding, add_provider, add_label, add_key, add_base);
                             },
@@ -332,7 +326,7 @@ pub fn LlmCredentialsPanel(
                         }
                         button {
                             r#type: "button",
-                            class: "ac-settings-submit",
+                            class: crate::shell::style::BTN_SUBMIT,
                             onclick: move |_| {
                                 let provider = add_provider();
                                 let api_key = api_key_for_upsert(&add_key());
@@ -398,24 +392,21 @@ fn LlmCredentialCard(
 
     rsx! {
         li {
-            class: if is_on {
-                "ac-llm-cred-card is-on"
-            } else {
-                "ac-llm-cred-card"
-            },
-            div { class: "ac-llm-cred-row",
-            div { class: "ac-llm-cred-main",
-                div { class: "ac-llm-cred-top",
-                    span { class: "ac-llm-cred-provider", "{saved_name}" }
+            class: crate::shell::style::CRED_CARD,
+            "data-on": is_on,
+            div { class: crate::shell::style::CRED_ROW,
+            div { class: crate::shell::style::CRED_MAIN,
+                div { class: crate::shell::style::CRED_TOP,
+                    span { class: crate::shell::style::CRED_NAME, "{saved_name}" }
                 }
-                div { class: "ac-llm-cred-key", "{masked}" }
-                div { class: "ac-llm-cred-base", "{base}" }
+                div { class: crate::shell::style::CRED_KEY, "{masked}" }
+                div { class: crate::shell::style::CRED_BASE, "{base}" }
             }
-            div { class: "ac-llm-cred-actions",
+            div { class: crate::shell::style::CRED_ACTIONS,
                 if editing() {
                     button {
                         r#type: "button",
-                        class: "ac-llm-cred-icon-btn ac-llm-cred-icon-btn--danger",
+                        class: crate::shell::style::CRED_ICON_BTN_DANGER,
                         title: "删除",
                         aria_label: "删除",
                         onclick: move |_| on_delete.call(id_delete.clone()),
@@ -429,7 +420,7 @@ fn LlmCredentialCard(
                 } else {
                     button {
                         r#type: "button",
-                        class: "ac-llm-cred-icon-btn",
+                        class: crate::shell::style::CRED_ICON_BTN,
                         title: "编辑密钥",
                         aria_label: "编辑密钥",
                         onclick: move |_| {
@@ -449,18 +440,15 @@ fn LlmCredentialCard(
                 }
                 button {
                     r#type: "button",
-                    class: if is_on {
-                        "ac-llm-switch is-on"
-                    } else {
-                        "ac-llm-switch"
-                    },
+                    class: "group m-0 p-0 border-0 bg-transparent inline-flex items-center cursor-pointer",
+                    "data-on": is_on,
                     role: "switch",
                     aria_checked: is_on,
                     title: "{switch_title}",
                     aria_label: "{switch_title}",
                     onclick: move |_| on_toggle.call((id_toggle.clone(), !is_on)),
-                    span { class: "ac-llm-switch-track",
-                        span { class: "ac-llm-switch-knob" }
+                    span { class: "relative w-[2.15rem] h-[1.2rem] rounded-full bg-primary-2 shrink-0 transition-[background] duration-200 group-data-[on=true]:bg-[var(--button-primary)]",
+                        span { class: "absolute top-[2px] left-[2px] w-[calc(1.2rem_-_4px)] h-[calc(1.2rem_-_4px)] rounded-full bg-primary shadow-[0_1px_4px_var(--shadow-color)] transition-transform duration-200 group-data-[on=true]:translate-x-[0.92rem]" }
                     }
                 }
             }
@@ -471,16 +459,13 @@ fn LlmCredentialCard(
                     let local_or_private_base = is_local_or_private_openai_base(&edit_base());
                     let id_save = cred.id.clone();
                     rsx! {
-                        div { class: "ac-llm-cred-edit",
-                            div { class: "ac-settings-provider", role: "tablist", aria_label: "API 类型",
+                        div { class: crate::shell::style::CRED_EDIT,
+                            div { class: crate::shell::style::PROVIDER_TABS_TIGHT, role: "tablist", aria_label: "API 类型",
                                 button {
                                     r#type: "button",
                                     role: "tab",
-                                    class: if provider_now == LlmApiProvider::Openai {
-                                        "ac-settings-provider-btn is-active"
-                                    } else {
-                                        "ac-settings-provider-btn"
-                                    },
+                                    class: crate::shell::style::PROVIDER_TAB,
+                                    "data-active": provider_now == LlmApiProvider::Openai,
                                     aria_selected: provider_now == LlmApiProvider::Openai,
                                     onclick: move |_| {
                                         if edit_provider() == LlmApiProvider::Openai {
@@ -498,11 +483,8 @@ fn LlmCredentialCard(
                                 button {
                                     r#type: "button",
                                     role: "tab",
-                                    class: if provider_now == LlmApiProvider::Anthropic {
-                                        "ac-settings-provider-btn is-active"
-                                    } else {
-                                        "ac-settings-provider-btn"
-                                    },
+                                    class: crate::shell::style::PROVIDER_TAB,
+                                    "data-active": provider_now == LlmApiProvider::Anthropic,
                                     aria_selected: provider_now == LlmApiProvider::Anthropic,
                                     onclick: move |_| {
                                         if edit_provider() == LlmApiProvider::Anthropic {
@@ -518,19 +500,19 @@ fn LlmCredentialCard(
                                     "Anthropic"
                                 }
                             }
-                            label { class: "ac-settings-label", "名称"
+                            label { class: crate::shell::style::FIELD_LABEL_TIGHT, "名称"
                                 input {
                                     r#type: "text",
-                                    class: "ac-settings-input",
+                                    class: crate::shell::style::FIELD_INPUT,
                                     placeholder: "{provider_label(provider_now)}",
                                     value: "{edit_label()}",
                                     oninput: move |e| edit_label.set(e.value()),
                                 }
                             }
-                            label { class: "ac-settings-label", "API Key（可选）"
+                            label { class: crate::shell::style::FIELD_LABEL_TIGHT, "API Key（可选）"
                                 input {
                                     r#type: "password",
-                                    class: "ac-settings-input",
+                                    class: crate::shell::style::FIELD_INPUT,
                                     placeholder: if local_or_private_base {
                                         "留空则不修改（本地 / 内网）"
                                     } else {
@@ -540,25 +522,25 @@ fn LlmCredentialCard(
                                     oninput: move |e| edit_key.set(e.value()),
                                 }
                             }
-                            label { class: "ac-settings-label", "Base URL（以 /v1 结尾）"
+                            label { class: crate::shell::style::FIELD_LABEL_TIGHT, "Base URL（以 /v1 结尾）"
                                 input {
                                     r#type: "text",
-                                    class: "ac-settings-input",
+                                    class: crate::shell::style::FIELD_INPUT,
                                     placeholder: "{provider_now.default_v1_base()}",
                                     value: "{edit_base()}",
                                     oninput: move |e| edit_base.set(e.value()),
                                 }
                             }
-                            div { class: "ac-settings-actions ac-settings-actions--row",
+                            div { class: crate::shell::style::FIELD_ACTIONS_ROW_TIGHT,
                                 button {
                                     r#type: "button",
-                                    class: "ac-settings-cancel",
+                                    class: crate::shell::style::BTN_CANCEL,
                                     onclick: move |_| editing.set(false),
                                     "取消"
                                 }
                                 button {
                                     r#type: "button",
-                                    class: "ac-settings-submit",
+                                    class: crate::shell::style::BTN_SUBMIT,
                                     onclick: move |_| {
                                         let provider = edit_provider();
                                         let typed_key = edit_key().trim().to_string();

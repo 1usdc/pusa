@@ -14,10 +14,12 @@ pub enum PasswordFieldStyle {
 }
 
 impl PasswordFieldStyle {
-    fn input_class(self) -> &'static str {
+    fn input_class(self) -> String {
         match self {
-            PasswordFieldStyle::Settings => "ac-settings-input",
-            PasswordFieldStyle::Modal => "ac-api-modal-input",
+            PasswordFieldStyle::Settings => crate::shell::style::FIELD_INPUT_PASSWORD.to_string(),
+            // `ac-api-modal-input` 属 console.rs 的 API 弹窗（P5 迁移）；这里用 `!` 提高
+            // 右侧内边距优先级，压过 legacy 选择器里的 padding 简写。
+            PasswordFieldStyle::Modal => format!("{} pr-[2.75rem]!", crate::shell::style::API_MODAL_INPUT),
         }
     }
 }
@@ -43,7 +45,7 @@ pub fn AcPasswordInput(
         .unwrap_or_default();
 
     rsx! {
-        div { class: "ac-password-field",
+        div { class: "relative block w-full",
             input {
                 r#type: if revealed() { "text" } else { "password" },
                 class: "{input_cls}",
@@ -65,7 +67,7 @@ pub fn AcPasswordInput(
             }
             button {
                 r#type: "button",
-                class: "ac-password-toggle",
+                class: "absolute right-[0.35rem] top-1/2 -translate-y-1/2 flex items-center justify-center w-8 h-8 p-0 border-0 rounded-[0.4rem] bg-transparent text-secondary-3 cursor-pointer hover:text-secondary-3 hover:bg-primary-1 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[color:var(--border-color-dark)]",
                 title: if revealed() { "隐藏密码" } else { "显示密码" },
                 onclick: move |_| revealed.toggle(),
                 if revealed() {
@@ -74,7 +76,7 @@ pub fn AcPasswordInput(
                         width: 18,
                         height: 18,
                         fill: "currentColor",
-                        class: "ac-password-toggle-icon",
+                        class: "shrink-0",
                     }
                 } else {
                     Icon {
@@ -82,7 +84,7 @@ pub fn AcPasswordInput(
                         width: 18,
                         height: 18,
                         fill: "currentColor",
-                        class: "ac-password-toggle-icon",
+                        class: "shrink-0",
                     }
                 }
             }

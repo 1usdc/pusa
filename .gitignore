@@ -19,6 +19,9 @@ desktop/dist/
 desktop/bundle-resources/
 /docs/
 
+# —— Tailwind v4 工具链（node_modules 不入库；产物 ui/assets/css/styles.css 入库）——
+/node_modules/
+
 # —— 闭源核心源码（仅本机保留；对外用 vendor 预编译库）——
 /pusa-core/
 
