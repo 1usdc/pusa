@@ -4,6 +4,17 @@ Pusa 是一套 Agent 控制台，同时提供**桌面端**与 **Web** 两种形�
 
 插件市场对接 [Open VSX](https://open-vsx.org/) 开放 API，可安装 VS Code 兼容扩展（优先用于语法高亮与编程语言支持）。
 
+## 下载安装
+
+前往 [最新版本 Release](https://github.com/1usdc/pusa/releases/latest) 下载安装包：
+
+| 平台 | 安装包 | 说明 |
+|------|--------|------|
+| macOS（Apple Silicon） | `Pusa-<版本>-macos-arm64.dmg` | 打开后把 Pusa 拖进「应用程序」 |
+| Windows（x64） | [`Pusa-win-x64-Setup.exe`](https://github.com/1usdc/pusa/releases/latest/download/Pusa-win-x64-Setup.exe) | 双击安装；缺少 WebView2 时安装器会引导 |
+
+macOS 安装包文件名带版本号，请在 Release 页面的 Assets 中选择与版本对应的 `.dmg`。桌面端支持应用内更新，安装后可在窗口底部状态栏检查并升级，无需重新下载安装包。
+
 ## 界面预览
 
 ![Pusa 欢迎页：工作区、快捷操作与 AI 聊天](assets/readme/welcome.jpg)

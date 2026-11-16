@@ -30,7 +30,11 @@ command -v gh >/dev/null 2>&1 || {
 
 gh release view "${TAG}" >/dev/null
 
-mapfile -t ASSETS < <(gh release view "${TAG}" --json assets -q '.assets[].name' 2>/dev/null || true)
+# macOS 自带 bash 3.2 没有 mapfile，用 while read 保持兼容
+ASSETS=()
+while IFS= read -r asset; do
+	[[ -n "${asset}" ]] && ASSETS+=("${asset}")
+done < <(gh release view "${TAG}" --json assets -q '.assets[].name' 2>/dev/null || true)
 has() {
 	local n="$1" a
 	for a in "${ASSETS[@]+"${ASSETS[@]}"}"; do

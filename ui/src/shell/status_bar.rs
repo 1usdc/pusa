@@ -101,18 +101,45 @@ mod desktop_update {
 
     use super::{app_version, UpdateState, GH_REPO};
 
-    fn releases_api_url() -> String {
-        format!("https://api.github.com/repos/{GH_REPO}/releases?per_page=20")
+    /// 与 `scripts/velopack-common.sh` 的 `vpk_channel`、Windows 打包脚本保持一致。
+    fn release_channel() -> &'static str {
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+        {
+            "macos-arm64"
+        }
+        #[cfg(all(target_os = "macos", not(target_arch = "aarch64")))]
+        {
+            "macos-x64"
+        }
+        #[cfg(target_os = "windows")]
+        {
+            "win-x64"
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            "linux-x64"
+        }
+    }
+
+    /// `vpk upload github` 上传的更新清单，挂在 Release 资产里。
+    /// 走 `releases/latest/download/...` 直链，不经过 `api.github.com`，没有 60 次/小时限流。
+    fn manifest_url() -> String {
+        format!(
+            "https://github.com/{GH_REPO}/releases/latest/download/releases.{}.json",
+            release_channel()
+        )
     }
 
     #[derive(Clone, Deserialize)]
-    struct GhRelease {
-        tag_name: String,
-        html_url: String,
-        #[serde(default)]
-        draft: bool,
-        #[serde(default)]
-        prerelease: bool,
+    struct ReleasesManifest {
+        #[serde(rename = "Assets", default)]
+        assets: Vec<ManifestAsset>,
+    }
+
+    #[derive(Clone, Deserialize)]
+    struct ManifestAsset {
+        #[serde(rename = "Version", default)]
+        version: String,
     }
 
     fn strip_version_prefix(raw: &str) -> &str {
@@ -145,18 +172,13 @@ mod desktop_update {
         Ordering::Equal
     }
 
-    fn pick_latest_desktop_release(releases: &[GhRelease]) -> Option<(String, String)> {
-        releases.iter().find_map(|r| {
-            if r.draft || r.prerelease {
-                return None;
-            }
-            let tag = r.tag_name.trim();
-            let ver = tag.strip_prefix("desktop-v")?;
-            if version_parts(ver).is_empty() {
-                return None;
-            }
-            Some((ver.to_string(), r.html_url.clone()))
-        })
+    fn latest_version(manifest: &ReleasesManifest) -> Option<&str> {
+        manifest
+            .assets
+            .iter()
+            .map(|a| a.version.trim())
+            .filter(|v| !version_parts(v).is_empty())
+            .max_by(|a, b| cmp_version(a, b))
     }
 
     pub async fn fetch(local: &str) -> UpdateState {
@@ -167,20 +189,23 @@ mod desktop_update {
             Ok(c) => c,
             Err(_) => return UpdateState::Unknown,
         };
-        let resp = match client.get(releases_api_url()).send().await {
+        let resp = match client.get(manifest_url()).send().await {
             Ok(r) => r,
             Err(_) => return UpdateState::Unknown,
         };
         if !resp.status().is_success() {
             return UpdateState::Unknown;
         }
-        let releases: Vec<GhRelease> = match resp.json().await {
+        let manifest: ReleasesManifest = match resp.json().await {
             Ok(v) => v,
             Err(_) => return UpdateState::Unknown,
         };
-        match pick_latest_desktop_release(&releases) {
-            Some((latest, url)) if cmp_version(&latest, local) == Ordering::Greater => {
-                UpdateState::Available { latest, url }
+        match latest_version(&manifest) {
+            Some(latest) if cmp_version(latest, local) == Ordering::Greater => {
+                UpdateState::Available {
+                    url: format!("https://github.com/{GH_REPO}/releases/tag/desktop-v{latest}"),
+                    latest: latest.to_string(),
+                }
             }
             Some(_) => UpdateState::UpToDate,
             None => UpdateState::Unknown,
@@ -193,7 +218,7 @@ mod desktop_update {
 mod velopack_update {
     use dioxus::prelude::*;
 
-    use super::UpdateState;
+    use super::{desktop_update, UpdateState};
     use crate::desktop::updater::{self, Check, UpdateInfo, UpdateManager};
 
     /// 应用是否通过 Velopack 安装（决定走一键更新还是 GitHub API 回退）。
@@ -215,10 +240,11 @@ mod velopack_update {
         let (um, info) = match checked {
             Ok(Some((_, Check::UpToDate))) => return UpdateState::UpToDate,
             Ok(Some((um, Check::Available(info)))) => (um, info),
-            // 网络错误等：不打扰用户，下个周期再试。
+            // Velopack 的 GithubSource 走 `api.github.com`，可能被 60 次/小时限流；
+            // 失败时改用 Release 资产里的清单再查一次。
             Ok(Some((_, Check::Failed(msg)))) => {
-                eprintln!("[pusa] 检查更新失败：{msg}");
-                return UpdateState::Unknown;
+                eprintln!("[pusa] 更新检查失败：{msg}，改用 Release 清单");
+                return desktop_update::fetch(&crate::version::app_version()).await;
             }
             Ok(None) | Err(_) => return UpdateState::Unknown,
         };
