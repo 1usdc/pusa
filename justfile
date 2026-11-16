@@ -1,6 +1,6 @@
 # 重点流程
 # just push # 推送代码到 Git，同时推送两个仓库
-# just desktop-mac # 打包 macOS 桌面应用
+# just desktop-mac # 打包 macOS 桌面应用，重试：BUMP=0 just desktop-mac
 # just release-mac # 发布 macOS 版本（发布前需要推送到仓库）
 # just desktop-windows # 打包 Windows 桌面应用
 # just release-windows # 发布 Windows 版本
