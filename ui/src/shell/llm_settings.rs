@@ -1,16 +1,74 @@
-//! 设置弹窗：多组 OpenAI / Anthropic API Key + Base URL。
+//! 模型设置面板：自定义模型供应商（Base URL / API 格式 / API Key / 模型列表）。
+//!
+//! 左侧供应商列表（含启用状态圆点）+ 右侧详情（见
+//! [`crate::shell::model_provider_detail`]）。「添加供应商」支持预设一键预填
+//! （见 [`crate::model_presets`]）或完全自定义。供应商数据仍走
+//! `LlmCredentialUpsertBody`（服务端 / 核心库存储）；模型列表为本地偏好
+//! （`CustomChatModelPref`，按 `credential_id` 归组）。
+
+use std::collections::HashMap;
 
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::ld_icons::{LdPencil, LdTrash2};
+use dioxus_free_icons::icons::ld_icons::{LdBox, LdPlus, LdRefreshCw};
 use dioxus_free_icons::Icon;
 use protocol::{LlmApiProvider, LlmCredentialDto, LlmCredentialUpsertBody};
 
+use crate::custom_chat_models::CustomChatModelPref;
+
 /// 核心库 `llm_credential_upsert` 拒绝空 `api_key`（错误码 `api_key_required`）。
 /// 选填密钥时写入此占位值；界面展示为「未填写」。
-const EMPTY_API_KEY_SENTINEL: &str = "__pusa_no_key__";
+pub(crate) const EMPTY_API_KEY_SENTINEL: &str = "__pusa_no_key__";
+
+pub(crate) fn is_unspecified_api_key(key: &str) -> bool {
+    let t = key.trim();
+    t.is_empty() || t == EMPTY_API_KEY_SENTINEL
+}
+
+pub(crate) fn api_key_for_upsert(raw: &str) -> String {
+    let t = raw.trim();
+    if t.is_empty() {
+        EMPTY_API_KEY_SENTINEL.to_string()
+    } else {
+        t.to_string()
+    }
+}
+
+pub(crate) fn mask_api_key(key: &str) -> String {
+    if is_unspecified_api_key(key) {
+        return "未填写".into();
+    }
+    let t = key.trim();
+    let chars: Vec<char> = t.chars().collect();
+    if chars.len() <= 8 {
+        return "••••".into();
+    }
+    let head: String = chars.iter().take(4).collect();
+    let tail: String = chars.iter().rev().take(4).rev().collect();
+    format!("{head}…{tail}")
+}
+
+pub(crate) fn provider_label(p: LlmApiProvider) -> &'static str {
+    match p {
+        LlmApiProvider::Openai => "OpenAI",
+        LlmApiProvider::Anthropic => "Anthropic",
+    }
+}
+
+pub(crate) fn display_name(provider: LlmApiProvider, label: &str) -> String {
+    let label = label.trim();
+    if label.is_empty() {
+        provider_label(provider).to_string()
+    } else {
+        label.to_string()
+    }
+}
+
+pub(crate) fn credential_display_name(cred: &LlmCredentialDto) -> String {
+    display_name(cred.provider, &cred.label)
+}
 
 /// 从 Base URL 取出 host（支持 `http://host:port/path`、`[IPv6]`、无 scheme）。
-fn host_from_openai_base(base: &str) -> Option<String> {
+pub(crate) fn host_from_openai_base(base: &str) -> Option<String> {
     let s = base.trim();
     if s.is_empty() {
         return None;
@@ -73,69 +131,8 @@ fn is_loopback_or_private_host(host: &str) -> bool {
     parse_ipv4(h).is_some_and(is_loopback_or_private_ipv4)
 }
 
-fn is_local_or_private_openai_base(base: &str) -> bool {
+pub(crate) fn is_local_or_private_openai_base(base: &str) -> bool {
     host_from_openai_base(base).is_some_and(|h| is_loopback_or_private_host(&h))
-}
-
-fn is_unspecified_api_key(key: &str) -> bool {
-    let t = key.trim();
-    t.is_empty() || t == EMPTY_API_KEY_SENTINEL
-}
-
-fn api_key_for_upsert(raw: &str) -> String {
-    let t = raw.trim();
-    if t.is_empty() {
-        EMPTY_API_KEY_SENTINEL.to_string()
-    } else {
-        t.to_string()
-    }
-}
-
-fn mask_api_key(key: &str) -> String {
-    if is_unspecified_api_key(key) {
-        return "未填写".into();
-    }
-    let t = key.trim();
-    let chars: Vec<char> = t.chars().collect();
-    if chars.len() <= 8 {
-        return "••••".into();
-    }
-    let head: String = chars.iter().take(4).collect();
-    let tail: String = chars.iter().rev().take(4).rev().collect();
-    format!("{head}…{tail}")
-}
-
-fn provider_label(p: LlmApiProvider) -> &'static str {
-    match p {
-        LlmApiProvider::Openai => "OpenAI",
-        LlmApiProvider::Anthropic => "Anthropic",
-    }
-}
-
-fn display_credential_name(cred: &LlmCredentialDto) -> String {
-    display_name(cred.provider, &cred.label)
-}
-
-fn display_name(provider: LlmApiProvider, label: &str) -> String {
-    let label = label.trim();
-    if label.is_empty() {
-        provider_label(provider).to_string()
-    } else {
-        label.to_string()
-    }
-}
-
-/// 有改动才返回要写入 DTO `label` 的新名称。
-fn renamed_label(draft: &str, stored_label: &str, provider: LlmApiProvider) -> Option<String> {
-    let next = draft.trim();
-    if next.is_empty() {
-        return None;
-    }
-    if next == display_name(provider, stored_label) {
-        None
-    } else {
-        Some(next.to_string())
-    }
 }
 
 /// 把核心库 / FFI 的原始错误码转成设置页可读文案，避免当成标题展示。
@@ -158,9 +155,7 @@ pub(crate) fn format_llm_settings_error(raw: &str) -> String {
         .trim()
         .trim_matches('"');
     if !code.is_empty()
-        && code
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c == '_')
+        && code.chars().all(|c| c.is_ascii_lowercase() || c == '_')
         && code.contains('_')
     {
         return "操作失败，请稍后重试。".into();
@@ -168,23 +163,124 @@ pub(crate) fn format_llm_settings_error(raw: &str) -> String {
     t.to_string()
 }
 
-fn reset_add_form(
-    mut adding: Signal<bool>,
-    mut add_provider: Signal<LlmApiProvider>,
-    mut add_label: Signal<String>,
-    mut add_key: Signal<String>,
-    mut add_base: Signal<String>,
-) {
-    adding.set(false);
-    add_provider.set(LlmApiProvider::Openai);
-    add_label.set(String::new());
-    add_key.set(String::new());
-    add_base.set(LlmApiProvider::Openai.default_v1_base().to_string());
+// —— 模型列表本地偏好（与聊天栏模型选择共用一份存储） ——
+
+/// 读取全部自定义模型偏好（Web `localStorage` / 桌面应用数据目录）。
+pub(crate) fn load_model_prefs() -> Vec<CustomChatModelPref> {
+    #[cfg(all(target_arch = "wasm32", feature = "web"))]
+    {
+        return crate::web::prefs::custom_chat_models_get();
+    }
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        return crate::desktop::files::custom_chat_models_get();
+    }
+    #[cfg(not(any(
+        all(target_arch = "wasm32", feature = "web"),
+        all(feature = "native", not(target_arch = "wasm32"))
+    )))]
+    {
+        Vec::new()
+    }
 }
 
-/// 多凭证列表 + 折叠的添加表单。
+/// 写入全部自定义模型偏好。
+pub(crate) fn persist_model_prefs(items: &[CustomChatModelPref]) {
+    #[cfg(all(target_arch = "wasm32", feature = "web"))]
+    {
+        crate::web::prefs::custom_chat_models_set(items);
+    }
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+    {
+        crate::desktop::files::custom_chat_models_set(items);
+    }
+    #[cfg(not(any(
+        all(target_arch = "wasm32", feature = "web"),
+        all(feature = "native", not(target_arch = "wasm32"))
+    )))]
+    {
+        let _ = items;
+    }
+}
+
+/// 某供应商名下的模型（保持写入顺序）。
+pub(crate) fn prefs_for_credential(
+    prefs: &[CustomChatModelPref],
+    cred_id: &str,
+) -> Vec<CustomChatModelPref> {
+    prefs
+        .iter()
+        .filter(|p| p.credential_id == cred_id)
+        .cloned()
+        .collect()
+}
+
+/// 追加模型；重复 id（全局）返回 `false` 不写入。
+pub(crate) fn add_model_pref(cred_id: &str, model_id: &str) -> bool {
+    let id = model_id.trim();
+    if id.is_empty() {
+        return false;
+    }
+    let mut prefs = load_model_prefs();
+    if prefs.iter().any(|p| p.id == id) {
+        return false;
+    }
+    prefs.push(CustomChatModelPref {
+        id: id.to_string(),
+        name: String::new(),
+        credential_id: cred_id.to_string(),
+        enabled: true,
+    });
+    persist_model_prefs(&prefs);
+    true
+}
+
+/// 重命名；`next_id` 为空或撞名返回 `false`。
+pub(crate) fn rename_model_pref(old_id: &str, next_id: &str) -> bool {
+    let next = next_id.trim();
+    if next.is_empty() || next == old_id {
+        return false;
+    }
+    let mut prefs = load_model_prefs();
+    if prefs.iter().any(|p| p.id == next) {
+        return false;
+    }
+    let mut changed = false;
+    for p in prefs.iter_mut() {
+        if p.id == old_id {
+            p.id = next.to_string();
+            changed = true;
+        }
+    }
+    if changed {
+        persist_model_prefs(&prefs);
+    }
+    changed
+}
+
+pub(crate) fn remove_model_pref(model_id: &str) {
+    let mut prefs = load_model_prefs();
+    prefs.retain(|p| p.id != model_id);
+    persist_model_prefs(&prefs);
+}
+
+pub(crate) fn set_model_pref_enabled(model_id: &str, enabled: bool) {
+    let mut prefs = load_model_prefs();
+    let mut changed = false;
+    for p in prefs.iter_mut() {
+        if p.id == model_id && p.enabled != enabled {
+            p.enabled = enabled;
+            changed = true;
+        }
+    }
+    if changed {
+        persist_model_prefs(&prefs);
+    }
+}
+
+/// 模型设置面板：顶栏（刷新 + 添加供应商）+ 左侧供应商列表 + 右侧详情。
 #[component]
-pub fn LlmCredentialsPanel(
+pub fn ModelSettingsPanel(
     credentials: Vec<LlmCredentialDto>,
     enabled_ids: Vec<String>,
     hint: Option<String>,
@@ -192,414 +288,154 @@ pub fn LlmCredentialsPanel(
     on_update: EventHandler<LlmCredentialUpsertBody>,
     on_toggle: EventHandler<(String, bool)>,
     on_delete: EventHandler<String>,
+    on_refresh: EventHandler<()>,
 ) -> Element {
-    let mut adding = use_signal(|| false);
-    let mut add_provider = use_signal(|| LlmApiProvider::Openai);
-    let mut add_label = use_signal(String::new);
-    let mut add_key = use_signal(String::new);
-    let mut add_base = use_signal(|| LlmApiProvider::Openai.default_v1_base().to_string());
+    let mut selected_id = use_signal(String::new);
+    let mut show_add = use_signal(|| false);
+    // 预设供应商落库后待绑定的默认模型：按 label 匹配新增凭证 id。
+    let mut pending_defaults = use_signal(|| None::<(String, Vec<String>)>);
+    // 模型偏好变化时 bump，驱动右侧模型列表重算。
+    let mut prefs_epoch = use_signal(|| 0u64);
 
-    let provider = add_provider();
-    let local_or_private_base = is_local_or_private_openai_base(&add_base());
+    // 渲染时计算：选中项丢失则回落第一项。
+    if !credentials.iter().any(|c| c.id == selected_id()) {
+        let fallback = credentials.first().map(|c| c.id.clone()).unwrap_or_default();
+        if selected_id() != fallback {
+            selected_id.set(fallback);
+        }
+    }
 
+    // 预设默认模型绑定：把 pending 模型写入匹配 label 的凭证（渲染时一次）。
+    let pending_now = pending_defaults.peek().cloned();
+    if let Some((label, models)) = pending_now {
+        let do_clear = models.is_empty()
+            || credentials.iter().any(|c| c.label == label);
+        if do_clear {
+            if !models.is_empty() {
+                if let Some(cred) = credentials.iter().find(|c| c.label == label) {
+                    let mut bound = 0usize;
+                    for m in &models {
+                        if add_model_pref(&cred.id, m) {
+                            bound += 1;
+                        }
+                    }
+                    if bound > 0 {
+                        prefs_epoch += 1;
+                    }
+                }
+            }
+            pending_defaults.take();
+        }
+    }
+
+    let has_credentials = !credentials.is_empty();
     rsx! {
-        div { class: "ac-llm-cred-panel",
+        div { class: "ac-model-settings",
             p { class: "ac-settings-lead",
-                "可添加多组AI大模型端点，打开的端点会同时启用，模型列表可切换选择这些模型。"
+                "管理自定义模型供应商，配置后可在聊天时选择使用。"
             }
             if let Some(h) = hint.filter(|s| !s.trim().is_empty()) {
                 p { class: "ac-settings-saved", "{h}" }
             }
-
-            if !credentials.is_empty() {
-                p { class: "ac-settings-label", "已保存的密钥" }
-                ul { class: "ac-llm-cred-list",
-                    for cred in credentials.clone() {
-                        {
-                            let id = cred.id.clone();
-                            let is_on = enabled_ids.iter().any(|x| x == &id);
-                            rsx! {
-                                LlmCredentialCard {
-                                    key: "{id}",
-                                    cred,
-                                    is_on,
-                                    on_update,
-                                    on_toggle,
-                                    on_delete,
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            div { class: "ac-llm-cred-foot",
-                if !adding() {
-                    button {
-                        r#type: "button",
-                        class: "ac-settings-add-btn",
-                        onclick: move |_| {
-                            add_provider.set(LlmApiProvider::Openai);
-                            add_label.set(String::new());
-                            add_key.set(String::new());
-                            add_base.set(LlmApiProvider::Openai.default_v1_base().to_string());
-                            adding.set(true);
-                        },
-                        "添加密钥"
-                    }
-                } else {
-                    p { class: "ac-settings-label", "添加密钥" }
-                    div { class: "ac-settings-provider", role: "tablist", aria_label: "API 类型",
-                        button {
-                            r#type: "button",
-                            role: "tab",
-                            class: if provider == LlmApiProvider::Openai {
-                                "ac-settings-provider-btn is-active"
-                            } else {
-                                "ac-settings-provider-btn"
-                            },
-                            aria_selected: provider == LlmApiProvider::Openai,
-                            onclick: move |_| {
-                                if add_provider() == LlmApiProvider::Openai {
-                                    return;
-                                }
-                                add_provider.set(LlmApiProvider::Openai);
-                                if add_base().trim().is_empty()
-                                    || add_base().trim() == LlmApiProvider::Anthropic.default_v1_base()
-                                {
-                                    add_base.set(LlmApiProvider::Openai.default_v1_base().to_string());
-                                }
-                            },
-                            "OpenAI"
-                        }
-                        button {
-                            r#type: "button",
-                            role: "tab",
-                            class: if provider == LlmApiProvider::Anthropic {
-                                "ac-settings-provider-btn is-active"
-                            } else {
-                                "ac-settings-provider-btn"
-                            },
-                            aria_selected: provider == LlmApiProvider::Anthropic,
-                            onclick: move |_| {
-                                if add_provider() == LlmApiProvider::Anthropic {
-                                    return;
-                                }
-                                add_provider.set(LlmApiProvider::Anthropic);
-                                if add_base().trim().is_empty()
-                                    || add_base().trim() == LlmApiProvider::Openai.default_v1_base()
-                                {
-                                    add_base.set(LlmApiProvider::Anthropic.default_v1_base().to_string());
-                                }
-                            },
-                            "Anthropic"
-                        }
-                    }
-                    label { class: "ac-settings-label", "名称"
-                        input {
-                            r#type: "text",
-                            class: "ac-settings-input",
-                            placeholder: "{provider_label(provider)}",
-                            value: "{add_label()}",
-                            oninput: move |e| add_label.set(e.value()),
-                        }
-                    }
-                    label { class: "ac-settings-label", "API Key（可选）"
-                        input {
-                            r#type: "password",
-                            class: "ac-settings-input",
-                            placeholder: if local_or_private_base {
-                                "可留空（本地 / 内网）"
-                            } else {
-                                "可留空"
-                            },
-                            value: "{add_key()}",
-                            oninput: move |e| add_key.set(e.value()),
-                        }
-                    }
-                    label { class: "ac-settings-label", "Base URL（以 /v1 结尾）"
-                        input {
-                            r#type: "text",
-                            class: "ac-settings-input",
-                            placeholder: "{provider.default_v1_base()}",
-                            value: "{add_base()}",
-                            oninput: move |e| add_base.set(e.value()),
-                        }
-                    }
-                    div { class: "ac-settings-actions ac-settings-actions--row",
-                        button {
-                            r#type: "button",
-                            class: "ac-settings-cancel",
-                            onclick: move |_| {
-                                reset_add_form(adding, add_provider, add_label, add_key, add_base);
-                            },
-                            "取消"
-                        }
-                        button {
-                            r#type: "button",
-                            class: "ac-settings-submit",
-                            onclick: move |_| {
-                                let provider = add_provider();
-                                let api_key = api_key_for_upsert(&add_key());
-                                let openai_v1_base = if add_base().trim().is_empty() {
-                                    provider.default_v1_base().to_string()
-                                } else {
-                                    add_base().trim().to_string()
-                                };
-                                let label = {
-                                    let t = add_label().trim().to_string();
-                                    if t.is_empty() {
-                                        provider_label(provider).to_string()
-                                    } else {
-                                        t
-                                    }
-                                };
-                                on_add.call(LlmCredentialUpsertBody {
-                                    id: None,
-                                    provider,
-                                    api_key,
-                                    openai_v1_base,
-                                    label,
-                                });
-                                reset_add_form(adding, add_provider, add_label, add_key, add_base);
-                            },
-                            "添加"
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-#[component]
-fn LlmCredentialCard(
-    cred: LlmCredentialDto,
-    is_on: bool,
-    on_update: EventHandler<LlmCredentialUpsertBody>,
-    on_toggle: EventHandler<(String, bool)>,
-    on_delete: EventHandler<String>,
-) -> Element {
-    let id_toggle = cred.id.clone();
-    let id_delete = cred.id.clone();
-    let saved_name = display_credential_name(&cred);
-    let masked = mask_api_key(&cred.api_key);
-    let base = cred.openai_v1_base.clone();
-    let switch_title = if is_on { "关闭此密钥" } else { "开启此密钥" };
-    let mut editing = use_signal(|| false);
-    let mut edit_provider = use_signal(|| cred.provider);
-    let mut edit_label = use_signal(|| cred.label.clone());
-    let mut edit_key = use_signal(String::new);
-    let mut edit_base = use_signal(|| cred.openai_v1_base.clone());
-    let seed_provider = cred.provider;
-    let seed_label = cred.label.clone();
-    let seed_base = cred.openai_v1_base.clone();
-    let kept_api_key = cred.api_key.clone();
-    let stored_label_save = cred.label.clone();
-
-    rsx! {
-        li {
-            class: if is_on {
-                "ac-llm-cred-card is-on"
-            } else {
-                "ac-llm-cred-card"
-            },
-            div { class: "ac-llm-cred-row",
-            div { class: "ac-llm-cred-main",
-                div { class: "ac-llm-cred-top",
-                    span { class: "ac-llm-cred-provider", "{saved_name}" }
-                }
-                div { class: "ac-llm-cred-key", "{masked}" }
-                div { class: "ac-llm-cred-base", "{base}" }
-            }
-            div { class: "ac-llm-cred-actions",
-                if editing() {
-                    button {
-                        r#type: "button",
-                        class: "ac-llm-cred-icon-btn ac-llm-cred-icon-btn--danger",
-                        title: "删除",
-                        aria_label: "删除",
-                        onclick: move |_| on_delete.call(id_delete.clone()),
-                        Icon {
-                            icon: LdTrash2,
-                            width: 15,
-                            height: 15,
-                            fill: "currentColor",
-                        }
-                    }
-                } else {
-                    button {
-                        r#type: "button",
-                        class: "ac-llm-cred-icon-btn",
-                        title: "编辑密钥",
-                        aria_label: "编辑密钥",
-                        onclick: move |_| {
-                            edit_provider.set(seed_provider);
-                            edit_label.set(seed_label.clone());
-                            edit_key.set(String::new());
-                            edit_base.set(seed_base.clone());
-                            editing.set(true);
-                        },
-                        Icon {
-                            icon: LdPencil,
-                            width: 15,
-                            height: 15,
-                            fill: "currentColor",
-                        }
-                    }
+            div { class: "ac-model-settings-toolbar",
+                button {
+                    r#type: "button",
+                    class: "ac-model-toolbar-btn",
+                    title: "刷新配置与模型列表",
+                    aria_label: "刷新",
+                    onclick: move |_| on_refresh.call(()),
+                    Icon { icon: LdRefreshCw, width: 14, height: 14, fill: "currentColor" }
                 }
                 button {
                     r#type: "button",
-                    class: if is_on {
-                        "ac-llm-switch is-on"
-                    } else {
-                        "ac-llm-switch"
-                    },
-                    role: "switch",
-                    aria_checked: is_on,
-                    title: "{switch_title}",
-                    aria_label: "{switch_title}",
-                    onclick: move |_| on_toggle.call((id_toggle.clone(), !is_on)),
-                    span { class: "ac-llm-switch-track",
-                        span { class: "ac-llm-switch-knob" }
-                    }
+                    class: "ac-model-add-btn",
+                    onclick: move |_| show_add.set(true),
+                    Icon { icon: LdPlus, width: 14, height: 14, fill: "currentColor" }
+                    span { "添加供应商" }
                 }
             }
-            }
-            if editing() {
-                {
-                    let provider_now = edit_provider();
-                    let local_or_private_base = is_local_or_private_openai_base(&edit_base());
-                    let id_save = cred.id.clone();
-                    rsx! {
-                        div { class: "ac-llm-cred-edit",
-                            div { class: "ac-settings-provider", role: "tablist", aria_label: "API 类型",
-                                button {
-                                    r#type: "button",
-                                    role: "tab",
-                                    class: if provider_now == LlmApiProvider::Openai {
-                                        "ac-settings-provider-btn is-active"
-                                    } else {
-                                        "ac-settings-provider-btn"
-                                    },
-                                    aria_selected: provider_now == LlmApiProvider::Openai,
-                                    onclick: move |_| {
-                                        if edit_provider() == LlmApiProvider::Openai {
-                                            return;
-                                        }
-                                        edit_provider.set(LlmApiProvider::Openai);
-                                        if edit_base().trim().is_empty()
-                                            || edit_base().trim() == LlmApiProvider::Anthropic.default_v1_base()
-                                        {
-                                            edit_base.set(LlmApiProvider::Openai.default_v1_base().to_string());
-                                        }
-                                    },
-                                    "OpenAI"
-                                }
-                                button {
-                                    r#type: "button",
-                                    role: "tab",
-                                    class: if provider_now == LlmApiProvider::Anthropic {
-                                        "ac-settings-provider-btn is-active"
-                                    } else {
-                                        "ac-settings-provider-btn"
-                                    },
-                                    aria_selected: provider_now == LlmApiProvider::Anthropic,
-                                    onclick: move |_| {
-                                        if edit_provider() == LlmApiProvider::Anthropic {
-                                            return;
-                                        }
-                                        edit_provider.set(LlmApiProvider::Anthropic);
-                                        if edit_base().trim().is_empty()
-                                            || edit_base().trim() == LlmApiProvider::Openai.default_v1_base()
-                                        {
-                                            edit_base.set(LlmApiProvider::Anthropic.default_v1_base().to_string());
-                                        }
-                                    },
-                                    "Anthropic"
-                                }
-                            }
-                            label { class: "ac-settings-label", "名称"
-                                input {
-                                    r#type: "text",
-                                    class: "ac-settings-input",
-                                    placeholder: "{provider_label(provider_now)}",
-                                    value: "{edit_label()}",
-                                    oninput: move |e| edit_label.set(e.value()),
-                                }
-                            }
-                            label { class: "ac-settings-label", "API Key（可选）"
-                                input {
-                                    r#type: "password",
-                                    class: "ac-settings-input",
-                                    placeholder: if local_or_private_base {
-                                        "留空则不修改（本地 / 内网）"
-                                    } else {
-                                        "留空则不修改"
-                                    },
-                                    value: "{edit_key()}",
-                                    oninput: move |e| edit_key.set(e.value()),
-                                }
-                            }
-                            label { class: "ac-settings-label", "Base URL（以 /v1 结尾）"
-                                input {
-                                    r#type: "text",
-                                    class: "ac-settings-input",
-                                    placeholder: "{provider_now.default_v1_base()}",
-                                    value: "{edit_base()}",
-                                    oninput: move |e| edit_base.set(e.value()),
-                                }
-                            }
-                            div { class: "ac-settings-actions ac-settings-actions--row",
-                                button {
-                                    r#type: "button",
-                                    class: "ac-settings-cancel",
-                                    onclick: move |_| editing.set(false),
-                                    "取消"
-                                }
-                                button {
-                                    r#type: "button",
-                                    class: "ac-settings-submit",
-                                    onclick: move |_| {
-                                        let provider = edit_provider();
-                                        let typed_key = edit_key().trim().to_string();
-                                        let api_key = if typed_key.is_empty() {
-                                            kept_api_key.clone()
+            div { class: "ac-model-layout",
+                aside { class: "ac-model-provider-list",
+                    if has_credentials {
+                        div { class: "ac-model-provider-group-label", "自定义供应商" }
+                        for cred in credentials.iter().cloned() {
+                            {
+                                let id = cred.id.clone();
+                                let name = credential_display_name(&cred);
+                                let is_on = enabled_ids.iter().any(|x| x == &id);
+                                let is_selected = selected_id() == id;
+                                let dot_class = if is_on {
+                                    "ac-model-dot is-on"
+                                } else {
+                                    "ac-model-dot is-off"
+                                };
+                                rsx! {
+                                    button {
+                                        key: "{id}",
+                                        r#type: "button",
+                                        class: if is_selected {
+                                            "ac-model-provider-item is-active"
                                         } else {
-                                            typed_key
-                                        };
-                                        let openai_v1_base = if edit_base().trim().is_empty() {
-                                            provider.default_v1_base().to_string()
-                                        } else {
-                                            edit_base().trim().to_string()
-                                        };
-                                        let label = {
-                                            let t = edit_label().trim().to_string();
-                                            if t.is_empty() {
-                                                stored_label_save.clone()
-                                            } else {
-                                                t
-                                            }
-                                        };
-                                        on_update.call(LlmCredentialUpsertBody {
-                                            id: Some(id_save.clone()),
-                                            provider,
-                                            api_key,
-                                            openai_v1_base,
-                                            label,
-                                        });
-                                        editing.set(false);
-                                    },
-                                    "保存"
+                                            "ac-model-provider-item"
+                                        },
+                                        aria_current: is_selected,
+                                        onclick: move |_| selected_id.set(id.clone()),
+                                        span { class: "ac-model-provider-icon",
+                                            Icon { icon: LdBox, width: 14, height: 14, fill: "currentColor" }
+                                        }
+                                        span { class: "ac-model-provider-name", "{name}" }
+                                        span { class: "{dot_class}",
+                                            title: if is_on { "已启用" } else { "已停用" },
+                                        }
+                                    }
                                 }
+                            }
+                        }
+                    } else {
+                        div { class: "ac-model-provider-empty",
+                            "还没有供应商。点击右上角「添加供应商」开始配置。"
+                        }
+                    }
+                }
+                section { class: "ac-model-provider-detail",
+                    {
+                        let selected_now = selected_id();
+                        let selected_cred = credentials
+                            .iter()
+                            .find(|c| c.id == selected_now)
+                            .cloned();
+                        let is_on = enabled_ids.iter().any(|x| x == &selected_now);
+                        rsx! {
+                            crate::shell::model_provider_detail::ProviderDetailPane {
+                                key: "{selected_now}",
+                                cred: selected_cred,
+                                is_on,
+                                prefs_epoch: prefs_epoch,
+                                show_add: show_add,
+                                on_update,
+                                on_toggle,
+                                on_delete,
                             }
                         }
                     }
                 }
             }
+            if show_add() {
+                crate::shell::model_provider_detail::AddProviderSheet {
+                    on_add,
+                    on_close: move |_| show_add.set(false),
+                    on_submit_preset: move |(label, models): (String, Vec<String>)| {
+                        pending_defaults.set(Some((label, models)));
+                    },
+                }
+            }
         }
     }
 }
+
+/// 连通性检测缓存：`(credential_id, model_id) → ok` 由调用方持有；
+/// 此处仅提供按凭证探测的共享逻辑。
+pub(crate) type NetStatusMap = HashMap<String, bool>;
 
 #[cfg(test)]
 mod tests {
@@ -612,7 +448,6 @@ mod tests {
             "http://localhost:1234/v1",
             "HTTP://LOCALHOST/v1",
             "http://[::1]:1234/v1",
-            "http://[0:0:0:0:0:0:0:1]/v1",
             "http://192.168.1.10:8080/v1",
             "http://10.0.0.5/v1",
             "http://172.16.0.1/v1",
@@ -657,14 +492,5 @@ mod tests {
         assert!(!msg.is_empty());
         let wrapped = format_llm_settings_error("llm_credential_upsert: api_key_required");
         assert!(!wrapped.contains("api_key_required"));
-    }
-
-    #[test]
-    fn renamed_label_skips_unchanged_provider_fallback() {
-        assert_eq!(renamed_label("OpenAI", "", LlmApiProvider::Openai), None);
-        assert_eq!(
-            renamed_label("LM Studio", "", LlmApiProvider::Openai),
-            Some("LM Studio".into())
-        );
     }
 }

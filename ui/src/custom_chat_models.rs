@@ -1,8 +1,13 @@
-//! 自定义聊天模型本地偏好：模型 ID、展示名、可选已保存密钥 id。
+//! 自定义聊天模型本地偏好：模型 ID、展示名、可选已保存密钥 id、启用开关。
 //!
-//! 兼容旧格式 `["model-a","model-b"]`（无名称、无密钥绑定）。
+//! 兼容旧格式 `["model-a","model-b"]`（无名称、无密钥绑定）与
+//! 早期对象格式（无 `enabled` 字段，视为启用）。
 
 use serde::{Deserialize, Serialize};
+
+fn default_enabled() -> bool {
+    true
+}
 
 /// 一条自定义模型记录。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -12,6 +17,20 @@ pub struct CustomChatModelPref {
     pub name: String,
     #[serde(default)]
     pub credential_id: String,
+    /// 模型设置页每行的启用开关；关闭后不出现在聊天栏模型列表。
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+}
+
+impl CustomChatModelPref {
+    pub fn new(id: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            name: String::new(),
+            credential_id: String::new(),
+            enabled: true,
+        }
+    }
 }
 
 pub fn parse_custom_chat_models_json(raw: &str) -> Vec<CustomChatModelPref> {
@@ -40,6 +59,7 @@ pub fn parse_custom_chat_models_json(raw: &str) -> Vec<CustomChatModelPref> {
             id,
             name: String::new(),
             credential_id: String::new(),
+            enabled: true,
         })
         .collect()
 }
@@ -51,6 +71,7 @@ pub fn serialize_custom_chat_models_json(items: &[CustomChatModelPref]) -> Optio
             id: r.id.trim().to_string(),
             name: r.name.trim().to_string(),
             credential_id: r.credential_id.trim().to_string(),
+            enabled: r.enabled,
         })
         .filter(|r| !r.id.is_empty())
         .collect();
@@ -73,12 +94,14 @@ mod tests {
                 CustomChatModelPref {
                     id: "foo".into(),
                     name: String::new(),
-                    credential_id: String::new()
+                    credential_id: String::new(),
+                    enabled: true,
                 },
                 CustomChatModelPref {
                     id: "bar".into(),
                     name: String::new(),
-                    credential_id: String::new()
+                    credential_id: String::new(),
+                    enabled: true,
                 },
             ]
         );
@@ -92,6 +115,7 @@ mod tests {
         assert_eq!(got[0].id, "local-qwen");
         assert_eq!(got[0].name, "Qwen");
         assert_eq!(got[0].credential_id, "cred-1");
+        assert!(got[0].enabled, "缺省 enabled 字段应视为启用");
     }
 
     #[test]
@@ -102,5 +126,27 @@ mod tests {
         assert_eq!(got[0].id, "local-qwen");
         assert_eq!(got[0].name, "");
         assert_eq!(got[0].credential_id, "cred-1");
+    }
+
+    #[test]
+    fn parses_enabled_flag() {
+        let got = parse_custom_chat_models_json(
+            r#"[{"id":"a","enabled":false},{"id":"b","enabled":true}]"#,
+        );
+        assert!(!got[0].enabled);
+        assert!(got[1].enabled);
+    }
+
+    #[test]
+    fn round_trips_enabled_flag() {
+        let items = vec![CustomChatModelPref {
+            id: "m1".into(),
+            name: "M1".into(),
+            credential_id: "c1".into(),
+            enabled: false,
+        }];
+        let json = serialize_custom_chat_models_json(&items).unwrap();
+        let got = parse_custom_chat_models_json(&json);
+        assert_eq!(got, items);
     }
 }

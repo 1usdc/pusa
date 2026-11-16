@@ -159,6 +159,7 @@ fn persist_custom_chat_models(items: &[CustomChatModelPref]) {
 fn custom_chat_model_entries() -> Vec<ChatModelEntry> {
     load_custom_chat_models()
         .into_iter()
+        .filter(|r| r.enabled)
         .map(|r| {
             let cred = r.credential_id.trim();
             let name = r.name.trim();
@@ -441,6 +442,9 @@ async fn probe_chat_models_network(models: &[ChatModelEntry]) -> HashMap<String,
 }
 
 fn persist_custom_from_models(models: &[ChatModelEntry]) {
+    // 保留既有 enabled 状态：聊天栏只改 id / 名称 / 绑定，不碰模型设置页的开关。
+    let prev_enabled: std::collections::HashSet<String> =
+        load_custom_chat_models().into_iter().filter(|p| p.enabled).map(|p| p.id).collect();
     let items: Vec<CustomChatModelPref> = models
         .iter()
         .filter(|m| m.custom)
@@ -448,6 +452,7 @@ fn persist_custom_from_models(models: &[ChatModelEntry]) {
             id: m.id.clone(),
             name: m.display_name.clone().unwrap_or_default(),
             credential_id: m.source_credential_id.clone().unwrap_or_default(),
+            enabled: !prev_enabled.contains(&m.id),
         })
         .collect();
     persist_custom_chat_models(&items);
@@ -1876,6 +1881,9 @@ const AC_CHAT_THREAD_DOM_ID: &str = "ac-chat-thread";
 const CHAT_JUMP_BOTTOM_SHOW_PX: f64 = 160.0;
 /// 已显示时，距底部低于该像素才隐藏（须小于 `CHAT_JUMP_BOTTOM_SHOW_PX`）。
 const CHAT_JUMP_BOTTOM_HIDE_PX: f64 = 80.0;
+/// 流式跟随判定阈值：距底部不超过该像素视为「吸附在底部」，内容增高时自动跟随置底；
+/// 用户上翻超出该距离后停止跟随，滚回该范围内自动恢复。
+const CHAT_FOLLOW_BOTTOM_PIN_PX: f64 = 48.0;
 
 /// 侧栏默认宽度（像素），与 `main.css` 中 `.ac-sidebar` 一致。
 const AC_SIDEBAR_DEFAULT_WIDTH_PX: f64 = 280.0;
@@ -2231,6 +2239,72 @@ fn chat_thread_show_jump_from_dom(currently_shown: bool) -> Option<bool> {
         f64::from(he.scroll_height()),
         f64::from(he.client_height()),
         currently_shown,
+    )
+}
+
+/// 流式吸底常驻监听 JS：内容增高且用户仍贴底（距底 ≤ [`CHAT_FOLLOW_BOTTOM_PIN_PX`]）时自动跟随置底。
+/// 用户上翻脱离底部即暂停跟随，滚回底部附近自动恢复；线程元素被 Dioxus 重建时自动重绑。
+/// 修复背景：此前只有一次性置底（`chat_scroll_bottom_request` 在回合开始 bump 一次），
+/// 流式 delta 使消息增高时无人滚动，导致回复过程中必须手动下拉。Web / 桌面共用同一 JS。
+fn chat_follow_bottom_listen_js() -> String {
+    format!(
+        r#"(async () => {{
+  const PIN_PX = {pin};
+  const ID = '{id}';
+  let el = null;
+  let pinned = true;
+  let rafQueued = false;
+  let ro = null;
+  let mo = null;
+
+  const dist = () => Math.max(0, el.scrollHeight - el.scrollTop - el.clientHeight);
+
+  // rAF 合并同一帧内的多次 mutation，避免逐 delta 强制回流。
+  const stick = () => {{
+    if (!pinned || !el || rafQueued) return;
+    rafQueued = true;
+    requestAnimationFrame(() => {{
+      rafQueued = false;
+      if (!pinned || !el) return;
+      el.scrollTop = el.scrollHeight;
+    }});
+  }};
+
+  // 贴底状态只由用户/程序滚动事件驱动：距底 ≤ PIN_PX 视为贴底，脱离即暂停跟随。
+  const onScroll = () => {{
+    if (!el) return;
+    pinned = dist() <= PIN_PX;
+  }};
+
+  const unbind = () => {{
+    if (!el) return;
+    el.removeEventListener('scroll', onScroll);
+    if (ro) {{ try {{ ro.disconnect(); }} catch (_) {{}} ro = null; }}
+    if (mo) {{ try {{ mo.disconnect(); }} catch (_) {{}} mo = null; }}
+    el = null;
+  }};
+
+  const bind = () => {{
+    const next = document.getElementById(ID);
+    if (!next || next === el) return;
+    unbind();
+    el = next;
+    el.addEventListener('scroll', onScroll, {{ passive: true }});
+    ro = new ResizeObserver(stick);
+    ro.observe(el);
+    mo = new MutationObserver(stick);
+    mo.observe(el, {{ childList: true, subtree: true, characterData: true }});
+    // 从当前几何状态推断贴底与否，避免元素重建后误把用户拉到底部。
+    pinned = dist() <= PIN_PX;
+    if (pinned) el.scrollTop = el.scrollHeight;
+  }};
+
+  bind();
+  const root = new MutationObserver(bind);
+  root.observe(document.documentElement, {{ childList: true, subtree: true }});
+}})()"#,
+        pin = CHAT_FOLLOW_BOTTOM_PIN_PX,
+        id = AC_CHAT_THREAD_DOM_ID,
     )
 }
 
@@ -3150,11 +3224,8 @@ fn WebShellTitlebar(
 ) -> Element {
     let ctx = use_context::<crate::web::ShellChromeCtx>();
     let mut show_settings_modal = ctx.show_settings_modal;
-    let mut show_about_modal = ctx.show_about_modal;
-    let mut show_titlebar_settings_menu = ctx.show_titlebar_settings_menu;
-    // 设置 API Key 入口：在设置中配置 OpenAI 兼容接口凭证。
+    // 设置入口为整页直入：齿轮即开（设置页内含主题 / API 密钥 / 关于分区）。
     let _developer_mode = ctx.developer_mode;
-    let mut ui_theme = use_signal(crate::shell::theme::load);
     let sidebar_switch_on = show_sidebar() && !sidebar_shutting_down();
     let chat_switch_on = show_chat();
     let center_switch_on = show_center();
@@ -3296,48 +3367,10 @@ fn WebShellTitlebar(
                     div { class: "ac-web-titlebar-settings-wrap",
                         button {
                             r#type: "button",
-                            class: if show_titlebar_settings_menu() {
-                                "ac-web-titlebar-btn is-menu-open"
-                            } else {
-                                "ac-web-titlebar-btn"
-                            },
+                            class: "ac-web-titlebar-btn",
                             title: "设置",
-                            aria_expanded: show_titlebar_settings_menu(),
-                            aria_haspopup: "menu",
-                            onclick: move |_| show_titlebar_settings_menu.toggle(),
+                            onclick: move |_| show_settings_modal.set(true),
                             Icon { icon: BsGear, width: 16, height: 16, fill: "currentColor", class: "ac-web-titlebar-icon" }
-                        }
-                        if show_titlebar_settings_menu() {
-                            div {
-                                class: "ac-web-titlebar-menu-backdrop",
-                                onclick: move |_| show_titlebar_settings_menu.set(false),
-                            }
-                            div { class: "ac-web-titlebar-menu", role: "menu",
-                                button {
-                                    r#type: "button",
-                                    role: "menuitem",
-                                    class: "ac-web-titlebar-menu__item",
-                                    onclick: move |_| {
-                                        show_titlebar_settings_menu.set(false);
-                                        show_settings_modal.set(true);
-                                    },
-                                    "API 密钥"
-                                }
-                                crate::shell::theme::TitlebarThemeToggle {
-                                    ui_theme,
-                                    show_titlebar_settings_menu,
-                                }
-                                button {
-                                    r#type: "button",
-                                    role: "menuitem",
-                                    class: "ac-web-titlebar-menu__item",
-                                    onclick: move |_| {
-                                        show_titlebar_settings_menu.set(false);
-                                        show_about_modal.set(true);
-                                    },
-                                    "关于本机"
-                                }
-                            }
                         }
                     }
                 }
@@ -4124,6 +4157,16 @@ pub fn Console(
                 };
                 set_show_jump_bottom(show_jump_bottom, show);
             }
+        });
+    });
+
+    // 流式吸底：常驻 JS 监听 `#ac-chat-thread` 内容增高，贴底时自动跟随置底。
+    // Web / 桌面共用同一 JS（fire-and-forget，不接收消息）。
+    // 只在挂载时执行一次；元素重建由 JS 内部 MutationObserver 重绑。
+    use_effect(move || {
+        let js = chat_follow_bottom_listen_js();
+        spawn(async move {
+            let _ = dioxus::document::eval(&js).await;
         });
     });
 

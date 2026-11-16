@@ -259,48 +259,10 @@ pub fn NativeTitleBar(
                 div { class: "ac-web-titlebar-settings-wrap",
                     button {
                         r#type: "button",
-                        class: if show_titlebar_settings_menu() {
-                            "ac-web-titlebar-btn is-menu-open"
-                        } else {
-                            "ac-web-titlebar-btn"
-                        },
+                        class: "ac-web-titlebar-btn",
                         title: "设置",
-                        aria_expanded: show_titlebar_settings_menu(),
-                        aria_haspopup: "menu",
-                        onclick: move |_| show_titlebar_settings_menu.toggle(),
+                        onclick: move |_| show_settings_modal.set(true),
                         Icon { icon: BsGear, width: 12, height: 12, fill: "currentColor", class: "ac-web-titlebar-icon" }
-                    }
-                    if show_titlebar_settings_menu() {
-                        div {
-                            class: "ac-web-titlebar-menu-backdrop",
-                            onclick: move |_| show_titlebar_settings_menu.set(false),
-                        }
-                        div { class: "ac-web-titlebar-menu", role: "menu",
-                            button {
-                                r#type: "button",
-                                role: "menuitem",
-                                class: "ac-web-titlebar-menu__item",
-                                onclick: move |_| {
-                                    show_titlebar_settings_menu.set(false);
-                                    show_settings_modal.set(true);
-                                },
-                                "API 密钥"
-                            }
-                            TitlebarThemeToggle {
-                                    ui_theme,
-                                    show_titlebar_settings_menu,
-                                }
-                            button {
-                                r#type: "button",
-                                role: "menuitem",
-                                class: "ac-web-titlebar-menu__item",
-                                onclick: move |_| {
-                                    show_titlebar_settings_menu.set(false);
-                                    show_about_modal.set(true);
-                                },
-                                "关于本机"
-                            }
-                        }
                     }
                 }
             }

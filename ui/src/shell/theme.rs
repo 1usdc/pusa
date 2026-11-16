@@ -103,6 +103,11 @@ pub fn set(theme: UiTheme) {
     apply_dom(theme);
 }
 
+/// 读取当前主题并在亮 / 暗之间切换（供设置页一键切换按钮使用）。
+pub fn toggle() {
+    set(load().opposite());
+}
+
 /// 启动时恢复主题到 DOM。
 pub fn restore_on_launch() {
     apply_dom(load());

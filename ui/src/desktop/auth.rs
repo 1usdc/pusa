@@ -1,4 +1,7 @@
-//! 桌面端应用壳层：设置/关于模态 + 标题栏，无登录门禁。
+//! 桌面端应用壳层：设置整页 / 关于模态 + 标题栏，无登录门禁。
+//!
+//! 设置整页为标准「左侧菜单 + 右侧内容」布局：
+//! 通用（主题）/ 模型设置（模型供应商）/ 关于（版本信息）。
 #![cfg(all(feature = "native", not(target_arch = "wasm32")))]
 
 use dioxus::document;
@@ -9,8 +12,8 @@ use crate::desktop::agent;
 use crate::shell::toast::{use_init_toast_ctx, use_toast, ToastViewport};
 use crate::shell::{
     activate_id_after_toggle, enabled_after_delete, enabled_after_toggle, enabled_after_upsert,
-    format_llm_settings_error, overlay_enabled_credential_ids, LlmCredentialsPanel,
-    LlmModelsRefresh,
+    format_llm_settings_error, overlay_enabled_credential_ids, LlmModelsRefresh,
+    ModelSettingsPanel, SettingsInfoRow, SettingsNavShell, SettingsSection, ThemePickerCard,
 };
 use crate::Console;
 
@@ -27,6 +30,7 @@ fn apply_cfg(
     enabled_ids.set(enabled);
 }
 
+/// 桌面端设置整页：左侧菜单（通用 / 模型设置 / 关于）+ 右侧内容。
 #[component]
 fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
     let toast = use_toast();
@@ -35,6 +39,30 @@ fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
     let mut enabled_ids = use_signal(Vec::<String>::new);
     let mut load_hint = use_signal(|| None::<String>);
     let refresh = use_context::<LlmModelsRefresh>().0;
+
+    // 左侧菜单当前分区；打开时默认进入模型设置。
+    let mut section = use_signal(|| SettingsSection::ModelSettings);
+
+    // 通用分区：主题分段选择。
+    let ui_theme = use_signal(crate::shell::theme::load);
+
+    // 关于分区：本地直接读取版本 / 系统 / 架构。
+    let about_rows = use_signal(|| {
+        vec![
+            SettingsInfoRow {
+                label: "版本号".into(),
+                value: crate::version::app_version(),
+            },
+            SettingsInfoRow {
+                label: "系统".into(),
+                value: std::env::consts::OS.to_string(),
+            },
+            SettingsInfoRow {
+                label: "架构".into(),
+                value: std::env::consts::ARCH.to_string(),
+            },
+        ]
+    });
 
     use_effect(move || {
         spawn(async move {
@@ -49,114 +77,161 @@ fn DesktopSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
     });
 
     rsx! {
-        div { class: "ac-settings-card ac-settings-card--wide",
-            div { class: "ac-settings-head",
-                h1 { class: "ac-settings-title", "API 密钥" }
-                button {
-                    r#type: "button",
-                    class: "ac-settings-close",
-                    title: "关闭",
-                    aria_label: "关闭设置",
-                    onclick: move |_| show_settings_modal.set(false),
-                    "×"
-                }
+        SettingsNavShell {
+            active: section,
+            on_close: move |_| show_settings_modal.set(false),
+            if section() == SettingsSection::General {
+                ThemePickerCard { ui_theme }
             }
-            LlmCredentialsPanel {
-                credentials: credentials(),
-                enabled_ids: enabled_ids(),
-                hint: load_hint(),
-                on_update: move |body: LlmCredentialUpsertBody| {
-                    spawn(async move {
-                        let prev_ids: Vec<String> =
-                            credentials().iter().map(|c| c.id.clone()).collect();
-                        let prev_enabled = enabled_ids();
-                        match async { agent::runtime_ctx()?.llm_credential_upsert(body).await }.await {
-                            Ok(cfg) => {
-                                let new_ids: Vec<String> =
-                                    cfg.credentials.iter().map(|c| c.id.clone()).collect();
-                                apply_cfg(cfg, credentials, active_id, enabled_ids);
-                                enabled_ids.set(enabled_after_upsert(
-                                    &prev_enabled,
-                                    &prev_ids,
-                                    &new_ids,
-                                    refresh,
-                                ));
-                                load_hint.set(None);
-                                toast.success("已更新密钥");
+            if section() == SettingsSection::ModelSettings {
+                ModelSettingsPanel {
+                    credentials: credentials(),
+                    enabled_ids: enabled_ids(),
+                    hint: load_hint(),
+                    on_refresh: move |_| {
+                        spawn(async move {
+                            match async { agent::runtime_ctx()?.llm_config_get().await }.await {
+                                Ok(cfg) => {
+                                    apply_cfg(cfg, credentials, active_id, enabled_ids);
+                                    load_hint.set(None);
+                                    toast.success("已刷新");
+                                }
+                                Err(err) => load_hint.set(Some(format_llm_settings_error(
+                                    &err.to_string(),
+                                ))),
                             }
-                            Err(err) => {
-                                load_hint.set(Some(format_llm_settings_error(&err.to_string())))
-                            }
-                        }
-                    });
-                },
-                on_add: move |body: LlmCredentialUpsertBody| {
-                    spawn(async move {
-                        let prev_ids: Vec<String> =
-                            credentials().iter().map(|c| c.id.clone()).collect();
-                        let prev_enabled = enabled_ids();
-                        match async { agent::runtime_ctx()?.llm_credential_upsert(body).await }.await {
-                            Ok(cfg) => {
-                                let new_ids: Vec<String> =
-                                    cfg.credentials.iter().map(|c| c.id.clone()).collect();
-                                apply_cfg(cfg, credentials, active_id, enabled_ids);
-                                enabled_ids.set(enabled_after_upsert(
-                                    &prev_enabled,
-                                    &prev_ids,
-                                    &new_ids,
-                                    refresh,
-                                ));
-                                load_hint.set(None);
-                                toast.success("已添加密钥");
-                            }
-                            Err(err) => {
-                                load_hint.set(Some(format_llm_settings_error(&err.to_string())))
-                            }
-                        }
-                    });
-                },
-                on_toggle: move |(id, on): (String, bool)| {
-                    spawn(async move {
-                        let next = enabled_after_toggle(&enabled_ids(), &id, on, refresh);
-                        enabled_ids.set(next.clone());
-                        if let Some(activate) =
-                            activate_id_after_toggle(&next, &active_id(), &id, on)
-                        {
+                        });
+                    },
+                    on_update: move |body: LlmCredentialUpsertBody| {
+                        spawn(async move {
+                            let prev_ids: Vec<String> =
+                                credentials().iter().map(|c| c.id.clone()).collect();
+                            let prev_enabled = enabled_ids();
                             match async {
-                                agent::runtime_ctx()?.llm_credential_activate(&activate).await
+                                agent::runtime_ctx()?.llm_credential_upsert(body).await
                             }
                             .await
                             {
                                 Ok(cfg) => {
+                                    let new_ids: Vec<String> =
+                                        cfg.credentials.iter().map(|c| c.id.clone()).collect();
                                     apply_cfg(cfg, credentials, active_id, enabled_ids);
-                                    enabled_ids.set(next);
+                                    enabled_ids.set(enabled_after_upsert(
+                                        &prev_enabled,
+                                        &prev_ids,
+                                        &new_ids,
+                                        refresh,
+                                    ));
                                     load_hint.set(None);
+                                    toast.success("已保存供应商");
                                 }
                                 Err(err) => {
-                                    load_hint.set(Some(format_llm_settings_error(&err.to_string())))
+                                    load_hint.set(Some(format_llm_settings_error(
+                                        &err.to_string(),
+                                    )))
                                 }
                             }
-                        }
-                    });
-                },
-                on_delete: move |id: String| {
-                    spawn(async move {
-                        let prev_enabled = enabled_ids();
-                        match async { agent::runtime_ctx()?.llm_credential_delete(&id).await }.await {
-                            Ok(cfg) => {
-                                let known: Vec<String> =
-                                    cfg.credentials.iter().map(|c| c.id.clone()).collect();
-                                apply_cfg(cfg, credentials, active_id, enabled_ids);
-                                enabled_ids.set(enabled_after_delete(&prev_enabled, &known, refresh));
-                                load_hint.set(None);
-                                toast.success("已删除密钥");
+                        });
+                    },
+                    on_add: move |body: LlmCredentialUpsertBody| {
+                        spawn(async move {
+                            let prev_ids: Vec<String> =
+                                credentials().iter().map(|c| c.id.clone()).collect();
+                            let prev_enabled = enabled_ids();
+                            match async {
+                                agent::runtime_ctx()?.llm_credential_upsert(body).await
                             }
-                            Err(err) => {
-                                load_hint.set(Some(format_llm_settings_error(&err.to_string())))
+                            .await
+                            {
+                                Ok(cfg) => {
+                                    let new_ids: Vec<String> =
+                                        cfg.credentials.iter().map(|c| c.id.clone()).collect();
+                                    apply_cfg(cfg, credentials, active_id, enabled_ids);
+                                    enabled_ids.set(enabled_after_upsert(
+                                        &prev_enabled,
+                                        &prev_ids,
+                                        &new_ids,
+                                        refresh,
+                                    ));
+                                    load_hint.set(None);
+                                    toast.success("已添加供应商");
+                                }
+                                Err(err) => {
+                                    load_hint.set(Some(format_llm_settings_error(
+                                        &err.to_string(),
+                                    )))
+                                }
                             }
+                        });
+                    },
+                    on_toggle: move |(id, on): (String, bool)| {
+                        spawn(async move {
+                            let next = enabled_after_toggle(&enabled_ids(), &id, on, refresh);
+                            enabled_ids.set(next.clone());
+                            if let Some(activate) =
+                                activate_id_after_toggle(&next, &active_id(), &id, on)
+                            {
+                                match async {
+                                    agent::runtime_ctx()?.llm_credential_activate(&activate)
+                                        .await
+                                }
+                                .await
+                                {
+                                    Ok(cfg) => {
+                                        apply_cfg(cfg, credentials, active_id, enabled_ids);
+                                        enabled_ids.set(next);
+                                        load_hint.set(None);
+                                    }
+                                    Err(err) => {
+                                        load_hint.set(Some(format_llm_settings_error(
+                                            &err.to_string(),
+                                        )))
+                                    }
+                                }
+                            }
+                        });
+                    },
+                    on_delete: move |id: String| {
+                        spawn(async move {
+                            let prev_enabled = enabled_ids();
+                            match async {
+                                agent::runtime_ctx()?.llm_credential_delete(&id).await
+                            }
+                            .await
+                            {
+                                Ok(cfg) => {
+                                    let known: Vec<String> =
+                                        cfg.credentials.iter().map(|c| c.id.clone()).collect();
+                                    apply_cfg(cfg, credentials, active_id, enabled_ids);
+                                    enabled_ids.set(enabled_after_delete(
+                                        &prev_enabled,
+                                        &known,
+                                        refresh,
+                                    ));
+                                    load_hint.set(None);
+                                    toast.success("已删除供应商");
+                                }
+                                Err(err) => {
+                                    load_hint.set(Some(format_llm_settings_error(
+                                        &err.to_string(),
+                                    )))
+                                }
+                            }
+                        });
+                    },
+                }
+            }
+            if section() == SettingsSection::About {
+                div { class: "ac-settings-card ac-settings-card--wide ac-settings-card--page",
+                    div { class: "ac-settings-head",
+                        h1 { class: "ac-settings-title", "版本信息" }
+                    }
+                    dl { class: "ac-settings-about-dl ac-settings-about-dl--flat",
+                        for row in about_rows() {
+                            crate::shell::SettingsInfoRowView { row }
                         }
-                    });
-                },
+                    }
+                }
             }
         }
     }
@@ -301,8 +376,6 @@ pub fn DesktopAppShell() -> Element {
 
     use_effect(move || {
         let host_css = serde_json::to_string(desktop_host_shell_css()).unwrap_or_else(|_| "\"\"".to_string());
-        let font_css = serde_json::to_string(&crate::source_han_sans_hwsc_font_face_css())
-            .unwrap_or_else(|_| "\"\"".to_string());
         let js = format!(
             r#"(() => {{
   const upsert = (id, css) => {{
@@ -315,10 +388,8 @@ pub fn DesktopAppShell() -> Element {
     if (el.textContent !== css) el.textContent = css;
   }};
   upsert('ac-native-host-shell-style', {host_css});
-  upsert('ac-native-font-face-style', {font_css});
 }})();"#,
             host_css = host_css,
-            font_css = font_css,
         );
         let _ = document::eval(&js);
     });
@@ -327,25 +398,11 @@ pub fn DesktopAppShell() -> Element {
         document::Title { "Pusa" }
         document::Link {
             rel: "stylesheet",
-            href: "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap",
-        }
-        document::Link {
-            rel: "stylesheet",
             href: "https://cdnjs.cloudflare.com/ajax/libs/simple-line-icons/2.5.5/css/simple-line-icons.min.css",
         }
         document::Link {
-            rel: "preload",
-            href: crate::SOURCE_HAN_SANS_HWSC_REGULAR,
-            r#as: "font",
-            crossorigin: "anonymous",
+            rel: "icon", r#type: "image/x-icon", href: crate::FAVICON
         }
-        document::Link {
-            rel: "preload",
-            href: crate::SOURCE_HAN_SANS_HWSC_BOLD,
-            r#as: "font",
-            crossorigin: "anonymous",
-        }
-        document::Link { rel: "icon", r#type: "image/x-icon", href: crate::FAVICON }
         document::Link { rel: "apple-touch-icon", sizes: "180x180", href: crate::APPLE_TOUCH_ICON }
         document::Link { rel: "stylesheet", href: crate::COLORS_CSS }
         document::Link { rel: "stylesheet", href: crate::MAIN_CSS }
@@ -384,7 +441,7 @@ pub fn DesktopAppShell() -> Element {
     if (left) await new Promise((r) => setTimeout(r, left));
     requestAnimationFrame(() => requestAnimationFrame(finish));
   })();
-})();"#,
+})();"#
                 );
             },
             crate::desktop::chrome::NativeTitleBar {
@@ -408,15 +465,7 @@ pub fn DesktopAppShell() -> Element {
             }
             crate::StatusBar { show_terminal, active_file_path, active_role_name }
             if show_settings_modal() {
-                div { class: "ac-settings-modal-root",
-                    div {
-                        class: "ac-settings-modal-backdrop",
-                        onclick: move |_| show_settings_modal.set(false),
-                    }
-                    div { class: "ac-settings-modal-dialog",
-                        DesktopSettingsPage { show_settings_modal }
-                    }
-                }
+                DesktopSettingsPage { show_settings_modal }
             }
             if show_about_modal() {
                 DesktopAboutModal { show_about_modal }

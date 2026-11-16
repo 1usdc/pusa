@@ -10,6 +10,7 @@ mod version;
 mod icons;
 mod chat;
 mod custom_chat_models;
+mod model_presets;
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
 pub mod components;
 mod persona;
@@ -42,24 +43,6 @@ const MAIN_CSS: Asset = asset!("/assets/css/main.css");
 const DX_COMPONENTS_THEME_CSS: Asset = asset!("/assets/css/dx-components-theme.css");
 #[cfg(any(all(target_arch = "wasm32", feature = "web"), all(not(target_arch = "wasm32"), feature = "native")))]
 const TAILWIND_CSS: Asset = asset!("/assets/css/tailwind.css");
-
-/// 中文正文：Source Han Sans HW SC Regular。
-#[cfg(any(all(target_arch = "wasm32", feature = "web"), all(not(target_arch = "wasm32"), feature = "native")))]
-const SOURCE_HAN_SANS_HWSC_REGULAR: Asset = asset!("/assets/fonts/SourceHanSansHWSC-Regular.otf");
-/// 中文加粗：Source Han Sans HW SC Bold。
-#[cfg(any(all(target_arch = "wasm32", feature = "web"), all(not(target_arch = "wasm32"), feature = "native")))]
-const SOURCE_HAN_SANS_HWSC_BOLD: Asset = asset!("/assets/fonts/SourceHanSansHWSC-Bold.otf");
-
-/// 将 `asset!` 解析后的 URL 写入 `@font-face`，与 `rel=preload` 同源，避免 `main.css` 写死 `/assets/fonts/…` 在 dx 下 404/HTML。
-#[cfg(any(all(target_arch = "wasm32", feature = "web"), all(not(target_arch = "wasm32"), feature = "native")))]
-fn source_han_sans_hwsc_font_face_css() -> String {
-    format!(
-        r#"@font-face{{font-family:"Source Han Sans HW SC";src:url("{regular}")format("opentype");font-weight:400;font-style:normal;font-display:swap;}}@font-face{{font-family:"Source Han Sans HW SC";src:url("{bold}")format("opentype");font-weight:700;font-style:normal;font-display:swap;}}"#,
-        regular = SOURCE_HAN_SANS_HWSC_REGULAR,
-        bold = SOURCE_HAN_SANS_HWSC_BOLD,
-    )
-}
-
 
 #[cfg(all(
     feature = "native",
@@ -135,25 +118,8 @@ fn WebAppShell() -> Element {
         {native_host_shell_style()}
         document::Link {
             rel: "stylesheet",
-            href: "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap",
-        }
-        document::Link {
-            rel: "stylesheet",
             href: "https://cdnjs.cloudflare.com/ajax/libs/simple-line-icons/2.5.5/css/simple-line-icons.min.css",
         }
-        document::Link {
-            rel: "preload",
-            href: SOURCE_HAN_SANS_HWSC_REGULAR,
-            r#as: "font",
-            crossorigin: "anonymous",
-        }
-        document::Link {
-            rel: "preload",
-            href: SOURCE_HAN_SANS_HWSC_BOLD,
-            r#as: "font",
-            crossorigin: "anonymous",
-        }
-        document::Style { "{source_han_sans_hwsc_font_face_css()}" }
         document::Link { rel: "icon", r#type: "image/x-icon", href: FAVICON }
         document::Link { rel: "apple-touch-icon", sizes: "180x180", href: APPLE_TOUCH_ICON }
         document::Link { rel: "stylesheet", href: COLORS_CSS }
@@ -173,15 +139,7 @@ fn WebAppShell() -> Element {
             }
             StatusBar { show_terminal, active_file_path, active_role_name }
             if show_settings_modal() {
-                div { class: "ac-settings-modal-root",
-                    div {
-                        class: "ac-settings-modal-backdrop",
-                        onclick: move |_| show_settings_modal.set(false),
-                    }
-                    div { class: "ac-settings-modal-dialog",
-                        WebSettingsPage { show_settings_modal }
-                    }
-                }
+                WebSettingsPage { show_settings_modal }
             }
             if show_about_modal() {
                 WebAboutModal { show_about_modal }
