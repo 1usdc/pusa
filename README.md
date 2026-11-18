@@ -8,7 +8,7 @@ Pusa 是一套 Agent 控制台，同时提供**桌面端**与 **Web** 两种形�
 
 | 平台 | 安装包 | 说明 |
 |------|--------|------|
-| macOS（Apple Silicon） | `Pusa-1.1.4-macos-arm64.dmg` | 打开后把 Pusa 拖进「应用程序」 |
+| macOS（Apple Silicon） | `Pusa-1.1.7-macos-arm64.dmg` | 打开后把 Pusa 拖进「应用程序」 |
 | Windows（x64） | `Pusa-win-x64-Setup.exe`| 双击安装；缺少 WebView2 时安装器会引导 |
 
 桌面端支持应用内更新，安装后可在窗口底部状态栏检查并升级，无需重新下载安装包。
