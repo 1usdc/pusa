@@ -9,16 +9,14 @@ mod thinking;
 pub(crate) mod transport_wasm;
 mod ui;
 
-#[cfg(target_arch = "wasm32")]
-pub use attachments::attachment_from_bytes;
 #[cfg(not(target_arch = "wasm32"))]
 pub use attachments::desktop_paste;
-#[cfg(target_arch = "wasm32")]
-pub use attachments::wasm_paste;
 pub use attachments::{
-    attachment_from_file_data, attachment_from_path, attachment_from_terminal_selection,
-    parse_user_message_segments, ChatPendingAttachment, ChatUserSeg,
+    attachment_from_file_data, attachment_from_path, parse_user_message_segments,
+    ChatPendingAttachment, ChatUserSeg,
 };
+#[cfg(not(target_arch = "wasm32"))]
+pub use attachments::attachment_from_terminal_selection;
 pub use composer_ce::{
     ce_clear, ce_clear_now, ce_focus_end, ce_insert_chip, ce_insert_text, ce_restore_take,
     ce_set_html, ce_set_html_wait, ce_take, chip_html, compose_user_payload, composer_seed_html,

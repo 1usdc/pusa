@@ -1590,6 +1590,4 @@ pub(crate) const CHAT_CODE_ACTIONS: &str = "flex shrink-0 items-center gap-[0.1r
 
 pub(crate) const CHAT_CODE_BTN: &str = "inline-flex items-center gap-[0.28rem] px-[0.4rem] py-[0.22rem] border-0 rounded-[0.25rem] text-[0.66rem] font-medium leading-none text-[var(--text-tertiary)] bg-transparent cursor-pointer pointer-events-auto transition-[color,background-color] duration-150 [&_svg]:shrink-0 [&_svg]:opacity-85 hover:text-text-primary hover:bg-[color-mix(in_srgb,var(--primary-color-2)_55%,transparent)] hover:[&_svg]:opacity-100 focus-visible:outline-2 focus-visible:outline-[color-mix(in_srgb,var(--brand)_35%,transparent)] focus-visible:outline-offset-[1px]";
 
-pub(crate) const CHAT_CODE_BTN_LABEL: &str = "tracking-[0.01em]";
-
 pub(crate) const CHAT_CODE_PRE: &str = "m-0 px-[0.85rem] py-[0.7rem] overflow-x-auto text-[0.78rem] leading-[1.55] text-secondary-1 bg-primary [tab-size:2] [&_code]:p-0 [&_code]:bg-transparent [&_code]:text-inherit [&_code]:leading-[inherit] [&_code]:[font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace]";

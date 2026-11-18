@@ -9,14 +9,12 @@ use dioxus_primitives::dioxus_attributes::attributes;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PasswordFieldStyle {
-    Settings,
     Modal,
 }
 
 impl PasswordFieldStyle {
     fn input_class(self) -> String {
         match self {
-            PasswordFieldStyle::Settings => crate::shell::style::FIELD_INPUT_PASSWORD.to_string(),
             // `ac-api-modal-input` 属 console.rs 的 API 弹窗（P5 迁移）；这里用 `!` 提高
             // 右侧内边距优先级，压过 legacy 选择器里的 padding 简写。
             PasswordFieldStyle::Modal => format!("{} pr-[2.75rem]!", crate::shell::style::API_MODAL_INPUT),

@@ -11,7 +11,6 @@ pub struct ShellChromeCtx {
 pub mod auth;
 
 #[cfg(feature = "web")]
-pub mod dev_mode;
 #[cfg(feature = "web")]
 pub mod llm_config;
 #[cfg(feature = "web")]

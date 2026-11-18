@@ -33,7 +33,7 @@ use keyboard_types::{Key, Modifiers};
 
 use crate::chat::{
     activate_role, attachment_from_file_data, attachment_from_path,
-    attachment_from_terminal_selection, ce_clear, ce_clear_now, ce_focus_end, ce_insert_chip,
+    ce_clear, ce_clear_now, ce_focus_end, ce_insert_chip,
     ce_insert_text, ce_restore_take, ce_set_html, ce_set_html_wait, ce_take, chip_html,
     compose_user_payload, composer_seed_html, composer_seed_html_from_segs, create_conversation,
     create_role, delete_conversation, delete_role, install_skill,
@@ -46,6 +46,8 @@ use crate::chat::{
     ThinkingStatus, ToolStatus, TraceFileOpen, UiAgentThinking, UiChatMessage, UiThinkingStep,
     UiThinkingTool, COMPOSER_ROOT_EDIT, COMPOSER_ROOT_MAIN, INSTALL_BRIDGE_JS,
 };
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+use crate::chat::attachment_from_terminal_selection;
 use crate::custom_chat_models::CustomChatModelPref;
 use crate::persona;
 use crate::shell::style::{
@@ -55,9 +57,7 @@ use crate::shell::style::{
     AGENT_DETAIL_SKEL_BODY, AGENT_DETAIL_SKEL_CHIP, AGENT_DETAIL_SKEL_LINE,
     AGENT_DETAIL_SKEL_LINE_SHORT, AGENT_DETAIL_SKEL_META, AGENT_DETAIL_SKEL_WRAP,
     AGENT_DETAIL_STEP, AGENT_DETAIL_STEP_HEAD, AGENT_DETAIL_SUBTITLE, AGENT_DETAIL_TIMING,
-    AGENT_DETAIL_TITLE, AGENT_DETAIL_TOOL, API_MODAL, API_MODAL_ACTIONS, API_MODAL_BACKDROP,
-    API_MODAL_CANCEL, API_MODAL_DESC, API_MODAL_FIELD, API_MODAL_HELP, API_MODAL_INPUT,
-    API_MODAL_SUBMIT, API_MODAL_TITLE, AUTH_LABEL, CENTER, CENTER_HIDDEN, CENTER_SHUTTING, CHAT,
+    AGENT_DETAIL_TITLE, AGENT_DETAIL_TOOL, API_MODAL, API_MODAL_ACTIONS, API_MODAL_BACKDROP, API_MODAL_DESC, API_MODAL_FIELD, API_MODAL_HELP, API_MODAL_INPUT, API_MODAL_TITLE, CENTER, CENTER_HIDDEN, CENTER_SHUTTING, CHAT,
     CHAT_AGENT_MODE_BTN, CHAT_AGENT_MODE_BTN_ICON, CHAT_AGENT_MODE_BTN_LABEL, CHAT_AGENT_MODE_OPT,
     CHAT_AGENT_MODE_OPT_CHECK, CHAT_AGENT_MODE_OPT_ICON, CHAT_AGENT_MODE_OPT_LABEL,
     CHAT_AGENT_MODE_SHEET, CHAT_AI_ACTIONS, CHAT_AI_ACTION_BTN, CHAT_AI_ACTION_ICON,
@@ -96,12 +96,32 @@ use crate::shell::style::{
     SKILLS_LIST, SKILLS_META, SKILLS_ROW, SKILLS_SEARCH, SKILLS_SEARCH_ICON, SKILLS_SEARCH_INPUT,
     SKILLS_SKEL_DESC, SKILLS_SKEL_TITLE, SKILLS_STATE, SKILLS_STATIONS, SKILLS_STATION_BTN,
     SKILLS_TITLE, SKILLS_TOGGLE, SKILLS_TOGGLE_BTN, SKILL_CARD_ICON, SKILL_INSTALLED_BTN,
-    SKILL_INSTALL_BTN, SKILL_MARKET_META, SKILL_SOURCE, TERMINAL_PANEL, TERMINAL_PANEL_HOST,
-    TERMINAL_TOOLBAR, TERMINAL_TOOLBAR_ACTIONS, TERMINAL_TOOLBAR_BTN, TERMINAL_TOOLBAR_TITLE,
-    TERMINAL_UNAVAILABLE, TERMINAL_UNAVAILABLE_HINT, WEB_TITLEBAR, WEB_TITLEBAR_ACTIONS,
-    WEB_TITLEBAR_ACTIONS_END, WEB_TITLEBAR_BTN, WEB_TITLEBAR_DOCK, WEB_TITLEBAR_FLOATING,
-    WEB_TITLEBAR_ICON, WEB_TITLEBAR_REVEAL, WEB_TITLEBAR_SPACER,
-    WEB_TITLEBAR_SWITCH_ICON_OUTSIDE, WEB_TITLEBAR_SWITCH_WRAP,
+    SKILL_INSTALL_BTN, SKILL_MARKET_META, SKILL_SOURCE, TERMINAL_PANEL_HOST, WEB_TITLEBAR_FLOATING,
+};
+
+// Web 专属标题栏/终端常量（native 版在 desktop/chrome.rs 与 desktop/terminal.rs）。
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+use crate::shell::style::{
+    API_MODAL_CANCEL,
+    API_MODAL_SUBMIT,
+    AUTH_LABEL,
+    TERMINAL_PANEL,
+    TERMINAL_TOOLBAR,
+    TERMINAL_TOOLBAR_ACTIONS,
+    TERMINAL_TOOLBAR_BTN,
+    TERMINAL_TOOLBAR_TITLE,
+    TERMINAL_UNAVAILABLE,
+    TERMINAL_UNAVAILABLE_HINT,
+    WEB_TITLEBAR,
+    WEB_TITLEBAR_ACTIONS,
+    WEB_TITLEBAR_ACTIONS_END,
+    WEB_TITLEBAR_BTN,
+    WEB_TITLEBAR_DOCK,
+    WEB_TITLEBAR_ICON,
+    WEB_TITLEBAR_REVEAL,
+    WEB_TITLEBAR_SPACER,
+    WEB_TITLEBAR_SWITCH_ICON_OUTSIDE,
+    WEB_TITLEBAR_SWITCH_WRAP,
 };
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
 use crate::web::llm_config;
@@ -2203,6 +2223,7 @@ enum ConsoleResizeKind {
     Sidebar,
     Chat,
     ChatHistory,
+    #[cfg(not(target_arch = "wasm32"))]
     Terminal,
 }
 
@@ -2282,6 +2303,7 @@ fn set_show_jump_bottom(mut show_jump_bottom: Signal<bool>, show: bool) {
 }
 
 /// 桌面常驻 JS 监听回传的视图状态：是否显示「回到底部」+ 当前所处提问下标。
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Clone, Copy, serde::Deserialize)]
 struct ChatThreadViewState {
     #[serde(default)]
@@ -4918,6 +4940,7 @@ pub fn Console(
                     return;
                 };
                 let current_x = event.data.client_coordinates().x;
+                #[cfg_attr(target_arch = "wasm32", allow(unused_variables))]
                 let current_y = event.data.client_coordinates().y;
                 match kind {
                     ConsoleResizeKind::Chat => {
@@ -4994,6 +5017,7 @@ pub fn Console(
                         chat_history_open.set(next_w > closed + 0.5);
                         last_pointer_x.set(Some(current_x));
                     }
+                    #[cfg(not(target_arch = "wasm32"))]
                     ConsoleResizeKind::Terminal => {
                         let Some(previous_y) = last_pointer_y() else {
                             last_pointer_y.set(Some(current_y));

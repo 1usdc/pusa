@@ -533,9 +533,6 @@ fn spawn_ensure_smart_ui_after_install(id: String, toast: super::toast::ToastCtx
     });
 }
 
-#[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
-fn spawn_ensure_smart_ui_after_install(_id: String, _toast: super::toast::ToastCtx) {}
-
 fn language_meta_label(card: &PluginCard) -> Option<String> {
     let lang = card.language.as_deref()?.trim();
     if lang.is_empty() || lang == "语法高亮" || lang == "语法高亮优先" {
@@ -1050,6 +1047,7 @@ pub fn PluginDetailPane(
                                         disabled: installing().is_some(),
                                         onclick: move |_| {
                                             let card = card_install.clone();
+                                            #[cfg_attr(not(all(feature = "native", not(target_arch = "wasm32"))), allow(unused_variables))]
                                             let install_id = card.id.clone();
                                             let key = key_install.clone();
                                             installing.set(Some(key.clone()));

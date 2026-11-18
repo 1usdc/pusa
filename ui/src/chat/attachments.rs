@@ -223,6 +223,7 @@ fn bytes_to_data_url(mime: &str, bytes: &[u8]) -> String {
     format!("data:{mime};base64,{}", B64.encode(bytes))
 }
 
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 /// 由原始字节构建附件（粘贴 / 读文件后共用）。
 pub fn attachment_from_bytes(
     id: u64,
@@ -278,6 +279,7 @@ pub fn attachment_from_path(id: u64, path: impl Into<String>) -> ChatPendingAtta
 }
 
 /// 终端选区引用标签名：`终端选区(16)` / `终端选区(16-18)`。
+#[cfg(not(target_arch = "wasm32"))]
 fn terminal_selection_chip_name(
     start_line: Option<u32>,
     end_line: Option<u32>,
@@ -304,6 +306,7 @@ fn terminal_selection_chip_name(
 }
 
 /// 终端「Add to Pusa」：选区以引用 chip 显示，发送时再展开全文。
+#[cfg(not(target_arch = "wasm32"))]
 pub fn attachment_from_terminal_selection(
     id: u64,
     text: impl Into<String>,
@@ -334,6 +337,7 @@ pub async fn attachment_from_file_data(id: u64, file: FileData) -> Option<ChatPe
 }
 
 /// 粘贴文件名兜底（剪贴板里经常是空名或 `image.png`）。
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 #[cfg(target_arch = "wasm32")]
 pub fn pasted_image_name(mime: &str, index: usize) -> String {
     let ext = mime
@@ -457,6 +461,7 @@ pub mod desktop_paste {
 }
 
 #[cfg(target_arch = "wasm32")]
+#[allow(dead_code)]
 pub mod wasm_paste {
     use super::*;
     use wasm_bindgen::JsCast;

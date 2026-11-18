@@ -11,7 +11,6 @@ use crate::shell::style::{
     CHAT_CODE,
     CHAT_CODE_ACTIONS,
     CHAT_CODE_BTN,
-    CHAT_CODE_BTN_LABEL,
     CHAT_CODE_META,
     CHAT_CODE_PRE,
     CHAT_CODE_TOOLBAR,

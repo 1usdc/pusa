@@ -1,6 +1,7 @@
 //! 侧栏工作区内容搜索：桌面端扫文件；Web 端提示不可用。
 
 use std::collections::{HashMap, HashSet};
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 use std::path::Path;
 
 use dioxus::prelude::*;
@@ -14,12 +15,18 @@ use keyboard_types::Key;
 use crate::icons::AiOutlineVerticalAlignBottom;
 
 const SEARCH_DEBOUNCE_MS: u64 = 80;
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 const SEARCH_TIMEOUT_SECS: u64 = 25;
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 const MAX_MATCHES: usize = 2000;
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 const MAX_FILES: usize = 200;
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 const MAX_FILES_SCANNED: usize = 8_000;
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 const MAX_LINE_CHARS: usize = 240;
 /// 结果自动展开的文件数，其余默认折叠。
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 const AUTO_EXPAND_FILES: usize = 5;
 /// 文件数超过该值时启用虚拟滚动，只渲染可见区域。
 const VIRTUAL_MIN_FILES: usize = 50;
@@ -29,8 +36,11 @@ const EST_FILE_HEAD_PX: f64 = 28.0;
 const EST_HIT_ROW_PX: f64 = 22.0;
 const EST_VIEWPORT_PX: f64 = 560.0;
 /// 流式推送节奏：每累积这么多条匹配、或距上次推送超过 50ms，就发一次快照。
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 const STREAM_FLUSH_MATCHES: usize = 24;
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 const STREAM_FLUSH_MS: u64 = 50;
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 const SKIP_DIR_NAMES: &[&str] = &[
     ".git",
     "node_modules",
@@ -74,6 +84,7 @@ struct SearchOutcome {
     error: Option<String>,
 }
 
+#[cfg_attr(not(all(feature = "native", not(target_arch = "wasm32"))), allow(dead_code))]
 #[derive(Clone, Debug)]
 struct SearchRequest {
     root: String,
@@ -94,6 +105,7 @@ struct ExpandState {
 }
 
 /// 流式搜索事件：搜索线程边扫边推，UI 增量渲染。
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 #[derive(Clone, Debug)]
 enum SearchEvent {
     Progress(SearchOutcome),
@@ -784,6 +796,7 @@ pub fn SidebarSearchPanel(
 }
 
 /// 流式追加结果时，自动展开前 N 个文件；用户手动折叠过的不动。
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 fn auto_expand_first(files: &[SearchFileHits], mut expanded: Signal<ExpandState>) {
     let mut state = expanded();
     let mut changed = false;
@@ -1527,6 +1540,7 @@ fn walk_search(req: &SearchRequest) -> SearchOutcome {
     }
 }
 
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 fn split_globs(raw: &str) -> Vec<String> {
     raw.split([',', ';', '\n'])
         .map(|s| s.trim().to_string())
@@ -1534,12 +1548,14 @@ fn split_globs(raw: &str) -> Vec<String> {
         .collect()
 }
 
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 fn rel_path(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
         .map(|p| p.to_string_lossy().replace('\\', "/"))
         .unwrap_or_else(|_| path.to_string_lossy().replace('\\', "/"))
 }
 
+#[cfg(any(all(feature = "native", not(target_arch = "wasm32")), test))]
 fn glob_match(pat: &str, rel: &str) -> bool {
     let pat = pat.replace('\\', "/");
     let rel = rel.replace('\\', "/");
@@ -1551,10 +1567,12 @@ fn glob_match(pat: &str, rel: &str) -> bool {
     }
 }
 
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 fn glob_match_full(pat: &str, text: &str) -> bool {
     glob_at(pat.as_bytes(), 0, text.as_bytes(), 0)
 }
 
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 fn glob_at(pat: &[u8], pi: usize, text: &[u8], ti: usize) -> bool {
     if pi == pat.len() {
         return ti == text.len();
@@ -1605,10 +1623,12 @@ fn glob_at(pat: &[u8], pi: usize, text: &[u8], ti: usize) -> bool {
     }
 }
 
+#[cfg(any(all(feature = "native", not(target_arch = "wasm32")), test))]
 fn is_word_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
+#[cfg(any(all(feature = "native", not(target_arch = "wasm32")), test))]
 fn is_whole_word(hay: &str, start: usize, end: usize) -> bool {
     if start > hay.len() || end > hay.len() || start > end {
         return false;
@@ -1631,6 +1651,7 @@ fn is_whole_word(hay: &str, start: usize, end: usize) -> bool {
     before_ok && after_ok
 }
 
+#[cfg(any(all(feature = "native", not(target_arch = "wasm32")), test))]
 fn find_literal_spans(
     hay: &str,
     needle: &str,
@@ -1690,6 +1711,7 @@ fn find_literal_spans(
     out
 }
 
+#[cfg(any(all(feature = "native", not(target_arch = "wasm32")), test))]
 fn apply_preserve_case(matched: &str, replacement: &str) -> String {
     if replacement.is_empty() || matched.is_empty() {
         return replacement.to_string();
@@ -1726,6 +1748,7 @@ fn apply_preserve_case(matched: &str, replacement: &str) -> String {
     replacement.to_string()
 }
 
+#[cfg(any(all(feature = "native", not(target_arch = "wasm32")), test))]
 fn truncate_hit_line(line: &str, start: usize, end: usize) -> (String, usize, usize) {
     let chars: Vec<(usize, char)> = line.char_indices().collect();
     if chars.len() <= MAX_LINE_CHARS {

@@ -551,6 +551,7 @@ fn render_highlight(source: &str, path: Option<&str>, lang: &str) -> String {
 }
 
 /// 启动时在后台扫描已安装扩展的语法索引（编译推迟到首次打开对应文件）。
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 pub fn preload_installed_grammars() {
     #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
     super::textmate::preload_installed_grammars();

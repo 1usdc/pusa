@@ -26,25 +26,6 @@ pub async fn save_llm_config(
     save_llm_config_full(api_key, openai_v1_base, None, None, false, false).await
 }
 
-/// 保存时若输入框为空，**显式**把 DB 字段清空（写入空字符串覆盖旧值）。
-pub async fn save_llm_config_clearing(
-    api_key: &str,
-    openai_v1_base: &str,
-    clear_api_key: bool,
-    clear_openai_v1_base: bool,
-    provider: Option<LlmApiProvider>,
-) -> Option<protocol::LlmConfigDto> {
-    save_llm_config_full(
-        api_key,
-        openai_v1_base,
-        None,
-        provider,
-        clear_api_key,
-        clear_openai_v1_base,
-    )
-    .await
-}
-
 async fn save_llm_config_full(
     api_key: &str,
     openai_v1_base: &str,

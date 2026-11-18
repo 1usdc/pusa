@@ -24,7 +24,8 @@ pub struct ModelProviderPreset {
 }
 
 impl ModelProviderPreset {
-    /// API 格式的可读文案（与详情页下拉一致）。
+    /// API 格式的可读文案（与详情页下拉一致）；仅往返测试使用。
+    #[cfg(test)]
     pub fn api_format_label(&self) -> &'static str {
         api_format_label(self.api_format)
     }
