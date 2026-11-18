@@ -46,238 +46,63 @@ use crate::chat::{
     ThinkingStatus, ToolStatus, TraceFileOpen, UiAgentThinking, UiChatMessage, UiThinkingStep,
     UiThinkingTool, COMPOSER_ROOT_EDIT, COMPOSER_ROOT_MAIN, INSTALL_BRIDGE_JS,
 };
-use crate::shell::style::{
-    AGENT_CARD, AGENT_CARD_ACTIVE, AGENT_CARD_IDLE, CENTER, CENTER_HIDDEN, CENTER_SHUTTING,
-    AGENT_DETAIL_BACKDROP,
-    AGENT_DETAIL_BLOCK_TITLE,
-    AGENT_DETAIL_BODY,
-    AGENT_DETAIL_CLOSE,
-    AGENT_DETAIL_COPY,
-    AGENT_DETAIL_ERROR,
-    AGENT_DETAIL_HEAD,
-    AGENT_DETAIL_META,
-    AGENT_DETAIL_MODAL,
-    AGENT_DETAIL_PRE,
-    AGENT_DETAIL_SKEL_BODY,
-    AGENT_DETAIL_SKEL_CHIP,
-    AGENT_DETAIL_SKEL_LINE,
-    AGENT_DETAIL_SKEL_LINE_SHORT,
-    AGENT_DETAIL_SKEL_META,
-    AGENT_DETAIL_SKEL_WRAP,
-    AGENT_DETAIL_STEP,
-    AGENT_DETAIL_STEP_HEAD,
-    AGENT_DETAIL_SUBTITLE,
-    AGENT_DETAIL_TIMING,
-    AGENT_DETAIL_TITLE,
-    AGENT_DETAIL_TOOL,
-    API_MODAL,
-    API_MODAL_ACTIONS,
-    API_MODAL_BACKDROP,
-    API_MODAL_CANCEL,
-    API_MODAL_DESC,
-    API_MODAL_FIELD,
-    API_MODAL_HELP,
-    API_MODAL_INPUT,
-    API_MODAL_SUBMIT,
-    API_MODAL_TITLE,
-    AUTH_LABEL,
-    CHAT,
-    CHAT_AGENT_MODE_BTN,
-    CHAT_AGENT_MODE_BTN_ICON,
-    CHAT_AGENT_MODE_BTN_LABEL,
-    CHAT_AGENT_MODE_OPT,
-    CHAT_AGENT_MODE_OPT_CHECK,
-    CHAT_AGENT_MODE_OPT_ICON,
-    CHAT_AGENT_MODE_OPT_LABEL,
-    CHAT_AGENT_MODE_SHEET,
-    CHAT_AI_ACTIONS,
-    CHAT_AI_ACTION_BTN,
-    CHAT_AI_ACTION_ICON,
-    CHAT_AI_ACTION_TEXT,
-    CHAT_AI_STACK,
-    CHAT_BODY,
-    CHAT_BUBBLE,
-    CHAT_BUBBLE_AI,
-    CHAT_BUBBLE_EDIT,
-    CHAT_BUBBLE_EDIT_ACTIONS,
-    CHAT_BUBBLE_EDIT_SEND,
-    CHAT_BUBBLE_EDIT_UPLOAD,
-    CHAT_BUBBLE_USER,
-    CHAT_BUBBLE_USER_EDITING,
-    CHAT_BUBBLE_USER_TEXT,
-    CHAT_COMPOSER_CE,
-    CHAT_COMPOSER_STACK,
-    CHAT_COMPOSER_TOOLBAR,
-    CHAT_FILE_INPUT,
-    CHAT_HEADER,
-    CHAT_HEADER_ICON,
-    CHAT_HIDDEN,
-    CHAT_HISTORY_CREATE,
-    CHAT_HISTORY_CREATE_ICON,
-    CHAT_HISTORY_EDIT_ACTION,
-    CHAT_HISTORY_EDIT_ACTIONS,
-    CHAT_HISTORY_EDIT_WRAP,
-    CHAT_HISTORY_ERROR,
-    CHAT_HISTORY_ITEM,
-    CHAT_HISTORY_ITEM_BODY,
-    CHAT_HISTORY_ITEM_PREVIEW,
-    CHAT_HISTORY_ITEM_PREVIEW_ROW,
-    CHAT_HISTORY_ITEM_RUNNING,
-    CHAT_HISTORY_PANEL,
-    CHAT_HISTORY_RAIL_ICON,
-    CHAT_HISTORY_RESIZER,
-    CHAT_HISTORY_ROW,
-    CHAT_HISTORY_TITLE_INPUT,
-    CHAT_INPUT_SHELL,
-    CHAT_INPUT_WRAP,
-    CHAT_JUMP_BOTTOM,
-    CHAT_JUMP_HOST,
-    CHAT_MAIN,
-    CHAT_MESSAGE,
-    CHAT_MESSAGE_AI,
-    CHAT_MESSAGE_USER,
-    CHAT_MODE_SHEET,
-    CHAT_MODE_SHEET_BACKDROP,
-    CHAT_MODE_TRIGGER,
-    CHAT_MODE_TRIGGER_CHEVRON,
-    CHAT_MODE_TRIGGER_LABEL,
-    CHAT_MODE_WRAP,
-    CHAT_NAV,
-    CHAT_NAV_DOT,
-    CHAT_RESIZER,
-    CHAT_SEND_BTN,
-    CHAT_SEND_ICON,
-    CHAT_SEND_PAUSE,
-    CHAT_SEND_READY,
-    CHAT_SHEET_CHECK,
-    CHAT_SHEET_CUSTOM,
-    CHAT_SHEET_CUSTOM_ACTIONS,
-    CHAT_SHEET_CUSTOM_ICON_BTN,
-    CHAT_SHEET_CUSTOM_INPUT,
-    CHAT_SHEET_CUSTOM_KEY,
-    CHAT_SHEET_EDIT,
-    CHAT_SHEET_EDIT_ACTIONS,
-    CHAT_SHEET_EDIT_CANCEL,
-    CHAT_SHEET_EDIT_PANEL,
-    CHAT_SHEET_EDIT_SAVE,
-    CHAT_SHEET_GROUP,
-    CHAT_SHEET_GROUP_BODY,
-    CHAT_SHEET_GROUP_CHEVRON,
-    CHAT_SHEET_GROUP_COUNT,
-    CHAT_SHEET_GROUP_HEAD,
-    CHAT_SHEET_GROUP_TITLE,
-    CHAT_SHEET_NET_DOT,
-    CHAT_SHEET_OPT,
-    CHAT_SHEET_OPT_MAIN,
-    CHAT_SHEET_OPT_ROW,
-    CHAT_SHEET_SPIN,
-    CHAT_SHEET_SUB,
-    CHAT_SHEET_TITLE,
-    CHAT_SHEET_TITLE_ROW,
-    CHAT_THREAD,
-    CHAT_THREAD_PANE,
-    CHAT_TOOLBAR_PILL,
-    CHAT_UPLOAD_BTN,
-    CHAT_USER_ACTIONS,
-    CHAT_USER_STACK,
-    CHAT_WORKSPACE,
-    CONSOLE_ROOT, CTX_BACKDROP, CTX_ITEM, CTX_ITEM_DANGER, CTX_MENU,
-    DELETE_ROLE_MODAL_BACKDROP,
-    FS_CTX_SEP, SIDEBAR, SIDEBAR_HIDDEN, SIDEBAR_SCROLL, SIDEBAR_SHUTTING,
-    INSTALLED_BTN,
-    INSTALLED_BTN_LEARN,
-    INSTALLED_BTN_ON,
-    INSTALLED_BTN_REMOVE,
-    INSTALLED_EMPTY_ICON,
-    MAIN_BODY,
-    PERSONA_PROMPT_CARD,
-    PERSONA_PROMPT_HEADER,
-    PERSONA_PROMPT_ICON,
-    PERSONA_PROMPT_TITLE,
-    PERSONA_TEXTAREA,
-    ROLE_ACTIONS,
-    ROLE_AVATAR,
-    ROLE_AVATAR_IMG,
-    ROLE_BTN,
-    ROLE_BTN_ICON,
-    ROLE_BTN_PRIMARY,
-    ROLE_BTN_SECONDARY,
-    ROLE_DIVIDER,
-    ROLE_HEADER,
-    ROLE_HEADING,
-    ROLE_HEADING_TEXT,
-    ROLE_NAME_INPUT,
-    ROLE_PANEL,
-    ROLE_SUBTITLE,
-    SETTINGS_SAVED,
-    SKILLS,
-    SKILLS_ACTION,
-    SKILLS_ACTIONS,
-    SKILLS_BADGE,
-    SKILLS_BANNER,
-    SKILLS_BODY,
-    SKILLS_DESC,
-    SKILLS_DETAIL,
-    SKILLS_DETAIL_ACTIONS,
-    SKILLS_DETAIL_DESC,
-    SKILLS_DETAIL_EMPTY,
-    SKILLS_DETAIL_EMPTY_H3,
-    SKILLS_DETAIL_EMPTY_P,
-    SKILLS_DETAIL_H2,
-    SKILLS_DETAIL_HEAD,
-    SKILLS_DETAIL_ICON,
-    SKILLS_DETAIL_PANE,
-    SKILLS_DETAIL_SLUG,
-    SKILLS_DETAIL_TITLES,
-    SKILLS_EMPTY,
-    SKILLS_HEADER,
-    SKILLS_HOT,
-    SKILLS_ICON,
-    SKILLS_LIST,
-    SKILLS_META,
-    SKILLS_ROW,
-    SKILLS_SEARCH,
-    SKILLS_SEARCH_ICON,
-    SKILLS_SEARCH_INPUT,
-    SKILLS_SKEL_DESC,
-    SKILLS_SKEL_TITLE,
-    SKILLS_STATE,
-    SKILLS_STATIONS,
-    SKILLS_STATION_BTN,
-    SKILLS_TITLE,
-    SKILLS_TOGGLE,
-    SKILLS_TOGGLE_BTN,
-    SKILL_CARD_ICON,
-    SKILL_INSTALLED_BTN,
-    SKILL_INSTALL_BTN,
-    SKILL_MARKET_META,
-    SKILL_SOURCE,
-    TERMINAL_PANEL,
-    TERMINAL_PANEL_HOST,
-    TERMINAL_TOOLBAR,
-    TERMINAL_TOOLBAR_ACTIONS,
-    TERMINAL_TOOLBAR_BTN,
-    TERMINAL_TOOLBAR_TITLE,
-    TERMINAL_UNAVAILABLE,
-    TERMINAL_UNAVAILABLE_HINT,
-    WEB_TITLEBAR,
-    WEB_TITLEBAR_ACTIONS,
-    WEB_TITLEBAR_ACTIONS_END,
-    WEB_TITLEBAR_BTN,
-    WEB_TITLEBAR_DOCK,
-    WEB_TITLEBAR_FLOATING,
-    WEB_TITLEBAR_ICON,
-    WEB_TITLEBAR_MENU,
-    WEB_TITLEBAR_MENU_BACKDROP,
-    WEB_TITLEBAR_MENU_ITEM,
-    WEB_TITLEBAR_REVEAL,
-    WEB_TITLEBAR_SETTINGS_WRAP,
-    WEB_TITLEBAR_SPACER,
-    WEB_TITLEBAR_SWITCH_ICON_OUTSIDE,
-    WEB_TITLEBAR_SWITCH_WRAP,
-};
 use crate::custom_chat_models::CustomChatModelPref;
 use crate::persona;
+use crate::shell::style::{
+    AGENT_CARD, AGENT_CARD_ACTIVE, AGENT_CARD_IDLE, AGENT_DETAIL_BACKDROP,
+    AGENT_DETAIL_BLOCK_TITLE, AGENT_DETAIL_BODY, AGENT_DETAIL_CLOSE, AGENT_DETAIL_COPY,
+    AGENT_DETAIL_ERROR, AGENT_DETAIL_HEAD, AGENT_DETAIL_META, AGENT_DETAIL_MODAL, AGENT_DETAIL_PRE,
+    AGENT_DETAIL_SKEL_BODY, AGENT_DETAIL_SKEL_CHIP, AGENT_DETAIL_SKEL_LINE,
+    AGENT_DETAIL_SKEL_LINE_SHORT, AGENT_DETAIL_SKEL_META, AGENT_DETAIL_SKEL_WRAP,
+    AGENT_DETAIL_STEP, AGENT_DETAIL_STEP_HEAD, AGENT_DETAIL_SUBTITLE, AGENT_DETAIL_TIMING,
+    AGENT_DETAIL_TITLE, AGENT_DETAIL_TOOL, API_MODAL, API_MODAL_ACTIONS, API_MODAL_BACKDROP,
+    API_MODAL_CANCEL, API_MODAL_DESC, API_MODAL_FIELD, API_MODAL_HELP, API_MODAL_INPUT,
+    API_MODAL_SUBMIT, API_MODAL_TITLE, AUTH_LABEL, CENTER, CENTER_HIDDEN, CENTER_SHUTTING, CHAT,
+    CHAT_AGENT_MODE_BTN, CHAT_AGENT_MODE_BTN_ICON, CHAT_AGENT_MODE_BTN_LABEL, CHAT_AGENT_MODE_OPT,
+    CHAT_AGENT_MODE_OPT_CHECK, CHAT_AGENT_MODE_OPT_ICON, CHAT_AGENT_MODE_OPT_LABEL,
+    CHAT_AGENT_MODE_SHEET, CHAT_AI_ACTIONS, CHAT_AI_ACTION_BTN, CHAT_AI_ACTION_ICON,
+    CHAT_AI_ACTION_TEXT, CHAT_AI_STACK, CHAT_BODY, CHAT_BUBBLE, CHAT_BUBBLE_AI, CHAT_BUBBLE_EDIT,
+    CHAT_BUBBLE_EDIT_ACTIONS, CHAT_BUBBLE_EDIT_SEND, CHAT_BUBBLE_EDIT_UPLOAD, CHAT_BUBBLE_USER,
+    CHAT_BUBBLE_USER_EDITING, CHAT_BUBBLE_USER_TEXT, CHAT_COMPOSER_CE, CHAT_COMPOSER_STACK,
+    CHAT_COMPOSER_TOOLBAR, CHAT_FILE_INPUT, CHAT_HEADER, CHAT_HEADER_ICON, CHAT_HIDDEN,
+    CHAT_HISTORY_CREATE, CHAT_HISTORY_CREATE_ICON, CHAT_HISTORY_EDIT_ACTION,
+    CHAT_HISTORY_EDIT_ACTIONS, CHAT_HISTORY_EDIT_WRAP, CHAT_HISTORY_ERROR, CHAT_HISTORY_ITEM,
+    CHAT_HISTORY_ITEM_BODY, CHAT_HISTORY_ITEM_PREVIEW, CHAT_HISTORY_ITEM_PREVIEW_ROW,
+    CHAT_HISTORY_ITEM_RUNNING, CHAT_HISTORY_PANEL, CHAT_HISTORY_RAIL_ICON, CHAT_HISTORY_RESIZER,
+    CHAT_HISTORY_ROW, CHAT_HISTORY_TITLE_INPUT, CHAT_INPUT_SHELL, CHAT_INPUT_WRAP,
+    CHAT_JUMP_BOTTOM, CHAT_JUMP_HOST, CHAT_MAIN, CHAT_MESSAGE, CHAT_MESSAGE_AI, CHAT_MESSAGE_USER,
+    CHAT_MODE_SHEET, CHAT_MODE_SHEET_BACKDROP, CHAT_MODE_TRIGGER, CHAT_MODE_TRIGGER_CHEVRON,
+    CHAT_MODE_TRIGGER_LABEL, CHAT_MODE_WRAP, CHAT_NAV, CHAT_NAV_DOT, CHAT_RESIZER, CHAT_SEND_BTN,
+    CHAT_SEND_ICON, CHAT_SEND_PAUSE, CHAT_SEND_READY, CHAT_SHEET_CHECK, CHAT_SHEET_CUSTOM,
+    CHAT_SHEET_CUSTOM_ACTIONS, CHAT_SHEET_CUSTOM_ICON_BTN, CHAT_SHEET_CUSTOM_INPUT,
+    CHAT_SHEET_CUSTOM_KEY, CHAT_SHEET_EDIT, CHAT_SHEET_EDIT_ACTIONS, CHAT_SHEET_EDIT_CANCEL,
+    CHAT_SHEET_EDIT_PANEL, CHAT_SHEET_EDIT_SAVE, CHAT_SHEET_GROUP, CHAT_SHEET_GROUP_BODY,
+    CHAT_SHEET_GROUP_CHEVRON, CHAT_SHEET_GROUP_COUNT, CHAT_SHEET_GROUP_HEAD,
+    CHAT_SHEET_GROUP_TITLE, CHAT_SHEET_NET_DOT, CHAT_SHEET_OPT, CHAT_SHEET_OPT_MAIN,
+    CHAT_SHEET_OPT_ROW, CHAT_SHEET_SPIN, CHAT_SHEET_SUB, CHAT_SHEET_TITLE, CHAT_SHEET_TITLE_ROW,
+    CHAT_THREAD, CHAT_THREAD_PANE, CHAT_TOOLBAR_PILL, CHAT_USER_ACTIONS,
+    CHAT_USER_STACK, CHAT_WORKSPACE, CONSOLE_ROOT, CTX_BACKDROP, CTX_ITEM, CTX_ITEM_DANGER,
+    CTX_MENU, DELETE_ROLE_MODAL_BACKDROP, FS_CTX_SEP, INSTALLED_BTN, INSTALLED_BTN_LEARN,
+    INSTALLED_BTN_ON, INSTALLED_BTN_REMOVE, INSTALLED_EMPTY_ICON, MAIN_BODY, PERSONA_PROMPT_CARD,
+    PERSONA_PROMPT_HEADER, PERSONA_PROMPT_ICON, PERSONA_PROMPT_TITLE, PERSONA_TEXTAREA,
+    ROLE_ACTIONS, ROLE_AVATAR, ROLE_AVATAR_IMG, ROLE_BTN, ROLE_BTN_ICON, ROLE_BTN_SECONDARY,
+    ROLE_DIVIDER, ROLE_HEADER, ROLE_HEADING, ROLE_HEADING_TEXT,
+    ROLE_NAME_INPUT, ROLE_PANEL, ROLE_SUBTITLE, SETTINGS_SAVED, SIDEBAR, SIDEBAR_HIDDEN,
+    SIDEBAR_SCROLL, SIDEBAR_SHUTTING, SKILLS, SKILLS_ACTION, SKILLS_ACTIONS, SKILLS_BADGE,
+    SKILLS_BANNER, SKILLS_BODY, SKILLS_DESC, SKILLS_DETAIL, SKILLS_DETAIL_ACTIONS,
+    SKILLS_DETAIL_DESC, SKILLS_DETAIL_EMPTY, SKILLS_DETAIL_EMPTY_H3, SKILLS_DETAIL_EMPTY_P,
+    SKILLS_DETAIL_H2, SKILLS_DETAIL_HEAD, SKILLS_DETAIL_ICON, SKILLS_DETAIL_PANE,
+    SKILLS_DETAIL_SLUG, SKILLS_DETAIL_TITLES, SKILLS_EMPTY, SKILLS_HEADER, SKILLS_HOT, SKILLS_ICON,
+    SKILLS_LIST, SKILLS_META, SKILLS_ROW, SKILLS_SEARCH, SKILLS_SEARCH_ICON, SKILLS_SEARCH_INPUT,
+    SKILLS_SKEL_DESC, SKILLS_SKEL_TITLE, SKILLS_STATE, SKILLS_STATIONS, SKILLS_STATION_BTN,
+    SKILLS_TITLE, SKILLS_TOGGLE, SKILLS_TOGGLE_BTN, SKILL_CARD_ICON, SKILL_INSTALLED_BTN,
+    SKILL_INSTALL_BTN, SKILL_MARKET_META, SKILL_SOURCE, TERMINAL_PANEL, TERMINAL_PANEL_HOST,
+    TERMINAL_TOOLBAR, TERMINAL_TOOLBAR_ACTIONS, TERMINAL_TOOLBAR_BTN, TERMINAL_TOOLBAR_TITLE,
+    TERMINAL_UNAVAILABLE, TERMINAL_UNAVAILABLE_HINT, WEB_TITLEBAR, WEB_TITLEBAR_ACTIONS,
+    WEB_TITLEBAR_ACTIONS_END, WEB_TITLEBAR_BTN, WEB_TITLEBAR_DOCK, WEB_TITLEBAR_FLOATING,
+    WEB_TITLEBAR_ICON, WEB_TITLEBAR_REVEAL, WEB_TITLEBAR_SPACER,
+    WEB_TITLEBAR_SWITCH_ICON_OUTSIDE, WEB_TITLEBAR_SWITCH_WRAP,
+};
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
 use crate::web::llm_config;
 #[cfg(all(target_arch = "wasm32", feature = "web"))]
@@ -388,6 +213,7 @@ fn persist_custom_chat_models(items: &[CustomChatModelPref]) {
 fn custom_chat_model_entries() -> Vec<ChatModelEntry> {
     load_custom_chat_models()
         .into_iter()
+        .filter(|r| r.enabled)
         .map(|r| {
             let cred = r.credential_id.trim();
             let name = r.name.trim();
@@ -665,16 +491,29 @@ async fn probe_chat_models_network(models: &[ChatModelEntry]) -> HashMap<String,
 }
 
 fn persist_custom_from_models(models: &[ChatModelEntry]) {
-    let items: Vec<CustomChatModelPref> = models
-        .iter()
-        .filter(|m| m.custom)
-        .map(|m| CustomChatModelPref {
-            id: m.id.clone(),
-            name: m.display_name.clone().unwrap_or_default(),
-            credential_id: m.source_credential_id.clone().unwrap_or_default(),
-        })
+    // 保留设置页里关闭的模型（它们不在聊天栏模型列表中），
+    // 其余以聊天栏当前列表为准，避免删除 / 改名后旧记录残留。
+    let mut next: Vec<CustomChatModelPref> = load_custom_chat_models()
+        .into_iter()
+        .filter(|r| !r.enabled)
         .collect();
-    persist_custom_chat_models(&items);
+    for m in models.iter().filter(|m| m.custom) {
+        let name = m.display_name.clone().unwrap_or_default();
+        let credential_id = m.source_credential_id.clone().unwrap_or_default();
+        if let Some(existing) = next.iter_mut().find(|r| r.id == m.id) {
+            existing.name = name;
+            existing.credential_id = credential_id;
+            existing.enabled = true;
+        } else {
+            next.push(CustomChatModelPref {
+                id: m.id.clone(),
+                name,
+                credential_id,
+                enabled: true,
+            });
+        }
+    }
+    persist_custom_chat_models(&next);
 }
 
 fn try_add_custom_chat_model(
@@ -2094,6 +1933,9 @@ const AC_CHAT_THREAD_DOM_ID: &str = "ac-chat-thread";
 const CHAT_JUMP_BOTTOM_SHOW_PX: f64 = 160.0;
 /// 已显示时，距底部低于该像素才隐藏（须小于 `CHAT_JUMP_BOTTOM_SHOW_PX`）。
 const CHAT_JUMP_BOTTOM_HIDE_PX: f64 = 80.0;
+/// 用户离开底部的判定（切断流式吸底）。须远小于 `CHAT_JUMP_BOTTOM_SHOW_PX`：
+/// 若用显示阈值，`onscroll` 里再 stick 会把小幅上滑立刻拽回，导致「上翻不动」。
+const CHAT_FOLLOW_BREAK_PX: f64 = 8.0;
 
 /// 侧栏默认宽度（像素），与 `main.css` 中 `.ac-sidebar` 一致。
 const AC_SIDEBAR_DEFAULT_WIDTH_PX: f64 = 280.0;
@@ -2564,14 +2406,17 @@ fn chat_jump_bottom_listen_js() -> String {
         r#"(async () => {{
   const SHOW_PX = {show_px};
   const HIDE_PX = {hide_px};
+  const BREAK_PX = {break_px};
   const ID = '{id}';
   let last = false;
   let lastActive = null;
   let bound = null;
   let ro = null;
   let contentMo = null;
-  // 流式跟随：默认吸底；用户上翻（距底超过 SHOW_PX）立即切断，
-  // 只有一次性置底动作（回到底部按钮 / 发送 / 切换会话）会重新打开。
+  // 流式跟随：默认吸底；用户上翻（距底超过 BREAK_PX）立即切断。
+  // 「回到底部」按钮仍用 SHOW/HIDE 滞后；切勿在 onscroll 路径里 stick，
+  // 否则小幅上滑会被立刻拽回，永远到不了显示阈值。
+  // 只有一次性置底动作（回到底部按钮 / 发送 / 切换会话）会重新打开跟随。
   if (typeof window.__acChatFollow !== 'boolean') window.__acChatFollow = true;
   const distOf = (el) => Math.max(0, el.scrollHeight - el.scrollTop - el.clientHeight);
   const stick = (el) => {{
@@ -2593,14 +2438,14 @@ fn chat_jump_bottom_listen_js() -> String {
     }}
     return active;
   }};
-  const report = () => {{
+  const report = (doStick) => {{
     const el = bound;
     if (!el) return;
     const sh = el.scrollHeight;
     const ch = el.clientHeight;
     if (!(sh > 0) || !(ch > 0)) return;
-    // 内容变高（流式增量）时先跟随到底，再算可见性。
-    stick(el);
+    // 仅内容/尺寸变化时跟随到底；scroll 事件路径禁止 stick。
+    if (doStick) stick(el);
     const dist = distOf(el);
     const show = last ? dist >= HIDE_PX : dist > SHOW_PX;
     const active = activeOf(el);
@@ -2609,12 +2454,13 @@ fn chat_jump_bottom_listen_js() -> String {
     lastActive = active;
     try {{ dioxus.send({{ show: show, active: active }}); }} catch (_) {{}}
   }};
+  const onContent = () => report(true);
   const onScroll = () => {{
     const el = bound;
     if (!el) return;
     // 程序化置底的 scroll 事件 dist≈0，不会误判成用户上翻。
-    if (distOf(el) > SHOW_PX) window.__acChatFollow = false;
-    report();
+    if (distOf(el) > BREAK_PX) window.__acChatFollow = false;
+    report(false);
   }};
   const bind = () => {{
     const el = document.getElementById(ID);
@@ -2626,12 +2472,12 @@ fn chat_jump_bottom_listen_js() -> String {
     bound = el;
     el.addEventListener('scroll', onScroll, {{ passive: true }});
     if (typeof ResizeObserver === 'function') {{
-      ro = new ResizeObserver(report);
+      ro = new ResizeObserver(onContent);
       ro.observe(el);
     }}
-    contentMo = new MutationObserver(report);
+    contentMo = new MutationObserver(onContent);
     contentMo.observe(el, {{ childList: true, subtree: true, characterData: true }});
-    report();
+    report(true);
   }};
   bind();
   const mo = new MutationObserver(bind);
@@ -2639,6 +2485,7 @@ fn chat_jump_bottom_listen_js() -> String {
 }})()"#,
         show_px = CHAT_JUMP_BOTTOM_SHOW_PX,
         hide_px = CHAT_JUMP_BOTTOM_HIDE_PX,
+        break_px = CHAT_FOLLOW_BREAK_PX,
         id = AC_CHAT_THREAD_DOM_ID,
     )
 }
@@ -3458,7 +3305,7 @@ fn ChatUserMessageEdit(
                         width: 13,
                         height: 13,
                         fill: "currentColor",
-                        
+
                     }
                 }
                 button {
@@ -3499,12 +3346,6 @@ fn WebShellTitlebar(
 ) -> Element {
     let ctx = use_context::<crate::web::ShellChromeCtx>();
     let mut show_settings_modal = ctx.show_settings_modal;
-    let mut show_about_modal = ctx.show_about_modal;
-    let mut show_titlebar_settings_menu = ctx.show_titlebar_settings_menu;
-    let mut show_font_size_modal = ctx.show_font_size_modal;
-    // 设置 API Key 入口：在设置中配置 OpenAI 兼容接口凭证。
-    let _developer_mode = ctx.developer_mode;
-    let mut ui_theme = use_signal(crate::shell::theme::load);
     let sidebar_switch_on = show_sidebar() && !sidebar_shutting_down();
     let chat_switch_on = show_chat();
     let center_switch_on = show_center();
@@ -3641,59 +3482,13 @@ fn WebShellTitlebar(
                             }
                         }
                     }
-                    div { class: WEB_TITLEBAR_SETTINGS_WRAP,
-                        button {
-                            r#type: "button",
-                            class: WEB_TITLEBAR_BTN,
-                                "data-menu-open": show_titlebar_settings_menu(),
-                            title: "设置",
-                            aria_expanded: show_titlebar_settings_menu(),
-                            aria_haspopup: "menu",
-                            onclick: move |_| show_titlebar_settings_menu.toggle(),
-                            Icon { icon: BsGear, width: 16, height: 16, fill: "currentColor", class: WEB_TITLEBAR_ICON }
-                        }
-                        if show_titlebar_settings_menu() {
-                            div {
-                                class: WEB_TITLEBAR_MENU_BACKDROP,
-                                onclick: move |_| show_titlebar_settings_menu.set(false),
-                            }
-                            div { class: WEB_TITLEBAR_MENU, role: "menu",
-                                button {
-                                    r#type: "button",
-                                    role: "menuitem",
-                                    class: WEB_TITLEBAR_MENU_ITEM,
-                                    onclick: move |_| {
-                                        show_titlebar_settings_menu.set(false);
-                                        show_settings_modal.set(true);
-                                    },
-                                    "API 密钥"
-                                }
-                                crate::shell::theme::TitlebarThemeToggle {
-                                    ui_theme,
-                                    show_titlebar_settings_menu,
-                                }
-                                button {
-                                    r#type: "button",
-                                    role: "menuitem",
-                                    class: WEB_TITLEBAR_MENU_ITEM,
-                                    onclick: move |_| {
-                                        show_titlebar_settings_menu.set(false);
-                                        show_font_size_modal.set(true);
-                                    },
-                                    "字体大小"
-                                }
-                                button {
-                                    r#type: "button",
-                                    role: "menuitem",
-                                    class: WEB_TITLEBAR_MENU_ITEM,
-                                    onclick: move |_| {
-                                        show_titlebar_settings_menu.set(false);
-                                        show_about_modal.set(true);
-                                    },
-                                    "关于本机"
-                                }
-                            }
-                        }
+                    button {
+                        r#type: "button",
+                        class: WEB_TITLEBAR_BTN,
+                        title: "设置",
+                        aria_label: "设置",
+                        onclick: move |_| show_settings_modal.set(true),
+                        Icon { icon: BsGear, width: 16, height: 16, fill: "currentColor", class: WEB_TITLEBAR_ICON }
                     }
                 }
             }
@@ -3856,6 +3651,36 @@ pub fn Console(
     });
     let plugin_catalog = use_signal(Vec::<super::plugins::PluginCard>::new);
     let plugin_refresh_tick = use_signal(|| 0_u64);
+    // 状态栏「项目名」弹窗请求打开项目：复用与侧栏 / Ctrl+O 相同的切根刷新逻辑。
+    let mut open_project_path = use_context::<super::OpenProjectPath>().0;
+    use_effect(move || {
+        let path = open_project_path();
+        if path.is_empty() {
+            return;
+        }
+        match super::files::fs_set_workspace_root(&path) {
+            Ok(root) => {
+                apply_opened_project_root(
+                    root,
+                    fs_root_path,
+                    fs_expanded,
+                    fs_children_cache,
+                    fs_selected_path,
+                    fs_create_mode,
+                    fs_create_name,
+                    fs_create_parent,
+                    recent_project_dirs,
+                    active_tab,
+                    center_tabs,
+                    active_center_id,
+                    plugin_refresh_tick,
+                );
+                toast.success(format!("已打开项目：{path}"));
+            }
+            Err(err) => toast.error(err),
+        }
+        open_project_path.set(String::new());
+    });
     // 删除角色确认：`(id, display_name)`，替代原生 `confirm`
     let mut delete_role_confirm = use_signal(|| None::<(i64, String)>);
     // 首页空态「创建插件」：输入插件名后脚手架到工作区 `extensions/`
@@ -5019,7 +4844,6 @@ pub fn Console(
     } else {
         String::new()
     };
-
 
     rsx! {
         div {
@@ -6740,6 +6564,7 @@ pub fn Console(
                                 textarea {
                                     key: "persona-prompt-{persona_textarea_epoch()}",
                                     class: PERSONA_TEXTAREA,
+                                    rows: 10,
                                     value: "{persona_prompt()}",
                                     oninput: move |e| persona_prompt.set(e.value()),
                                 }
@@ -6755,7 +6580,7 @@ pub fn Console(
                             div { class: ROLE_ACTIONS,
                                 button {
                                     r#type: "button",
-                                    class: "{ROLE_BTN} {ROLE_BTN_SECONDARY}",
+                                    class: "{ROLE_BTN} {CHAT_TOOLBAR_PILL} {ROLE_BTN_SECONDARY}",
                                     disabled: persona_polishing(),
                                     onclick: move |_| {
                                         if persona_polishing() {
@@ -6827,7 +6652,7 @@ pub fn Console(
                                 }
                                 button {
                                     r#type: "button",
-                                    class: "{ROLE_BTN} {ROLE_BTN_PRIMARY}",
+                                    class: "{ROLE_BTN} {CHAT_SEND_READY}",
                                                     "data-save": true,
                                     onclick: move |_| {
                                         let text = persona_prompt();
@@ -7235,9 +7060,9 @@ pub fn Console(
                                 {
                                     set_show_jump_bottom(show_jump_bottom, show);
                                 }
-                                // 用户上翻超过阈值：切断流式自动吸底。
+                                // 用户离开底部：切断流式自动吸底（阈值远小于「回到底部」显示阈值）。
                                 if chat_thread_dist_from_dom()
-                                    .is_some_and(|d| d > CHAT_JUMP_BOTTOM_SHOW_PX)
+                                    .is_some_and(|d| d > CHAT_FOLLOW_BREAK_PX)
                                 {
                                     chat_follow_bottom.set(false);
                                 }
@@ -7971,7 +7796,7 @@ pub fn Console(
                                     button {
                                         r#type: "button",
                                         class: "{CHAT_TOOLBAR_PILL} {CHAT_MODE_TRIGGER}",
-                                            "data-open": chat_model_sheet_open(),
+                                        // 不传 data-open：打开 / 选择模型时按钮样式保持不变。
                                         aria_expanded: chat_model_sheet_open(),
                                         aria_haspopup: "menu",
                                         onclick: move |_| {
@@ -8483,43 +8308,6 @@ pub fn Console(
                                         }
                                     }
                                 }
-                                label { class: "{CHAT_TOOLBAR_PILL} {CHAT_UPLOAD_BTN}",
-                                    input {
-                                        r#type: "file",
-                                        class: CHAT_FILE_INPUT,
-                                        accept: "image/*,*/*",
-                                        multiple: true,
-                                        onchange: move |e: FormEvent| {
-                                            let files: Vec<_> = e.data().files().into_iter().collect();
-                                            if files.is_empty() {
-                                                return;
-                                            }
-                                            spawn(async move {
-                                                for file in files {
-                                                    let id = chat_attachment_seq();
-                                                    chat_attachment_seq.set(id + 1);
-                                                    if let Some(att) =
-                                                        attachment_from_file_data(id, file).await
-                                                    {
-                                                        push_composer_attachment(
-                                                            COMPOSER_ROOT_MAIN,
-                                                            chat_pending,
-                                                            chat_can_send,
-                                                            att,
-                                                        );
-                                                    }
-                                                }
-                                            });
-                                        },
-                                    }
-                                    Icon {
-                                        icon: LdPaperclip,
-                                        width: 15,
-                                        height: 15,
-                                        fill: "currentColor",
-                                        
-                                    }
-                                }
                             }
                         }
                         button {
@@ -9029,7 +8817,7 @@ pub fn Console(
                         div { class: API_MODAL_ACTIONS,
                             button {
                                 r#type: "button",
-                                class: "{ROLE_BTN} {ROLE_BTN_SECONDARY}",
+                                class: "{ROLE_BTN} {CHAT_TOOLBAR_PILL} {ROLE_BTN_SECONDARY}",
                                 onclick: move |_| {
                                     create_plugin_open.set(false);
                                     create_plugin_error.set(None);
@@ -9038,7 +8826,7 @@ pub fn Console(
                             }
                             button {
                                 r#type: "button",
-                                class: "{ROLE_BTN} {ROLE_BTN_PRIMARY}",
+                                class: "{ROLE_BTN} {CHAT_SEND_READY}",
                                 onclick: move |_| {
                                     let name = create_plugin_name();
                                     match super::files::fs_scaffold_extension_plugin(&name) {
@@ -9129,7 +8917,7 @@ pub fn Console(
                         div { class: API_MODAL_ACTIONS,
                             button {
                                 r#type: "button",
-                                class: "{ROLE_BTN} {ROLE_BTN_SECONDARY}",
+                                class: "{ROLE_BTN} {CHAT_TOOLBAR_PILL} {ROLE_BTN_SECONDARY}",
                                 onclick: move |_| {
                                     create_app_open.set(false);
                                     create_app_error.set(None);
@@ -9138,7 +8926,7 @@ pub fn Console(
                             }
                             button {
                                 r#type: "button",
-                                class: "{ROLE_BTN} {ROLE_BTN_PRIMARY}",
+                                class: "{ROLE_BTN} {CHAT_SEND_READY}",
                                 onclick: move |_| {
                                     let name = create_app_name();
                                     match super::files::fs_scaffold_local_application(&name) {
@@ -9616,13 +9404,13 @@ pub fn Console(
                         div { class: API_MODAL_ACTIONS,
                             button {
                                 r#type: "button",
-                                class: "{ROLE_BTN} {ROLE_BTN_SECONDARY}",
+                                class: "{ROLE_BTN} {CHAT_TOOLBAR_PILL} {ROLE_BTN_SECONDARY}",
                                 onclick: move |_| delete_role_confirm.set(None),
                                 "取消"
                             }
                             button {
                                 r#type: "button",
-                                class: "{ROLE_BTN} {ROLE_BTN_PRIMARY}",
+                                class: "{ROLE_BTN} {CHAT_SEND_READY}",
                                 onclick: move |_| {
                                     delete_role_confirm.set(None);
                                     role_loading.set(true);

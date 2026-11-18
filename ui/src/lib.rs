@@ -9,6 +9,7 @@ pub use shell::{Console, StatusBar};
 mod chat;
 mod custom_chat_models;
 mod icons;
+mod model_presets;
 mod persona;
 mod version;
 #[cfg(target_arch = "wasm32")]
@@ -103,7 +104,6 @@ fn native_host_shell_style() -> Element {
 #[component]
 fn WebAppShell() -> Element {
     use crate::shell::toast::{use_init_toast_ctx, ToastViewport};
-    use crate::web::about::WebAboutModal;
     use crate::web::settings::WebSettingsPage;
 
     let show_sidebar = use_signal(|| true);
@@ -113,10 +113,7 @@ fn WebAppShell() -> Element {
     let chat_history_open = use_signal(|| false);
     let active_file_path = use_signal(|| None::<String>);
     let active_role_name = use_signal(String::new);
-    let mut show_settings_modal = use_signal(|| false);
-    let show_about_modal = use_signal(|| false);
-    let show_titlebar_settings_menu = use_signal(|| false);
-    let show_font_size_modal = use_signal(|| false);
+    let show_settings_modal = use_signal(|| false);
     let developer_mode = use_signal(crate::shell::dev_mode::load);
     // 必须在子组件首次 `use_toast()` 之前调用：把全局 toast ctx 注入到 Dioxus context。
     let _toast_ctx = use_init_toast_ctx();
@@ -135,13 +132,11 @@ fn WebAppShell() -> Element {
     use_context_provider(|| crate::shell::dev_mode::DeveloperMode(developer_mode));
     use_context_provider(|| crate::web::ShellChromeCtx {
         show_settings_modal,
-        show_about_modal,
-        show_titlebar_settings_menu,
-        show_font_size_modal,
-        developer_mode,
     });
     let open_browser_tick = use_signal(|| 0u64);
     use_context_provider(|| crate::shell::browser::OpenBrowserTick(open_browser_tick));
+    let open_project_path = use_signal(String::new);
+    use_context_provider(|| crate::shell::OpenProjectPath(open_project_path));
 
     rsx! {
         document::Title { "Pusa" }
@@ -183,25 +178,7 @@ fn WebAppShell() -> Element {
             }
             StatusBar { show_terminal, active_file_path, active_role_name }
             if show_settings_modal() {
-                div {
-                    class: "fixed top-[var(--ac-chrome-top,0px)] right-0 bottom-[var(--ac-chrome-bottom,1.625rem)] left-0 z-[1250] flex items-center justify-center px-4 box-border",
-                    div {
-                        class: "absolute inset-0 bg-[var(--shadow-color)] backdrop-blur-[10px] cursor-pointer",
-                        onclick: move |_| show_settings_modal.set(false),
-                    }
-                    div {
-                        class: "relative z-[1] w-full max-w-[32rem] h-auto max-h-[calc(100%-40px)] overflow-hidden flex flex-col min-h-0 box-border",
-                        WebSettingsPage { show_settings_modal }
-                    }
-                }
-            }
-            if show_about_modal() {
-                WebAboutModal { show_about_modal }
-            }
-            if show_font_size_modal() {
-                crate::shell::theme::FontSizeModal {
-                    show_font_size_modal,
-                }
+                WebSettingsPage { show_settings_modal }
             }
             ToastViewport {}
         }

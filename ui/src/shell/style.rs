@@ -11,7 +11,7 @@
 //! 未使用告警，避免两套 feature 下反复报 dead_code。
 #![allow(dead_code)]
 
-/// 弹窗卡片（窄版，28rem）：字体大小 / 关于本机。
+/// 弹窗卡片（窄版，28rem）。
 pub(crate) const MODAL_CARD: &str = "relative w-full max-w-[28rem] h-auto max-h-full px-6 py-7 rounded-2xl border border-primary-2 bg-primary shadow-[0_16px_40px_var(--shadow-color)] flex flex-col min-h-0 overflow-hidden box-border dark:border-transparent dark:bg-[image:linear-gradient(var(--primary-color),var(--primary-color)),var(--ac-sand-grad-border)] dark:bg-origin-border dark:bg-clip-[padding-box,border-box] dark:shadow-[0_12px_36px_var(--shadow-color),inset_0_1px_0_rgb(255_255_255/0.05)]";
 
 /// 弹窗卡片（宽版，32rem）：API 密钥设置页。
@@ -411,7 +411,7 @@ pub(crate) const FILES_TREE: &str =
 
 /// 树里的行按钮：选中 / 弱化 / 刚写入三种状态交给 `data-selected` / `data-muted` / `data-written`。
 /// `group` 供行名在弱化态降字重。写入脉冲动画来自 app.css 的 `--animate-files-just-written`。
-pub(crate) const FILES_ROW: &str = "group flex items-center gap-[0.2rem] w-full min-h-[1.45rem] px-[0.35rem] py-[0.1rem] border-0 rounded-[0.3rem] bg-transparent text-secondary-1 cursor-pointer text-left box-border hover:bg-[color-mix(in_srgb,var(--primary-color-2)_58%,transparent)] data-[selected=true]:bg-[color-mix(in_srgb,var(--ac-color-93c5fd)_28%,var(--primary-color-1))] data-[muted=true]:text-secondary-3 data-[muted=true]:opacity-[0.58] data-[written=true]:bg-[color-mix(in_srgb,var(--brand)_22%,transparent)] data-[written=true]:shadow-[inset_2px_0_0_var(--brand)] data-[written=true]:animate-files-just-written data-[selected=true]:data-[written=true]:bg-[color-mix(in_srgb,var(--ac-color-93c5fd)_42%,var(--primary-color-1))]";
+pub(crate) const FILES_ROW: &str = "group flex items-center gap-[0.2rem] w-full min-h-[1.45rem] px-[0.35rem] py-[0.1rem] border-0 rounded-[0.3rem] bg-transparent text-secondary-1 cursor-pointer text-left box-border hover:bg-[var(--ac-item-hover-bg)] data-[selected=true]:bg-[var(--ac-item-selected-bg)] data-[muted=true]:text-secondary-3 data-[muted=true]:opacity-[0.58] data-[written=true]:bg-[color-mix(in_srgb,var(--brand)_22%,transparent)] data-[written=true]:shadow-[inset_2px_0_0_var(--brand)] data-[written=true]:animate-files-just-written data-[selected=true]:data-[written=true]:bg-[var(--ac-item-selected-bg)]";
 
 /// 重命名中的行（输入框替代文件名）。
 pub(crate) const FILES_ROW_RENAMING: &str = "flex items-center gap-[0.25rem] w-full min-h-[1.45rem] border-0 rounded-[0.3rem] bg-transparent text-secondary-1 cursor-pointer text-left box-border pt-[0.15rem] pb-[0.15rem] pr-[0.4rem]";
@@ -611,7 +611,7 @@ pub(crate) const AUDIO_ERROR: &str = "w-full text-[0.78rem] text-[var(--ac-chat-
 // ——————————————————————————— 聊天栏外壳 ———————————————————————————
 
 /// 聊天栏（含 premium-chat 的表面）。`group/exp` 驱动中栏收起后的放宽；拖拽时禁过渡。
-pub(crate) const CHAT: &str = "group/exp relative flex flex-col min-w-[280px] max-w-[560px] flex-[0_0_auto] border-l border-line bg-primary overflow-x-hidden shadow-[-2px_4px_20px_var(--shadow-color)] [--ac-chat-body-fs:0.9rem] transition-[flex,width,max-width] duration-[0.22s] ease-out group-data-[resizing=true]/root:[transition:none]! dark:border-l-transparent dark:before:[content:''] dark:before:absolute dark:before:top-0 dark:before:left-0 dark:before:bottom-0 dark:before:w-px dark:before:z-[6] dark:before:pointer-events-none dark:before:opacity-[var(--ac-sand-opacity)] dark:before:bg-[var(--ac-sand-grad-y)] data-[menus=true]:overflow-visible data-[menus=true]:z-80";
+pub(crate) const CHAT: &str = "group/exp relative flex flex-col min-w-[280px] max-w-[560px] flex-[0_0_auto] data-[exp=true]:flex-[1_1_auto] data-[exp=true]:w-auto data-[exp=true]:max-w-none border-l border-line bg-primary overflow-x-hidden shadow-[-2px_4px_20px_var(--shadow-color)] [--ac-chat-body-fs:0.9rem] transition-[flex,width,max-width] duration-[0.22s] ease-out group-data-[resizing=true]/root:[transition:none]! dark:border-l-[#2e2e33] dark:shadow-none data-[menus=true]:overflow-visible data-[menus=true]:z-80";
 
 /// 聊天栏已隐藏。
 pub(crate) const CHAT_HIDDEN: &str = "flex-[0_0_0]! w-0! min-w-0! max-w-0! opacity-0 overflow-hidden pointer-events-none border-l-0 border-l-transparent";
@@ -631,20 +631,20 @@ pub(crate) const CHAT_HEADER: &str = "px-5 py-4 border-b border-primary-2 shrink
 /// 头部图标。
 pub(crate) const CHAT_HEADER_ICON: &str = "shrink-0";
 
-/// 正文列（左上柔光 + 竖向渐变底）。
-pub(crate) const CHAT_BODY: &str = "flex-1 min-h-0 overflow-hidden p-0 flex flex-col items-stretch gap-0 bg-[radial-gradient(circle_at_24%_12%,var(--ac-color-4285f42e),transparent_24%),linear-gradient(180deg,var(--primary-color-1),var(--primary-color-1))]";
+/// 正文列（左上柔光，亮暗两套色调，统一 0.06 透明度 + 45% 扩散半径）。
+pub(crate) const CHAT_BODY: &str = "flex-1 min-h-0 overflow-hidden p-0 flex flex-col items-stretch gap-0 bg-[radial-gradient(circle_at_24%_12%,var(--ac-chat-glow),transparent_45%),linear-gradient(180deg,var(--primary-color-1),var(--primary-color-1))]";
 
 /// 线程窗格（相对定位，承载左侧导航短条）。
 pub(crate) const CHAT_THREAD_PANE: &str = "relative flex-1 min-w-0 min-h-0 flex flex-col";
 
-/// 左缘提问导航短条容器。
-pub(crate) const CHAT_NAV: &str = "absolute left-[3px] top-1/2 -translate-y-1/2 z-[4] flex flex-col items-start gap-[7px] py-[2px]";
+/// 左缘提问导航：竖向居中，无底座，贴近左边框。
+pub(crate) const CHAT_NAV: &str = "absolute left-[5px] top-1/2 -translate-y-1/2 z-[4] flex flex-col items-center gap-[9px]";
 
-/// 导航短条（`data-current` 深色）。
-pub(crate) const CHAT_NAV_DOT: &str = "w-[15px] h-1 p-0 border-0 rounded-[2px] bg-[#d5d5d5] cursor-pointer transition-[background] duration-[0.12s] ease-out hover:bg-[#a8a8a8] data-[current=true]:bg-[#1a1a1a]";
+/// 导航小圆点（`data-current` 深色）。
+pub(crate) const CHAT_NAV_DOT: &str = "w-[5px] h-[5px] min-w-[5px] min-h-[5px] p-0 border-0 rounded-full bg-secondary-5 cursor-pointer transition-[background] duration-[0.12s] ease-out hover:bg-secondary-3 data-[current=true]:bg-secondary-1";
 
-/// 消息线程滚动区。
-pub(crate) const CHAT_THREAD: &str = "min-w-0 min-h-0 flex-1 overflow-y-auto overflow-x-hidden flex flex-col gap-[2.25rem] box-border py-6 px-4 group-data-[exp=true]/exp:px-6";
+/// 消息线程滚动区（左侧与导航圆点保持间距）。
+pub(crate) const CHAT_THREAD: &str = "min-w-0 min-h-0 flex-1 overflow-y-auto overflow-x-hidden flex flex-col gap-[2.25rem] box-border py-6 pl-[22px] pr-5 group-data-[exp=true]/exp:pl-[30px] group-data-[exp=true]/exp:pr-5";
 
 /// 线程与输入区之间的零高槽位（回到底部按钮贴在输入区上缘）。
 pub(crate) const CHAT_JUMP_HOST: &str = "group/jh relative z-[6] h-0 overflow-visible pointer-events-none";
@@ -679,10 +679,10 @@ pub(crate) const CHAT_BUBBLE_USER_EDITING: &str = "relative z-[2] w-[min(620px,c
 pub(crate) const CHAT_BUBBLE_USER_TEXT: &str = "inline whitespace-pre-wrap [overflow-wrap:break-word] [word-break:normal]";
 
 /// 助手消息纵向栈（悬停浮现操作行）。
-pub(crate) const CHAT_AI_STACK: &str = "group/ai shrink-0 w-fit max-w-[min(720px,calc(100%-20px))] flex flex-col items-start pb-[1.75rem] -mb-[1.75rem] group-data-[exp=true]/exp:max-w-[min(1000px,calc(100%-20px))]";
+pub(crate) const CHAT_AI_STACK: &str = "group/ai shrink-0 w-fit max-w-[min(720px,calc(100%-20px))] flex flex-col items-start pb-[1.75rem] -mb-[1.75rem] group-data-[exp=true]/exp:w-full group-data-[exp=true]/exp:max-w-[min(1000px,calc(100%-20px))]";
 
 /// 用户消息纵向栈（悬停浮现操作行）。
-pub(crate) const CHAT_USER_STACK: &str = "group/user shrink-0 w-fit max-w-[min(720px,calc(100%-20px))] flex flex-col items-end pb-[1.75rem] -mb-[1.75rem] group-data-[exp=true]/exp:max-w-[min(1000px,calc(100%-20px))]";
+pub(crate) const CHAT_USER_STACK: &str = "group/user shrink-0 w-fit max-w-[min(720px,calc(100%-20px))] flex flex-col items-end pb-[1.75rem] -mb-[1.75rem] group-data-[exp=true]/exp:w-full group-data-[exp=true]/exp:max-w-[min(1000px,calc(100%-20px))]";
 
 /// 助手消息操作行（`data-error` 常显）。
 pub(crate) const CHAT_AI_ACTIONS: &str = "group/actions min-h-[1.55rem] inline-flex items-center gap-[0.35rem] pt-[0.35rem] opacity-0 -translate-y-[0.18rem] pointer-events-none transition-[opacity,transform] duration-[0.16s] ease-out group-hover/ai:opacity-100 group-hover/ai:translate-y-0 group-hover/ai:pointer-events-auto group-focus-within/ai:opacity-100 group-focus-within/ai:translate-y-0 group-focus-within/ai:pointer-events-auto data-[error=true]:opacity-100 data-[error=true]:translate-y-0 data-[error=true]:pointer-events-auto";
@@ -712,7 +712,7 @@ pub(crate) const CHAT_BUBBLE_EDIT_SEND: &str = "flex-none w-[1.85rem] min-w-[1.8
 // ——————————————————————————— 发送钮 ———————————————————————————
 
 /// 发送钮基底。
-pub(crate) const CHAT_SEND_BTN: &str = "flex-none w-[2.25rem] min-w-[2.25rem] h-[2.25rem] min-h-[2.25rem] mt-auto self-end p-0 border-0 rounded-full inline-flex items-center justify-center text-white bg-[var(--search-button)] shadow-none cursor-default pointer-events-auto transition-[background,color,filter,box-shadow,transform] duration-150 disabled:opacity-45 disabled:cursor-not-allowed not-disabled:hover:bg-[var(--search-button-hover)] not-disabled:hover:text-white not-disabled:hover:[filter:none] not-disabled:hover:-translate-y-px not-disabled:hover:cursor-pointer not-disabled:focus-visible:bg-[var(--search-button-hover)] not-disabled:focus-visible:text-white not-disabled:focus-visible:[filter:none] not-disabled:focus-visible:-translate-y-px";
+pub(crate) const CHAT_SEND_BTN: &str = "flex-none w-[2.25rem] min-w-[2.25rem] h-[2.25rem] min-h-[2.25rem] mt-auto self-end p-0 border-0 rounded-full inline-flex items-center justify-center text-white bg-[var(--ac-chat-send-base)] shadow-none cursor-default pointer-events-auto transition-[background,color,filter,box-shadow,transform] duration-150 disabled:opacity-45 disabled:cursor-not-allowed not-disabled:hover:bg-[var(--ac-chat-send-base-hover)] not-disabled:hover:text-white not-disabled:hover:[filter:none] not-disabled:hover:-translate-y-px not-disabled:hover:cursor-pointer not-disabled:focus-visible:bg-[var(--ac-chat-send-base-hover)] not-disabled:focus-visible:text-white not-disabled:focus-visible:[filter:none] not-disabled:focus-visible:-translate-y-px";
 
 /// 草稿非空：灰蓝底。
 pub(crate) const CHAT_SEND_READY: &str = "text-primary bg-[var(--ac-chat-send-ready)] shadow-[0_14px_30px_var(--shadow-color)] cursor-pointer not-disabled:hover:bg-[var(--ac-chat-send-ready-hover)] not-disabled:hover:text-white not-disabled:hover:[filter:none] not-disabled:focus-visible:bg-[var(--ac-chat-send-ready-hover)] not-disabled:focus-visible:text-white not-disabled:focus-visible:[filter:none]";
@@ -801,7 +801,7 @@ pub(crate) const CHAT_COMPOSER_TOOLBAR: &str = "flex flex-wrap items-center gap-
 pub(crate) const CHAT_COMPOSER_CE: &str = "ac-chat-composer-ce relative block w-full min-w-0 min-h-[4rem] max-h-[10rem] overflow-x-hidden overflow-y-auto box-border pt-[0.15rem] pr-[0.1rem] pb-0 pl-[0.1rem] outline-none whitespace-pre-wrap [overflow-wrap:anywhere] [word-break:break-word] [caret-color:var(--secondary-color-1)] leading-[1.35] text-[length:var(--ac-chat-body-fs,0.9rem)] text-secondary-1 [font-family:-apple-system,BlinkMacSystemFont,'PingFang_SC','Hiragino_Sans_GB','STHeiti','Heiti_SC','Microsoft_YaHei','Noto_Sans_CJK_SC',system-ui,sans-serif] pointer-events-auto";
 
 /// 工具条胶囊基底（模型 / 模式 / 上传共用）。
-pub(crate) const CHAT_TOOLBAR_PILL: &str = "box-border appearance-none rounded-full border border-[var(--ac-chat-toolbar-pill-border)] bg-[var(--ac-chat-toolbar-pill-bg)] shadow-[var(--ac-chat-toolbar-pill-shadow)] cursor-pointer transition-[border-color,box-shadow,background,background-image,color,transform] duration-150 ease-out hover:border-[color-mix(in_srgb,var(--ac-chat-toolbar-pill-border)_55%,var(--border-color-hover))] hover:shadow-[0_3px_8px_#0f172a14] active:scale-[0.98]";
+pub(crate) const CHAT_TOOLBAR_PILL: &str = "box-border appearance-none rounded-full border border-[var(--ac-chat-toolbar-pill-border)] bg-[var(--ac-chat-toolbar-pill-bg)] shadow-[var(--ac-chat-toolbar-pill-shadow)] cursor-pointer transition-[border-color,box-shadow,background,background-image,color,transform] duration-150 ease-out hover:border-[color-mix(in_srgb,var(--ac-chat-toolbar-pill-border)_55%,var(--border-color-hover))] dark:hover:border-transparent hover:shadow-[0_3px_8px_#0f172a14] active:scale-[0.98]";
 
 /// Agent 模式触发钮（图标 + 文字胶囊；`data-open` 展开）。
 pub(crate) const CHAT_AGENT_MODE_BTN: &str = "box-border appearance-none inline-flex items-center justify-center gap-[0.35rem] min-h-[2rem] min-w-0 w-auto h-auto pt-[0.28rem] pr-[0.7rem] pb-[0.28rem] pl-[0.55rem] shrink-0 text-secondary-1 text-[0.7rem] font-[650] leading-[1.2] tracking-[-0.02em] not-disabled:hover:text-[var(--border-color-dark)] data-[open=true]:text-[var(--border-color-dark)]";
@@ -894,9 +894,6 @@ pub(crate) const CHAT_SHEET_CUSTOM_ICON_BTN: &str = "inline-flex items-center ju
 
 pub(crate) const CHAT_SHEET_SPIN: &str = "animate-[ac-chat-mode-sheet-spin_0.85s_linear_infinite] motion-reduce:animate-none";
 
-/// 上传附件按钮。
-pub(crate) const CHAT_UPLOAD_BTN: &str = "relative box-border appearance-none inline-flex items-center justify-center w-[2rem] h-[2rem] shrink-0 text-secondary-1 hover:text-[var(--border-color-dark)]";
-
 /// 隐藏的文件选择框。
 pub(crate) const CHAT_FILE_INPUT: &str = "absolute inset-0 w-full h-full opacity-0 cursor-pointer text-[0px]";
 
@@ -985,7 +982,7 @@ pub(crate) const CHAT_HISTORY_EDIT_WRAP: &str = "relative w-full min-w-0 box-bor
 pub(crate) const CHAT_HISTORY_EDIT_ACTIONS: &str = "absolute top-1/2 right-[0.2rem] z-[1] flex items-center gap-[0.08rem] -translate-y-1/2 pointer-events-auto group-data-[rail=true]/hp:hidden!";
 
 /// 历史条目（`group/item` + `data-active` / `data-running`）。
-pub(crate) const CHAT_HISTORY_ITEM: &str = "group/item min-w-0 w-full flex items-center gap-[0.25rem] box-border px-[0.25rem] py-[0.35rem] border-0 rounded-none bg-transparent text-left cursor-pointer shadow-none overflow-hidden [contain:paint] transition-[background,color] duration-150 ease-out hover:bg-primary-1 group-data-[rail=true]/hp:justify-start group-data-[rail=true]/hp:gap-0 data-[active=true]:bg-[color-mix(in_srgb,var(--primary-color-2)_38%,var(--primary-color))] data-[active=true]:hover:bg-[color-mix(in_srgb,var(--primary-color-2)_38%,var(--primary-color))]";
+pub(crate) const CHAT_HISTORY_ITEM: &str = "group/item min-w-0 w-full flex items-center gap-[0.25rem] box-border px-[0.25rem] py-[0.35rem] border-0 rounded-none bg-transparent text-left cursor-pointer shadow-none overflow-hidden [contain:paint] transition-[background,color] duration-150 ease-out hover:bg-primary-1 group-data-[rail=true]/hp:justify-start group-data-[rail=true]/hp:gap-0 data-[active=true]:bg-[color-mix(in_srgb,var(--primary-color-2)_38%,var(--primary-color))] data-[active=true]:hover:bg-[color-mix(in_srgb,var(--primary-color-2)_38%,var(--primary-color))] dark:data-[active=true]:bg-[var(--ac-chat-history-active)] dark:data-[active=true]:hover:bg-[var(--ac-chat-history-active)]";
 
 pub(crate) const CHAT_HISTORY_ITEM_BODY: &str = "min-w-0 flex-[1_1_0] max-w-full flex flex-row items-center gap-0 overflow-hidden group-data-[rail=true]/hp:hidden!";
 
@@ -1053,7 +1050,7 @@ pub(crate) const SETTINGS_SAVED: &str = "mt-[0.35rem] mb-[0.75rem] mx-0 text-[0.
 
 // ——————————————————————————— 原生标题栏（P5-4，desktop/chrome.rs） ———————————————————————————
 
-pub(crate) const NATIVE_TITLEBAR: &str = "flex items-center h-[32px] shrink-0 px-[10px] py-0 gap-[8px] box-border select-none bg-[color-mix(in_srgb,var(--primary-color-1)_80%,transparent)] border-b border-[color-mix(in_srgb,var(--primary-color-2)_60%,transparent)]";
+pub(crate) const NATIVE_TITLEBAR: &str = "relative flex items-center h-[32px] shrink-0 px-[10px] py-0 gap-[8px] box-border select-none bg-[color-mix(in_srgb,var(--ac-chrome-bar-bg)_80%,transparent)] border-b border-[color-mix(in_srgb,var(--primary-color-2)_60%,transparent)] dark:border-b-[#2e2e33]";
 
 pub(crate) const NATIVE_TITLEBAR_WINDOWS: &str = "pt-0 pr-0 pb-0 pl-[10px] gap-[6px]";
 
@@ -1121,23 +1118,14 @@ pub(crate) const WEB_TITLEBAR_ACTIONS_END: &str = "flex items-center gap-[6px]";
 
 pub(crate) const WEB_TITLEBAR_SPACER: &str = "flex-1 min-w-[8px]";
 
-/// 切换按钮（`data-menu-open` 下拉展开时同 hover 底）。
-pub(crate) const WEB_TITLEBAR_BTN: &str = "h-[20px] px-[6px] py-0 border-0 rounded-[4px] text-brand text-[12px] font-extrabold leading-none bg-transparent cursor-default transition-[background,color] duration-150 hover:bg-[var(--border-color-light)] data-[menu-open=true]:bg-[var(--border-color-light)]";
+/// 标题栏按钮。
+pub(crate) const WEB_TITLEBAR_BTN: &str = "h-[20px] px-[6px] py-0 border-0 rounded-[4px] text-brand text-[12px] font-extrabold leading-none bg-transparent cursor-default transition-[background,color] duration-150 hover:bg-[var(--border-color-light)]";
 
 pub(crate) const WEB_TITLEBAR_ICON: &str = "block shrink-0";
 
 pub(crate) const WEB_TITLEBAR_SWITCH_WRAP: &str = "inline-flex items-center gap-0";
 
 pub(crate) const WEB_TITLEBAR_SWITCH_ICON_OUTSIDE: &str = "min-w-[28px] h-[20px] px-[6px] py-0 border-0 rounded-[4px] inline-flex items-center justify-center text-[var(--brand-light)] flex-[0_0_auto] bg-transparent cursor-pointer hover:bg-[var(--border-color-light)]";
-
-pub(crate) const WEB_TITLEBAR_SETTINGS_WRAP: &str = "relative flex items-center";
-
-pub(crate) const WEB_TITLEBAR_MENU_BACKDROP: &str = "fixed inset-0 z-[1180] bg-transparent";
-
-/// 设置下拉菜单（暗色为银河描边弹层）。
-pub(crate) const WEB_TITLEBAR_MENU: &str = "absolute top-[calc(100%+4px)] right-0 z-[1181] min-w-[11.5rem] p-[0.35rem] rounded-[0.55rem] border border-primary-2 bg-primary shadow-[0_2px_6px_var(--shadow-color),0_14px_36px_-6px_var(--shadow-color)] dark:[border:1px_solid_transparent] dark:[background-origin:border-box] dark:[background-clip:padding-box,border-box] dark:bg-[linear-gradient(var(--primary-color),var(--primary-color)),var(--ac-sand-grad-border)] dark:bg-primary dark:shadow-[0_12px_36px_var(--shadow-color),inset_0_1px_0_rgb(255_255_255/0.05)]";
-
-pub(crate) const WEB_TITLEBAR_MENU_ITEM: &str = "flex items-center justify-between gap-[0.65rem] w-full box-border m-0 px-[0.55rem] py-[0.45rem] border-0 rounded-[0.4rem] bg-transparent [font:inherit] text-[0.8rem] font-[650] text-secondary-3 text-left cursor-pointer whitespace-nowrap hover:bg-primary-1 data-[active=true]:text-[var(--ac-color-2563eb)]";
 
 // ——————————————————————————— 终端面板（P5-4，desktop/terminal.rs） ———————————————————————————
 
@@ -1327,7 +1315,7 @@ pub(crate) const CONSOLE_ROOT: &str =
     "group/root relative flex flex-1 min-h-0 overflow-hidden text-secondary-1 data-[resizing=true]:cursor-col-resize data-[resizing=true]:select-none";
 
 /// 侧栏外壳。过渡逐属性写在任意值里，保留原先 0.22s / 0.18s 的差异。
-pub(crate) const SIDEBAR: &str = "relative min-w-0 w-[280px] flex-[0_0_280px] flex flex-col overflow-hidden border-r border-line bg-primary opacity-100 shadow-[2px_4px_20px_var(--shadow-color)] transition-[flex-basis_0.22s_ease,width_0.22s_ease,opacity_0.18s_ease,transform_0.22s_ease,border-color_0.18s_ease] dark:border-r-transparent dark:before:[content:''] dark:before:absolute dark:before:top-0 dark:before:right-0 dark:before:bottom-0 dark:before:w-px dark:before:z-[6] dark:before:pointer-events-none dark:before:opacity-[var(--ac-sand-opacity)] dark:before:bg-[var(--ac-sand-grad-y)] group-data-[resizing=true]/root:[transition:none]!";
+pub(crate) const SIDEBAR: &str = "relative min-w-0 w-[280px] flex-[0_0_280px] flex flex-col overflow-hidden border-r border-line bg-primary opacity-100 shadow-[2px_4px_20px_var(--shadow-color)] transition-[flex-basis_0.22s_ease,width_0.22s_ease,opacity_0.18s_ease,transform_0.22s_ease,border-color_0.18s_ease] dark:border-r-[#2e2e33] dark:shadow-none group-data-[resizing=true]/root:[transition:none]!";
 
 /// 收起中：宽度插值到 0（1s 长缓动），仍然留在 DOM 里。
 pub(crate) const SIDEBAR_SHUTTING: &str = "pointer-events-none will-change-[flex-basis,width,transform,opacity] min-w-0! max-w-0! w-0! flex-[0_0_0]! opacity-0 -translate-x-[18px] border-r-0 border-r-transparent transition-[flex-basis_1s_cubic-bezier(0.32,0.72,0,1),width_1s_cubic-bezier(0.32,0.72,0,1),opacity_0.6s_ease-out_0.05s,transform_1s_cubic-bezier(0.32,0.72,0,1),border-color_0.6s_ease]";
@@ -1390,7 +1378,7 @@ pub(crate) const BTN_NEW_AGENT: &str = "w-full flex items-center justify-center 
 pub(crate) const SIDEBAR_RESIZER: &str = "absolute top-0 bottom-0 -right-[5px] w-2 cursor-col-resize z-[5] bg-transparent transition-[background] duration-150 ease-out hover:bg-[linear-gradient(90deg,transparent,var(--ac-color-4285f42e)_40%,var(--ac-color-4285f42e))]";
 
 /// 中间栏外壳。
-pub(crate) const CENTER: &str = "flex-1 min-w-0 flex flex-col overflow-hidden bg-primary shadow-[-2px_4px_20px_var(--shadow-color)] opacity-100 translate-x-0 transition-[flex,opacity,transform] duration-[0.22s] ease-out group-data-[resizing=true]/root:[transition:none]!";
+pub(crate) const CENTER: &str = "flex-1 min-w-0 flex flex-col overflow-hidden bg-primary shadow-[-2px_4px_20px_var(--shadow-color)] dark:shadow-none opacity-100 translate-x-0 transition-[flex,opacity,transform] duration-[0.22s] ease-out group-data-[resizing=true]/root:[transition:none]!";
 
 /// 中间栏收起中。
 pub(crate) const CENTER_SHUTTING: &str = "flex-[0_0_0]! opacity-0 translate-x-[18px] pointer-events-none";
@@ -1532,15 +1520,13 @@ pub(crate) const ROLE_DIVIDER: &str = "h-px mt-[1.5rem] mb-[1.6rem] mx-0 bg-prim
 
 pub(crate) const ROLE_ACTIONS: &str = "flex justify-end gap-[1.15rem] mt-[1.75rem]";
 
-/// 角色面板按钮基底（hover 浮起 / active 回弹 / disabled 归零）。
-pub(crate) const ROLE_BTN: &str = "min-w-[11.4rem] h-[3.35rem] rounded-full border border-transparent inline-flex items-center justify-center gap-[0.7rem] text-[0.9rem] font-extrabold cursor-default transition-[transform,box-shadow,background-color,border-color,filter] duration-150 hover:-translate-y-[2px] active:translate-y-px disabled:opacity-55 disabled:cursor-not-allowed disabled:transform-none disabled:hover:transform-none disabled:active:transform-none";
+/// 角色面板按钮基底（不含边框 / 底色 / 阴影，统一由公共按钮类提供）。
+pub(crate) const ROLE_BTN: &str = "min-w-[11.4rem] h-[3.35rem] rounded-full inline-flex items-center justify-center gap-[0.7rem] text-[0.9rem] font-extrabold cursor-default transition-[transform,box-shadow,background-color,border-color,filter] duration-150 active:translate-y-px disabled:opacity-55 disabled:cursor-not-allowed disabled:transform-none disabled:hover:transform-none disabled:active:transform-none";
 
 pub(crate) const ROLE_BTN_ICON: &str = "inline-block shrink-0";
 
-pub(crate) const ROLE_BTN_SECONDARY: &str = "text-secondary-1 border-primary-2 bg-[linear-gradient(180deg,var(--primary-color)_0%,var(--primary-color-3)_100%)] shadow-[0_10px_24px_var(--shadow-color)] hover:shadow-[0_18px_38px_var(--shadow-color)]";
-
-/// 主按钮（`data-save` 时人格保存改用发送钮可发送态底色 token）。
-pub(crate) const ROLE_BTN_PRIMARY: &str = "text-white border-transparent bg-[var(--button-primary)] shadow-[0_10px_28px_color-mix(in_srgb,var(--button-primary)_36%,transparent)] hover:bg-[var(--button-primary-light)] hover:shadow-[0_16px_36px_color-mix(in_srgb,var(--button-primary)_44%,transparent)] data-[save=true]:text-primary data-[save=true]:bg-[var(--ac-chat-send-ready)] data-[save=true]:shadow-[0_10px_28px_color-mix(in_srgb,var(--ac-chat-send-ready)_36%,transparent)] data-[save=true]:hover:bg-[var(--ac-chat-send-ready-hover)] data-[save=true]:hover:shadow-[0_16px_36px_color-mix(in_srgb,var(--ac-chat-send-ready)_44%,transparent)] data-[save=true]:focus-visible:bg-[var(--ac-chat-send-ready-hover)] data-[save=true]:focus-visible:shadow-[0_16px_36px_color-mix(in_srgb,var(--ac-chat-send-ready)_44%,transparent)]";
+/// 次按钮：仅保留角色面板的文字色，其余样式来自公共 [`CHAT_TOOLBAR_PILL`]（Agent 胶囊）。
+pub(crate) const ROLE_BTN_SECONDARY: &str = "text-[#111111] dark:text-text-primary";
 
 pub(crate) const PERSONA_PROMPT_CARD: &str = "mt-[1.75rem] p-0 border-0 rounded-none bg-transparent shadow-none";
 

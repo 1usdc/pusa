@@ -324,6 +324,16 @@ pub fn recent_project_dirs() -> Vec<String> {
         .collect()
 }
 
+/// 从最近打开列表移除目录（只改记录，不删除磁盘上的项目）。
+pub fn forget_recent_project_dir(path: &str) {
+    let mut store = load_recent_store();
+    let before = store.dirs.len();
+    store.dirs.retain(|d| d != path);
+    if store.dirs.len() != before {
+        save_recent_store(&store);
+    }
+}
+
 /// 将目录记入最近打开列表（去重、最近优先；非目录忽略）。
 pub fn record_recent_project_dir(path: &Path) {
     if !path.is_dir() {
@@ -436,6 +446,44 @@ pub fn git_head_status(root: &Path) -> Option<GitHeadStatus> {
         .map(|o| o.status.success() && !String::from_utf8_lossy(&o.stdout).trim().is_empty())
         .unwrap_or(false);
     Some(GitHeadStatus { branch, dirty })
+}
+
+/// 本地分支列表（不含远程）；非 git 仓库或命令失败返回空。
+pub fn git_branches(root: &Path) -> Vec<String> {
+    if !root.is_dir() || !root.join(".git").exists() {
+        return Vec::new();
+    }
+    let root_s = root.to_string_lossy();
+    let out = hidden_command("git")
+        .args(["-C", root_s.as_ref(), "branch", "--format=%(refname:short)"])
+        .output();
+    match out {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// 切换到已存在的本地分支；失败返回 git 的 stderr。
+pub fn git_checkout(root: &Path, branch: &str) -> Result<(), String> {
+    let root_s = root.to_string_lossy();
+    let out = hidden_command("git")
+        .args(["-C", root_s.as_ref(), "checkout", branch])
+        .output()
+        .map_err(|e| format!("无法执行 git：{e}"))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Err(if msg.is_empty() {
+        "切换分支失败".into()
+    } else {
+        msg
+    })
 }
 
 pub fn list_dir(dir: &Path) -> Result<Vec<FsEntry>, String> {

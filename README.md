@@ -2,8 +2,6 @@
 
 Pusa 是一套 Agent 控制台，同时提供**桌面端**与 **Web** 两种形态：在同一套界面里对话、管理技能，并在桌面端打开本机工作区。
 
-插件市场对接 [Open VSX](https://open-vsx.org/) 开放 API，可安装 VS Code 兼容扩展（优先用于语法高亮与编程语言支持）。
-
 ## 下载安装
 
 前往 [最新版本 Release](https://github.com/1usdc/pusa/releases/latest) 下载安装包：
@@ -11,9 +9,9 @@ Pusa 是一套 Agent 控制台，同时提供**桌面端**与 **Web** 两种形�
 | 平台 | 安装包 | 说明 |
 |------|--------|------|
 | macOS（Apple Silicon） | `Pusa-1.1.4-macos-arm64.dmg` | 打开后把 Pusa 拖进「应用程序」 |
-| Windows（x64） | [`Pusa-win-x64-Setup.exe`](https://github.com/1usdc/pusa/releases/latest/download/Pusa-win-x64-Setup.exe) | 双击安装；缺少 WebView2 时安装器会引导 |
+| Windows（x64） | `Pusa-win-x64-Setup.exe`| 双击安装；缺少 WebView2 时安装器会引导 |
 
-macOS 安装包文件名带版本号，请在 Release 页面的 Assets 中选择与版本对应的 `.dmg`。桌面端支持应用内更新，安装后可在窗口底部状态栏检查并升级，无需重新下载安装包。
+桌面端支持应用内更新，安装后可在窗口底部状态栏检查并升级，无需重新下载安装包。
 
 ## 界面预览
 
@@ -35,7 +33,11 @@ macOS 安装包文件名带版本号，请在 Release 页面的 Assets 中选择
 
 Web 端侧重对话与技能；本机文件、终端和扩展安装请使用桌面应用。
 
-## 环境要求
+---
+
+## 开发指南
+
+### 环境要求
 
 从源码运行需要：
 
@@ -49,15 +51,15 @@ Windows 编译桌面端还需 MSVC C++ 生成工具（提供 `link.exe`）：
 winget install --id Microsoft.VisualStudio.2022.BuildTools --override "--quiet --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
 ```
 
-## 运行
+### 运行
 
-### 桌面端
+#### 桌面端
 
 ```bash
 just desktop
 ```
 
-### Web
+#### Web
 
 分别启动前端与 API，然后在浏览器打开 `http://127.0.0.1:8080/`：
 
@@ -65,17 +67,3 @@ just desktop
 just web
 just server
 ```
-
-## 仓库结构
-
-公开层面主要包含：
-
-| 路径 | 说明 |
-|------|------|
-| `desktop/` | 桌面端入口 |
-| `web/` | Web 端入口 |
-| `server/` | Web 所用 HTTP API |
-| `ui/` | 桌面与 Web 共用界面 |
-| `protocol/` | 前后端共用的数据类型 |
-| `extensions/` | 工作区扩展（含从 Open VSX 安装的包） |
-| `skills/` | Agent 技能包 |

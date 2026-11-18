@@ -1,4 +1,4 @@
-//! 开发者模式：关于弹窗标题三连击开关；聊天栏复制旁显示详情（眼睛）入口。
+//! 开发者模式：版本信息标题三连击开关；聊天栏复制旁显示详情（眼睛）入口。
 //! Web 持久化到 localStorage；桌面持久化到用户数据目录。
 
 use dioxus::document;
@@ -119,10 +119,4 @@ pub fn toggle(mut developer_mode: Signal<bool>) {
     let next = !developer_mode();
     developer_mode.set(next);
     set(next);
-}
-
-/// 显式开/关。
-pub fn apply(enabled: bool, mut developer_mode: Signal<bool>) {
-    developer_mode.set(enabled);
-    set(enabled);
 }

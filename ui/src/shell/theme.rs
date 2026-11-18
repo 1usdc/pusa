@@ -2,9 +2,6 @@
 //! 字体大小：持久化 + 写入 `html[data-font-size]`。
 
 use dioxus::prelude::*;
-use crate::shell::style::{
-    WEB_TITLEBAR_MENU_ITEM,
-};
 
 /// UI 主题。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -228,89 +225,4 @@ pub fn set_font_size(font_size: FontSize) {
 /// 启动时恢复字体大小到 DOM。
 pub fn restore_font_size_on_launch() {
     apply_font_size_dom(load_font_size());
-}
-
-/// 设置下拉里的主题切换：显示当前主题的相反项，一点即切。
-#[component]
-pub fn TitlebarThemeToggle(
-    mut ui_theme: Signal<UiTheme>,
-    mut show_titlebar_settings_menu: Signal<bool>,
-) -> Element {
-    let next = ui_theme().opposite();
-    rsx! {
-        button {
-            r#type: "button",
-            role: "menuitem",
-            class: WEB_TITLEBAR_MENU_ITEM,
-            onclick: move |_| {
-                set(next);
-                ui_theme.set(next);
-                show_titlebar_settings_menu.set(false);
-            },
-            "{next.label()}"
-        }
-    }
-}
-
-/// 字体大小设置弹窗。
-#[component]
-pub fn FontSizeModal(mut show_font_size_modal: Signal<bool>) -> Element {
-    let mut font_size = use_signal(load_font_size);
-    rsx! {
-        div {
-            class: "fixed top-[var(--ac-chrome-top,0px)] right-0 bottom-[var(--ac-chrome-bottom,1.625rem)] left-0 z-[1250] flex items-center justify-center px-4 box-border",
-            div {
-                class: "absolute inset-0 bg-[var(--shadow-color)] backdrop-blur-[10px] cursor-pointer",
-                onclick: move |_| show_font_size_modal.set(false),
-            }
-            div {
-                class: "relative z-[1] w-full max-w-[32rem] h-auto max-h-[calc(100%-40px)] overflow-hidden flex flex-col min-h-0 box-border",
-                div { class: crate::shell::style::MODAL_CARD,
-                    div { class: crate::shell::style::MODAL_HEAD,
-                        h1 { class: crate::shell::style::MODAL_TITLE, "字体大小" }
-                        button {
-                            r#type: "button",
-                            class: crate::shell::style::MODAL_CLOSE,
-                            title: "关闭",
-                            aria_label: "关闭",
-                            onclick: move |_| show_font_size_modal.set(false),
-                            "×"
-                        }
-                    }
-                    div { class: crate::shell::style::MODAL_BODY_FLEX_ROW,
-                        button {
-                            r#type: "button",
-                            class: "flex-1 px-4 py-3 rounded-[0.5rem] text-[1rem] font-medium cursor-pointer bg-transparent border-0 transition-all duration-150 ease-[ease] data-[active=true]:bg-primary-2 data-[active=true]:font-semibold data-[active=true]:text-black dark:data-[active=true]:text-white",
-                            "data-active": font_size() == FontSize::Small,
-                            onclick: move |_| {
-                                set_font_size(FontSize::Small);
-                                font_size.set(FontSize::Small);
-                            },
-                            "小"
-                        }
-                        button {
-                            r#type: "button",
-                            class: "flex-1 px-4 py-3 rounded-[0.5rem] text-[1rem] font-medium cursor-pointer bg-transparent border-0 transition-all duration-150 ease-[ease] data-[active=true]:bg-primary-2 data-[active=true]:font-semibold data-[active=true]:text-black dark:data-[active=true]:text-white",
-                            "data-active": font_size() == FontSize::Medium,
-                            onclick: move |_| {
-                                set_font_size(FontSize::Medium);
-                                font_size.set(FontSize::Medium);
-                            },
-                            "中"
-                        }
-                        button {
-                            r#type: "button",
-                            class: "flex-1 px-4 py-3 rounded-[0.5rem] text-[1rem] font-medium cursor-pointer bg-transparent border-0 transition-all duration-150 ease-[ease] data-[active=true]:bg-primary-2 data-[active=true]:font-semibold data-[active=true]:text-black dark:data-[active=true]:text-white",
-                            "data-active": font_size() == FontSize::Large,
-                            onclick: move |_| {
-                                set_font_size(FontSize::Large);
-                                font_size.set(FontSize::Large);
-                            },
-                            "大"
-                        }
-                    }
-                }
-            }
-        }
-    }
 }

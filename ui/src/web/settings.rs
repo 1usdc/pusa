@@ -1,17 +1,18 @@
-//! Web 设置页：多组 OpenAI / Anthropic API Key 与 Base URL（保存到服务端数据库）。
+//! Web 设置整页：标准「左侧菜单 + 右侧内容」布局。
+//!
+//! 左侧菜单：通用 / 模型设置 / 版本信息；右侧按选中分区渲染对应内容。
+//! 模型设置（多组供应商：Base URL / API 格式 / API Key / 模型列表）保存到服务端数据库。
 
 #![cfg(all(target_arch = "wasm32", feature = "web"))]
 
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::ld_icons::LdX;
-use dioxus_free_icons::Icon;
 use protocol::{LlmConfigDto, LlmCredentialDto, LlmCredentialUpsertBody};
 
 use crate::shell::toast::use_toast;
-use crate::shell::LlmCredentialsPanel;
 use crate::shell::{
     activate_id_after_toggle, enabled_after_delete, enabled_after_toggle, enabled_after_upsert,
-    overlay_enabled_credential_ids,
+    overlay_enabled_credential_ids, FontSizeSettingRow, ModelSettingsPanel, SettingsInfoRow,
+    SettingsNavShell, SettingsSection, ThemeSettingRow,
 };
 use crate::web::llm_config;
 
@@ -28,128 +29,203 @@ fn apply_cfg(
     enabled_ids.set(enabled);
 }
 
-/// Web 设置弹窗：模型凭证与关闭。
+/// Web 设置整页：左侧菜单（通用 / 模型设置 / 版本信息）+ 右侧内容。
 #[component]
 pub fn WebSettingsPage(mut show_settings_modal: Signal<bool>) -> Element {
     let toast = use_toast();
     let credentials = use_signal(Vec::<LlmCredentialDto>::new);
     let active_id = use_signal(String::new);
     let mut enabled_ids = use_signal(Vec::<String>::new);
+    let mut load_hint = use_signal(|| None::<String>);
     let refresh = use_context::<crate::shell::LlmModelsRefresh>().0;
+
+    // 左侧菜单当前分区；打开时默认进入模型设置。
+    let section = use_signal(|| SettingsSection::ModelSettings);
+
+    // 通用分区：主题与字体大小分段选择。
+    let ui_theme = use_signal(crate::shell::theme::load);
+    let font_size = use_signal(crate::shell::theme::load_font_size);
+
+    // 版本信息分区：懒加载的版本 / 系统 / 架构信息。
+    let mut about_rows = use_signal(Vec::<SettingsInfoRow>::new);
+    let mut about_error = use_signal(|| None::<String>);
+    let mut about_loaded = use_signal(|| false);
 
     use_effect(move || {
         spawn(async move {
             match llm_config::fetch_llm_config().await {
                 Some(cfg) => {
                     apply_cfg(cfg, credentials, active_id, enabled_ids);
+                    load_hint.set(None);
                 }
-                None => toast.error("无法从服务端加载配置（请确认网络正常）"),
+                None => load_hint.set(Some("无法从服务端加载配置（请确认网络正常）".into())),
+            }
+        });
+    });
+
+    // 首次切到「版本信息」分区时拉取版本 / 系统 / 架构。
+    use_effect(move || {
+        if section() != SettingsSection::About || about_loaded() {
+            return;
+        }
+        about_loaded.set(true);
+        spawn(async move {
+            match crate::chat::transport_wasm::load_about_info(&crate::chat::api_base_url()).await {
+                Ok(dto) => {
+                    about_rows.set(vec![
+                        SettingsInfoRow {
+                            label: "版本号".into(),
+                            value: dto.version,
+                        },
+                        SettingsInfoRow {
+                            label: "系统".into(),
+                            value: dto.runtime_os,
+                        },
+                        SettingsInfoRow {
+                            label: "架构".into(),
+                            value: dto.runtime_arch,
+                        },
+                    ]);
+                    about_error.set(None);
+                }
+                Err(e) => about_error.set(Some(e.to_string())),
             }
         });
     });
 
     rsx! {
-        div { class: crate::shell::style::MODAL_CARD_WIDE,
-            div { class: crate::shell::style::MODAL_HEAD,
-                h1 { class: crate::shell::style::MODAL_TITLE, "API 密钥" }
-                button {
-                    r#type: "button",
-                    class: crate::shell::style::MODAL_CLOSE,
-                    title: "关闭",
-                    aria_label: "关闭",
-                    onclick: move |_| show_settings_modal.set(false),
-                    Icon {
-                        icon: LdX,
-                        width: 18,
-                        height: 18,
-                        fill: "currentColor",
-                        class: "shrink-0",
-                    }
+        SettingsNavShell {
+            active: section,
+            on_close: move |_| show_settings_modal.set(false),
+            if section() == SettingsSection::General {
+                div { class: "ac-settings-general",
+                    ThemeSettingRow { ui_theme }
+                    FontSizeSettingRow { font_size }
                 }
             }
-            LlmCredentialsPanel {
-                credentials: credentials(),
-                enabled_ids: enabled_ids(),
-                on_update: move |body: LlmCredentialUpsertBody| {
-                    spawn(async move {
-                        let prev_ids: Vec<String> =
-                            credentials().iter().map(|c| c.id.clone()).collect();
-                        let prev_enabled = enabled_ids();
-                        match llm_config::upsert_llm_credential(&body).await {
-                            Some(cfg) => {
-                                let new_ids: Vec<String> =
-                                    cfg.credentials.iter().map(|c| c.id.clone()).collect();
-                                apply_cfg(cfg, credentials, active_id, enabled_ids);
-                                enabled_ids.set(enabled_after_upsert(
-                                    &prev_enabled,
-                                    &prev_ids,
-                                    &new_ids,
-                                    refresh,
-                                ));
-
-                                toast.success("已更新密钥");
-                            }
-                            None => toast.error("更新失败，请稍后重试"),
-                        }
-                    });
-                },
-                on_add: move |body: LlmCredentialUpsertBody| {
-                    spawn(async move {
-                        let prev_ids: Vec<String> =
-                            credentials().iter().map(|c| c.id.clone()).collect();
-                        let prev_enabled = enabled_ids();
-                        match llm_config::upsert_llm_credential(&body).await {
-                            Some(cfg) => {
-                                let new_ids: Vec<String> =
-                                    cfg.credentials.iter().map(|c| c.id.clone()).collect();
-                                apply_cfg(cfg, credentials, active_id, enabled_ids);
-                                enabled_ids.set(enabled_after_upsert(
-                                    &prev_enabled,
-                                    &prev_ids,
-                                    &new_ids,
-                                    refresh,
-                                ));
-
-                                toast.success("已添加密钥");
-                            }
-                            None => toast.error("添加失败，请稍后重试"),
-                        }
-                    });
-                },
-                on_toggle: move |(id, on): (String, bool)| {
-                    spawn(async move {
-                        let next = enabled_after_toggle(&enabled_ids(), &id, on, refresh);
-                        enabled_ids.set(next.clone());
-                        if let Some(activate) =
-                            activate_id_after_toggle(&next, &active_id(), &id, on)
-                        {
-                            match llm_config::activate_llm_credential(&activate).await {
+            if section() == SettingsSection::ModelSettings {
+                ModelSettingsPanel {
+                    credentials: credentials(),
+                    enabled_ids: enabled_ids(),
+                    hint: load_hint(),
+                    on_refresh: move |_| {
+                        spawn(async move {
+                            match llm_config::fetch_llm_config().await {
                                 Some(cfg) => {
                                     apply_cfg(cfg, credentials, active_id, enabled_ids);
-                                    enabled_ids.set(next);
-
+                                    load_hint.set(None);
+                                    toast.success("已刷新");
                                 }
-                                None => toast.error("切换失败，请稍后重试"),
+                                None => load_hint.set(Some("刷新失败，请稍后重试".into())),
+                            }
+                        });
+                    },
+                    on_update: move |body: LlmCredentialUpsertBody| {
+                        spawn(async move {
+                            let prev_ids: Vec<String> =
+                                credentials().iter().map(|c| c.id.clone()).collect();
+                            let prev_enabled = enabled_ids();
+                            match llm_config::upsert_llm_credential(&body).await {
+                                Some(cfg) => {
+                                    let new_ids: Vec<String> =
+                                        cfg.credentials.iter().map(|c| c.id.clone()).collect();
+                                    apply_cfg(cfg, credentials, active_id, enabled_ids);
+                                    enabled_ids.set(enabled_after_upsert(
+                                        &prev_enabled,
+                                        &prev_ids,
+                                        &new_ids,
+                                        refresh,
+                                    ));
+                                    load_hint.set(None);
+                                    toast.success("已保存供应商");
+                                }
+                                None => load_hint.set(Some("更新失败，请稍后重试".into())),
+                            }
+                        });
+                    },
+                    on_add: move |body: LlmCredentialUpsertBody| {
+                        spawn(async move {
+                            let prev_ids: Vec<String> =
+                                credentials().iter().map(|c| c.id.clone()).collect();
+                            let prev_enabled = enabled_ids();
+                            match llm_config::upsert_llm_credential(&body).await {
+                                Some(cfg) => {
+                                    let new_ids: Vec<String> =
+                                        cfg.credentials.iter().map(|c| c.id.clone()).collect();
+                                    apply_cfg(cfg, credentials, active_id, enabled_ids);
+                                    enabled_ids.set(enabled_after_upsert(
+                                        &prev_enabled,
+                                        &prev_ids,
+                                        &new_ids,
+                                        refresh,
+                                    ));
+                                    load_hint.set(None);
+                                    toast.success("已添加供应商");
+                                }
+                                None => load_hint.set(Some("添加失败，请稍后重试".into())),
+                            }
+                        });
+                    },
+                    on_toggle: move |(id, on): (String, bool)| {
+                        spawn(async move {
+                            let next = enabled_after_toggle(&enabled_ids(), &id, on, refresh);
+                            enabled_ids.set(next.clone());
+                            if let Some(activate) =
+                                activate_id_after_toggle(&next, &active_id(), &id, on)
+                            {
+                                match llm_config::activate_llm_credential(&activate).await {
+                                    Some(cfg) => {
+                                        apply_cfg(cfg, credentials, active_id, enabled_ids);
+                                        enabled_ids.set(next);
+                                        load_hint.set(None);
+                                    }
+                                    None => load_hint.set(Some("切换失败，请稍后重试".into())),
+                                }
+                            }
+                        });
+                    },
+                    on_delete: move |id: String| {
+                        spawn(async move {
+                            let prev_enabled = enabled_ids();
+                            match llm_config::delete_llm_credential(&id).await {
+                                Some(cfg) => {
+                                    let known: Vec<String> =
+                                        cfg.credentials.iter().map(|c| c.id.clone()).collect();
+                                    apply_cfg(cfg, credentials, active_id, enabled_ids);
+                                    enabled_ids.set(enabled_after_delete(
+                                        &prev_enabled,
+                                        &known,
+                                        refresh,
+                                    ));
+                                    load_hint.set(None);
+                                    toast.success("已删除供应商");
+                                }
+                                None => load_hint.set(Some("删除失败，请稍后重试".into())),
+                            }
+                        });
+                    },
+                }
+            }
+            if section() == SettingsSection::About {
+                {
+                    let mut rows = about_rows();
+                    if let Some(err) = about_error() {
+                        rows.push(SettingsInfoRow { label: "加载失败".into(), value: err });
+                    }
+                    if rows.is_empty() {
+                        rsx! {
+                            p { class: "ac-settings-lead", "正在加载…" }
+                        }
+                    } else {
+                        rsx! {
+                            dl { class: "ac-settings-about-dl ac-settings-about-dl--flat",
+                                for row in rows {
+                                    crate::shell::SettingsInfoRowView { row }
+                                }
                             }
                         }
-                    });
-                },
-                on_delete: move |id: String| {
-                    spawn(async move {
-                        let prev_enabled = enabled_ids();
-                        match llm_config::delete_llm_credential(&id).await {
-                            Some(cfg) => {
-                                let known: Vec<String> =
-                                    cfg.credentials.iter().map(|c| c.id.clone()).collect();
-                                apply_cfg(cfg, credentials, active_id, enabled_ids);
-                                enabled_ids.set(enabled_after_delete(&prev_enabled, &known, refresh));
-
-                                toast.success("已删除密钥");
-                            }
-                            None => toast.error("删除失败，请稍后重试"),
-                        }
-                    });
-                },
+                    }
+                }
             }
         }
     }

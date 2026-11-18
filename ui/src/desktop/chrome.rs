@@ -18,7 +18,6 @@ use crate::icons::{
     VscLayoutPanel, VscLayoutPanelOff, VscLayoutSidebarLeftDock, VscLayoutSidebarRightDock,
 };
 use crate::shell::browser::OpenBrowserTick;
-use crate::shell::theme::{self, TitlebarThemeToggle};
 use crate::shell::style::{
     NATIVE_CAPTION,
     NATIVE_CAPTION_BTN,
@@ -47,10 +46,6 @@ use crate::shell::style::{
     WEB_TITLEBAR_ACTIONS_END,
     WEB_TITLEBAR_BTN,
     WEB_TITLEBAR_ICON,
-    WEB_TITLEBAR_MENU,
-    WEB_TITLEBAR_MENU_BACKDROP,
-    WEB_TITLEBAR_MENU_ITEM,
-    WEB_TITLEBAR_SETTINGS_WRAP,
 };
 
 #[component]
@@ -143,9 +138,6 @@ pub fn NativeTitleBar(
     mut show_chat: Signal<bool>,
     mut chat_history_open: Signal<bool>,
     mut show_settings_modal: Signal<bool>,
-    mut show_about_modal: Signal<bool>,
-    mut show_titlebar_settings_menu: Signal<bool>,
-    mut show_font_size_modal: Signal<bool>,
 ) -> Element {
     let sidebar_title = if show_sidebar() {
         "隐藏左边栏"
@@ -167,15 +159,14 @@ pub fn NativeTitleBar(
     } else {
         "显示右边聊天栏"
     };
-    let ui_theme = use_signal(theme::load);
     let open_browser = use_context::<OpenBrowserTick>();
 
     let titlebar_class = if cfg!(target_os = "macos") {
-        "{NATIVE_TITLEBAR} {NATIVE_TITLEBAR_MACOS}"
+        format!("{NATIVE_TITLEBAR} {NATIVE_TITLEBAR_MACOS}")
     } else if cfg!(target_os = "windows") {
-        "{NATIVE_TITLEBAR} {NATIVE_TITLEBAR_WINDOWS}"
+        format!("{NATIVE_TITLEBAR} {NATIVE_TITLEBAR_WINDOWS}")
     } else {
-        NATIVE_TITLEBAR
+        NATIVE_TITLEBAR.to_string()
     };
 
     rsx! {
@@ -290,59 +281,21 @@ pub fn NativeTitleBar(
                         Icon { icon: BsLayoutSidebarInsetReverse, width: 12, height: 12, fill: "currentColor", class: WEB_TITLEBAR_ICON }
                     }
                 }
-                div { class: WEB_TITLEBAR_SETTINGS_WRAP,
-                    button {
-                        r#type: "button",
-                        class: WEB_TITLEBAR_BTN,
-                                "data-menu-open": show_titlebar_settings_menu(),
-                        title: "设置",
-                        aria_expanded: show_titlebar_settings_menu(),
-                        aria_haspopup: "menu",
-                        onclick: move |_| show_titlebar_settings_menu.toggle(),
-                        Icon { icon: BsGear, width: 12, height: 12, fill: "currentColor", class: WEB_TITLEBAR_ICON }
-                    }
-                    if show_titlebar_settings_menu() {
-                        div {
-                            class: WEB_TITLEBAR_MENU_BACKDROP,
-                            onclick: move |_| show_titlebar_settings_menu.set(false),
-                        }
-                        div { class: WEB_TITLEBAR_MENU, role: "menu",
-                            button {
-                                r#type: "button",
-                                role: "menuitem",
-                                class: WEB_TITLEBAR_MENU_ITEM,
-                                onclick: move |_| {
-                                    show_titlebar_settings_menu.set(false);
-                                    show_settings_modal.set(true);
-                                },
-                                "API 密钥"
-                            }
-                            TitlebarThemeToggle {
-                                    ui_theme,
-                                    show_titlebar_settings_menu,
-                                }
-                            button {
-                                r#type: "button",
-                                role: "menuitem",
-                                class: WEB_TITLEBAR_MENU_ITEM,
-                                onclick: move |_| {
-                                    show_titlebar_settings_menu.set(false);
-                                    show_font_size_modal.set(true);
-                                },
-                                "字体大小"
-                            }
-                            button {
-                                r#type: "button",
-                                role: "menuitem",
-                                class: WEB_TITLEBAR_MENU_ITEM,
-                                onclick: move |_| {
-                                    show_titlebar_settings_menu.set(false);
-                                    show_about_modal.set(true);
-                                },
-                                "关于本机"
-                            }
-                        }
-                    }
+                button {
+                    r#type: "button",
+                    class: WEB_TITLEBAR_BTN,
+                    title: "设置",
+                    aria_label: "设置",
+                    onclick: move |_| show_settings_modal.set(true),
+                    Icon { icon: BsGear, width: 12, height: 12, fill: "currentColor", class: WEB_TITLEBAR_ICON }
+                }
+            }
+            // 居中标题位：预留固定槽位，打开设置时显示「设置」，避免布局跳动。
+            span {
+                class: "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 max-w-[40%] overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-semibold text-secondary-2 pointer-events-none",
+                aria_hidden: "true",
+                if show_settings_modal() {
+                    "设置"
                 }
             }
             NativeCaptionControls {}
@@ -359,9 +312,6 @@ pub fn NativeTitleBar(
     _show_chat: Signal<bool>,
     _chat_history_open: Signal<bool>,
     _show_settings_modal: Signal<bool>,
-    _show_about_modal: Signal<bool>,
-    _show_titlebar_settings_menu: Signal<bool>,
-    _show_font_size_modal: Signal<bool>,
 ) -> Element {
     rsx! {}
 }

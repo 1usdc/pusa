@@ -746,6 +746,15 @@ pub fn fs_recent_project_dirs() -> Vec<String> {
     Vec::new()
 }
 
+/// 从最近打开列表移除目录。
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+pub fn fs_forget_recent_project_dir(path: &str) {
+    crate::desktop::files::forget_recent_project_dir(path);
+}
+
+#[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+pub fn fs_forget_recent_project_dir(_path: &str) {}
+
 /// 切换工作区根目录；成功返回规范化路径。
 #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
 pub fn fs_set_workspace_root(path: &str) -> Result<String, String> {
@@ -756,6 +765,28 @@ pub fn fs_set_workspace_root(path: &str) -> Result<String, String> {
 #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
 pub fn fs_set_workspace_root(_path: &str) -> Result<String, String> {
     Err("Web 端无法打开本机项目目录。".into())
+}
+
+/// 工作区本地 git 分支列表。
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+pub fn fs_git_branches(root: &str) -> Vec<String> {
+    crate::desktop::files::git_branches(Path::new(root))
+}
+
+#[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+pub fn fs_git_branches(_root: &str) -> Vec<String> {
+    Vec::new()
+}
+
+/// 切换工作区到已存在的本地分支。
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+pub fn fs_git_checkout(root: &str, branch: &str) -> Result<(), String> {
+    crate::desktop::files::git_checkout(Path::new(root), branch)
+}
+
+#[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
+pub fn fs_git_checkout(_root: &str, _branch: &str) -> Result<(), String> {
+    Err("Web 端无法切换本机分支。".into())
 }
 
 /// 弹出系统目录选择器并打开为当前项目；`Ok(None)` 表示用户取消。

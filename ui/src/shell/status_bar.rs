@@ -1,7 +1,7 @@
-//! 窗口底部状态栏：版本号 + 更新状态；左侧工作区/分支（点击可切换终端）；中间显示当前文件路径。
+//! 窗口底部状态栏：版本号 + 更新状态；左侧项目名（最近项目弹窗）与分支名（分支切换弹窗）；中间显示当前文件路径。
 
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::ld_icons::LdGitBranch;
+use dioxus_free_icons::icons::ld_icons::{LdGitBranch, LdTrash2};
 use dioxus_free_icons::Icon;
 
 use crate::icons::{GoFileDirectory, RiBearSmileLine};
@@ -300,7 +300,7 @@ mod velopack_update {
 /// 底部状态栏（窗口 footer）。
 #[component]
 pub fn StatusBar(
-    mut show_terminal: Signal<bool>,
+    show_terminal: Signal<bool>,
     active_file_path: Signal<Option<String>>,
     active_role_name: Signal<String>,
 ) -> Element {
@@ -317,6 +317,13 @@ pub fn StatusBar(
     let mut workspace_git = use_signal(|| Option::<(String, bool)>::None);
     #[allow(unused_mut)]
     let mut workspace_root_path = use_signal(String::new);
+    // 项目 / 分支弹窗：点击状态栏左侧两个按钮时向上弹出。
+    let mut show_projects = use_signal(|| false);
+    let mut show_branches = use_signal(|| false);
+    let mut recent_dirs = use_signal(Vec::<String>::new);
+    let mut branch_list = use_signal(Vec::<String>::new);
+    let toast = super::toast::use_toast();
+    let mut open_project_path = use_context::<super::OpenProjectPath>().0;
 
     use_hook(|| {
         spawn(async move {
@@ -378,15 +385,13 @@ pub fn StatusBar(
         });
     });
 
-    let terminal_title = if show_terminal() {
-        "隐藏终端"
-    } else {
-        "显示终端"
-    };
+    // 终端开关保留在标题栏 / 聊天栏按钮；状态栏不再承担该入口。
+    let _ = show_terminal;
     let ver = version();
     let dir_name = workspace_dir();
     let git = workspace_git();
     let root_path = workspace_root_path();
+    let branch_root = root_path.clone();
     let (update_label, update_title, update_action) = match update() {
         UpdateState::Checking => (
             "检查中…".to_string(),
@@ -428,14 +433,6 @@ pub fn StatusBar(
     let update_clickable = !matches!(update_action, UpdateAction::None);
     let update_is_restart = matches!(update_action, UpdateAction::Restart);
 
-    let workspace_title = if dir_name.is_empty() {
-        String::new()
-    } else if let Some((ref branch, dirty)) = git {
-        let star = if dirty { "*" } else { "" };
-        format!("{root_path} · {branch}{star}")
-    } else {
-        root_path.clone()
-    };
     let branch_label = git.as_ref().map(|(branch, dirty)| {
         if *dirty {
             format!("{branch}*")
@@ -444,17 +441,12 @@ pub fn StatusBar(
         }
     });
 
-    let workspace_click_title = if workspace_title.is_empty() {
-        terminal_title.to_string()
-    } else {
-        format!("{workspace_title} · {terminal_title}")
-    };
     let file_path = active_file_path();
     let role_name = active_role_name();
 
     rsx! {
         footer {
-            class: "relative z-20 grid shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1fr)] items-center gap-2 min-h-[1.625rem] px-[0.65rem] box-border border-t border-primary-2 bg-primary-1 text-[0.6875rem] leading-none text-text-secondary select-none dark:border-t-transparent dark:before:content-[''] dark:before:absolute dark:before:inset-x-0 dark:before:top-0 dark:before:h-px dark:before:z-[6] dark:before:pointer-events-none dark:before:opacity-[var(--ac-sand-opacity)] dark:before:bg-[image:var(--ac-sand-grad-x)]",
+            class: "relative z-20 grid shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1fr)] items-center gap-2 min-h-[1.625rem] px-[0.65rem] box-border border-t border-primary-2 bg-[var(--ac-chrome-bar-bg)] text-[0.6875rem] leading-none text-text-secondary select-none",
             role: "contentinfo",
             div { class: "flex items-center gap-[0.45rem] min-w-0 justify-self-start",
                 if !role_name.is_empty() {
@@ -475,28 +467,108 @@ pub fn StatusBar(
                     }
                 }
                 if !dir_name.is_empty() {
-                    button {
-                        r#type: "button",
-                        class: "inline-flex items-center gap-[0.35rem] min-w-0 max-w-[min(28rem,55vw)] h-5 px-1 m-0 border border-transparent rounded-[0.35rem] bg-transparent text-text-secondary font-[inherit] cursor-pointer hover:border-primary-2 hover:bg-primary-3 data-[active=true]:border-primary-2 data-[active=true]:bg-primary-3",
-                        "data-active": show_terminal(),
-                        title: "{workspace_click_title}",
-                        aria_label: "{terminal_title}",
-                        aria_expanded: show_terminal(),
-                        onclick: move |_| show_terminal.toggle(),
-                        span {
-                            class: "shrink-0 inline-flex items-center justify-center leading-[0] text-secondary-1 opacity-90",
-                            aria_hidden: "true",
-                            Icon {
-                                icon: GoFileDirectory,
-                                width: 12,
-                                height: 12,
-                                fill: "currentColor",
+                    // 弹窗打开时，点击空白处关闭。
+                    if show_projects() || show_branches() {
+                        div {
+                            class: "fixed inset-0 z-30",
+                            onclick: move |_| {
+                                show_projects.set(false);
+                                show_branches.set(false);
+                            },
+                        }
+                    }
+                    // 项目名：向上弹出最近打开的项目。
+                    div { class: "relative",
+                        button {
+                            r#type: "button",
+                            class: "inline-flex items-center gap-[0.35rem] min-w-0 max-w-[14rem] h-5 px-1 m-0 border border-transparent rounded-[0.35rem] bg-transparent text-text-secondary font-[inherit] cursor-pointer hover:border-primary-2 hover:bg-primary-3 data-[active=true]:border-primary-2 data-[active=true]:bg-primary-3",
+                            "data-active": show_projects(),
+                            title: "{root_path} · 切换最近打开的项目",
+                            aria_expanded: show_projects(),
+                            onclick: move |_| {
+                                let next = !show_projects();
+                                if next {
+                                    recent_dirs.set(super::files::fs_recent_project_dirs());
+                                }
+                                show_projects.set(next);
+                                show_branches.set(false);
+                            },
+                            span {
+                                class: "shrink-0 inline-flex items-center justify-center leading-[0] text-secondary-1 opacity-90",
+                                aria_hidden: "true",
+                                Icon {
+                                    icon: GoFileDirectory,
+                                    width: 12,
+                                    height: 12,
+                                    fill: "currentColor",
+                                }
+                            }
+                            span { class: "overflow-hidden text-ellipsis whitespace-nowrap max-w-[12rem] text-secondary-1 font-medium", "{dir_name}" }
+                        }
+                        if show_projects() {
+                            div { class: "absolute left-0 bottom-[calc(100%+6px)] z-40 min-w-[230px] max-w-[340px] rounded-[8px] border border-primary-2 bg-primary py-[4px] shadow-[0_10px_28px_var(--shadow-color)]",
+                                if recent_dirs().is_empty() {
+                                    p { class: "m-0 px-[10px] py-[6px] text-secondary-3", "暂无最近打开的项目" }
+                                }
+                                {recent_dirs().into_iter().map(|dir| {
+                                    let name = super::files::fs_root_display_name(&dir);
+                                    let is_current = dir == root_path;
+                                    let dir_click = dir.clone();
+                                    let dir_remove = dir.clone();
+                                    rsx! {
+                                        div {
+                                            key: "{dir}",
+                                            class: "flex items-center gap-[2px] rounded-[5px] hover:bg-[var(--ac-item-hover-bg)] data-[current=true]:bg-[var(--ac-item-selected-bg)]",
+                                            "data-current": is_current,
+                                            button {
+                                                r#type: "button",
+                                                class: "flex min-w-0 flex-1 flex-col items-start gap-[2px] px-[10px] py-[6px] border-0 rounded-[5px] bg-transparent text-left font-[inherit] cursor-pointer",
+                                                title: "{dir}",
+                                                onclick: move |_| {
+                                                    open_project_path.set(dir_click.clone());
+                                                    show_projects.set(false);
+                                                },
+                                                span { class: "text-secondary-1 font-medium", "{name}" }
+                                                span { class: "max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-secondary-3 text-[0.625rem]", "{dir}" }
+                                            }
+                                            button {
+                                                r#type: "button",
+                                                class: "mr-[6px] shrink-0 inline-flex h-[20px] w-[20px] items-center justify-center border-0 rounded-[4px] bg-transparent text-secondary-3 cursor-pointer hover:text-[#dc2626] hover:bg-[var(--primary-color-2)]",
+                                                title: "从最近列表移除",
+                                                aria_label: "从最近列表移除",
+                                                onclick: move |_| {
+                                                    super::files::fs_forget_recent_project_dir(&dir_remove);
+                                                    recent_dirs.set(super::files::fs_recent_project_dirs());
+                                                },
+                                                Icon {
+                                                    icon: LdTrash2,
+                                                    width: 12,
+                                                    height: 12,
+                                                }
+                                            }
+                                        }
+                                    }
+                                })}
                             }
                         }
-                        span { class: "overflow-hidden text-ellipsis whitespace-nowrap max-w-[12rem] text-secondary-1 font-medium", "{dir_name}" }
-                        if let Some(label) = branch_label.as_ref() {
-                            span {
-                                class: "inline-flex items-center gap-[0.2rem] min-w-0 text-text-secondary",
+                    }
+                    // 分支名：向上弹出本地分支并切换。
+                    if let Some(label) = branch_label.as_ref() {
+                        div { class: "relative",
+                            button {
+                                r#type: "button",
+                                class: "inline-flex items-center gap-[0.2rem] min-w-0 h-5 px-1 m-0 border border-transparent rounded-[0.35rem] bg-transparent text-text-secondary font-[inherit] cursor-pointer hover:border-primary-2 hover:bg-primary-3 data-[active=true]:border-primary-2 data-[active=true]:bg-primary-3",
+                                "data-active": show_branches(),
+                                title: "切换分支",
+                                aria_expanded: show_branches(),
+                                onclick: move |_| {
+                                    let next = !show_branches();
+                                    if next {
+                                        branch_list.set(super::files::fs_git_branches(&branch_root));
+                                    }
+                                    show_branches.set(next);
+                                    show_projects.set(false);
+                                },
                                 span {
                                     class: "shrink-0 inline-flex items-center justify-center leading-[0] opacity-85",
                                     aria_hidden: "true",
@@ -508,6 +580,39 @@ pub fn StatusBar(
                                     }
                                 }
                                 span { class: "overflow-hidden text-ellipsis whitespace-nowrap max-w-[10rem]", "{label}" }
+                            }
+                            if show_branches() {
+                                div { class: "absolute left-0 bottom-[calc(100%+6px)] z-40 min-w-[180px] max-w-[300px] rounded-[8px] border border-primary-2 bg-primary py-[4px] shadow-[0_10px_28px_var(--shadow-color)]",
+                                    if branch_list().is_empty() {
+                                        p { class: "m-0 px-[10px] py-[6px] text-secondary-3", "未找到本地分支" }
+                                    }
+                                    {branch_list().into_iter().map(|b| {
+                                        let is_current = git.as_ref().is_some_and(|(cur, _)| *cur == b);
+                                        let b_click = b.clone();
+                                        let root_click = root_path.clone();
+                                        rsx! {
+                                            button {
+                                                r#type: "button",
+                                                key: "{b}",
+                                                class: "block w-full px-[10px] py-[6px] border-0 rounded-[5px] bg-transparent text-left font-[inherit] cursor-pointer text-text-secondary hover:bg-[var(--ac-item-hover-bg)] data-[current=true]:bg-[var(--ac-item-selected-bg)] data-[current=true]:text-secondary-1",
+                                                "data-current": is_current,
+                                                onclick: move |_| {
+                                                    match super::files::fs_git_checkout(&root_click, &b_click) {
+                                                        Ok(()) => {
+                                                            workspace_git.set(
+                                                                super::files::fs_git_head_status(&root_click),
+                                                            );
+                                                            toast.success(format!("已切换到分支：{b_click}"));
+                                                        }
+                                                        Err(err) => toast.error(err),
+                                                    }
+                                                    show_branches.set(false);
+                                                },
+                                                "{b}"
+                                            }
+                                        }
+                                    })}
+                                }
                             }
                         }
                     }
